@@ -10,8 +10,10 @@ class Settings(BaseSettings):
     # Telegram Bot
     TELEGRAM_BOT_TOKEN: str
 
-    # Google AI
-    GEMINI_API_KEY: str
+    # Google Cloud Platform
+    GCP_PROJECT_ID: str
+    GCP_REGION: str
+    GOOGLE_APPLICATION_CREDENTIALS: str
 
 # Создаем единственный экземпляр настроек, который будет использоваться во всем приложении
 settings = Settings()
