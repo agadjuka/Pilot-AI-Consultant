@@ -124,6 +124,103 @@ class GeminiDebugLogger:
             f.write("\n".join(content))
         
         print(f"   💬 Сохранен ответ: {filename}")
+    
+    def log_function_calling_cycle(
+        self,
+        user_id: int,
+        user_message: str,
+        iterations: List[Dict]
+    ) -> None:
+        """
+        Сохраняет полный цикл Function Calling в один файл.
+        
+        Args:
+            user_id: ID пользователя
+            user_message: Исходное сообщение пользователя
+            iterations: Список итераций с запросами и ответами
+                        Формат: [{"iteration": 1, "request": "...", "response": "...", "function_calls": [...]}]
+        """
+        self._request_counter += 1
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"{self._request_counter:04d}_{timestamp}_function_calling.txt"
+        filepath = self.debug_dir / filename
+        
+        # Формируем содержимое файла
+        content = []
+        content.append("=" * 80)
+        content.append(f"FUNCTION CALLING ЦИКЛ №{self._request_counter}")
+        content.append(f"Пользователь ID: {user_id}")
+        content.append(f"Время: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        content.append("=" * 80)
+        content.append("")
+        
+        # Исходное сообщение
+        content.append("-" * 80)
+        content.append("ИСХОДНОЕ СООБЩЕНИЕ ПОЛЬЗОВАТЕЛЯ:")
+        content.append("-" * 80)
+        content.append(user_message)
+        content.append("")
+        
+        # Итерации
+        for iteration_data in iterations:
+            iteration = iteration_data.get("iteration", 0)
+            content.append("=" * 80)
+            content.append(f"ИТЕРАЦИЯ {iteration}")
+            content.append("=" * 80)
+            content.append("")
+            
+            # Запрос
+            request = iteration_data.get("request", "")
+            if request:
+                content.append("-" * 80)
+                content.append("ЗАПРОС К GEMINI:")
+                content.append("-" * 80)
+                content.append(request)
+                content.append("")
+            
+            # Ответ модели
+            response = iteration_data.get("response", "")
+            if response:
+                content.append("-" * 80)
+                content.append("ОТВЕТ ОТ GEMINI:")
+                content.append("-" * 80)
+                content.append(response)
+                content.append("")
+            
+            # Вызовы функций
+            function_calls = iteration_data.get("function_calls", [])
+            if function_calls:
+                content.append("-" * 80)
+                content.append("ВЫЗОВЫ ФУНКЦИЙ:")
+                content.append("-" * 80)
+                for fc in function_calls:
+                    function_name = fc.get("name", "unknown")
+                    function_args = fc.get("args", {})
+                    function_result = fc.get("result", "")
+                    
+                    content.append(f"\n📞 Функция: {function_name}")
+                    content.append(f"   Аргументы: {function_args}")
+                    content.append(f"   Результат:")
+                    content.append(f"   {function_result}")
+                content.append("")
+            
+            # Финальный ответ
+            final_answer = iteration_data.get("final_answer", "")
+            if final_answer:
+                content.append("-" * 80)
+                content.append("✅ ФИНАЛЬНЫЙ ОТВЕТ ПОЛЬЗОВАТЕЛЮ:")
+                content.append("-" * 80)
+                content.append(final_answer)
+                content.append("")
+        
+        content.append("=" * 80)
+        
+        # Сохраняем в файл
+        self.debug_dir.mkdir(parents=True, exist_ok=True)
+        with open(filepath, "w", encoding="utf-8") as f:
+            f.write("\n".join(content))
+        
+        print(f"   📝 Сохранен Function Calling цикл: {filename}")
 
 
 # Создаем единственный экземпляр логгера
