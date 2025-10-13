@@ -20,8 +20,9 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     # Создаем таблицу dialog_history
+    # Для SQLite используем INTEGER вместо BigInteger для автоинкремента
     op.create_table('dialog_history',
-        sa.Column('id', sa.BigInteger(), autoincrement=True, nullable=False),
+        sa.Column('id', sa.Integer(), autoincrement=True, nullable=False),
         sa.Column('user_id', sa.BigInteger(), nullable=False),
         sa.Column('role', sa.String(length=10), nullable=False),
         sa.Column('message_text', sa.Text(), nullable=False),
@@ -39,4 +40,7 @@ def downgrade() -> None:
     op.drop_index(op.f('ix_dialog_history_user_id'), table_name='dialog_history')
     op.drop_index(op.f('ix_dialog_history_id'), table_name='dialog_history')
     op.drop_table('dialog_history')
+
+
+
 

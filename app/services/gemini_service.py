@@ -105,3 +105,6 @@ class GeminiService:
 # Создаем единственный экземпляр сервиса
 gemini_service = GeminiService()
 
+
+
+

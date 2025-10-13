@@ -1,4 +1,5 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from typing import Optional
 
 class Settings(BaseSettings):
     # Модель загружает переменные из .env файла
@@ -15,6 +16,17 @@ class Settings(BaseSettings):
     GCP_REGION: str
     GOOGLE_APPLICATION_CREDENTIALS: str
 
-# Создаем единственный экземпляр настроек, который будет использоваться во всем приложении
-settings = Settings()
+# Глобальная переменная для ленивой инициализации
+_settings: Optional[Settings] = None
+
+def get_settings() -> Settings:
+    """Получить или создать экземпляр настроек"""
+    global _settings
+    if _settings is None:
+        _settings = Settings()
+    return _settings
+
+# Создаем экземпляр для обратной совместимости
+# Используется во всем приложении
+settings = get_settings()
 

@@ -4,7 +4,7 @@ from app.schemas.telegram import Update
 from app.services.telegram_service import telegram_service
 from app.services.dialog_service import DialogService
 from app.core.config import settings
-from app.core.database import SessionLocal
+from app.core.database import get_session_local
 
 router = APIRouter()
 
@@ -20,6 +20,7 @@ async def process_telegram_update(update: Update):
         text = update.message.text
         
         # Создаем сессию базы данных для обработки сообщения
+        SessionLocal = get_session_local()
         db: Session = SessionLocal()
         try:
             # Создаем экземпляр DialogService с сессией БД

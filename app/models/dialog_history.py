@@ -1,4 +1,4 @@
-from sqlalchemy import Column, BigInteger, String, Text, DateTime
+from sqlalchemy import Column, Integer, BigInteger, String, Text, DateTime
 from datetime import datetime
 from app.core.database import Base
 
@@ -8,9 +8,13 @@ class DialogHistory(Base):
     
     __tablename__ = "dialog_history"
 
-    id = Column(BigInteger, primary_key=True, index=True, autoincrement=True)
+    # Для SQLite используем Integer для автоинкремента
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     user_id = Column(BigInteger, nullable=False, index=True)
     role = Column(String(10), nullable=False)  # 'user' или 'model'
     message_text = Column(Text, nullable=False)
     timestamp = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+
+
 

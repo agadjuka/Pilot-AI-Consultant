@@ -1,7 +1,6 @@
 import random
 from faker import Faker
-from sqlalchemy.orm import sessionmaker
-from app.core.database import engine
+from app.core.database import get_engine, get_session_local
 from app.models.service import Service
 from app.models.master import Master
 
@@ -9,7 +8,7 @@ from app.models.master import Master
 fake = Faker('ru_RU')
 
 # Создание сессии для работы с БД
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+SessionLocal = get_session_local()
 db = SessionLocal()
 
 def seed_data():

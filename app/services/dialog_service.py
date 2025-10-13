@@ -71,3 +71,6 @@ class DialogService:
         # 5. Возвращаем сгенерированный текст
         return bot_response
 
+
+
+

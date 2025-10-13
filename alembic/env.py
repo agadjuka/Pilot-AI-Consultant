@@ -43,7 +43,10 @@ def run_migrations_offline() -> None:
     script output.
 
     """
-    url = config.get_main_option("sqlalchemy.url")
+    # Получаем URL из переменных окружения
+    from app.core.config import settings
+    url = settings.DATABASE_URL
+    
     context.configure(
         url=url,
         target_metadata=target_metadata,
@@ -62,9 +65,12 @@ def run_migrations_online() -> None:
     and associate a connection with the context.
 
     """
-    connectable = engine_from_config(
-        config.get_section(config.config_ini_section, {}),
-        prefix="sqlalchemy.",
+    # Используем настройки из переменных окружения
+    from app.core.config import settings
+    from sqlalchemy import create_engine
+    
+    connectable = create_engine(
+        settings.DATABASE_URL,
         poolclass=pool.NullPool,
     )
 

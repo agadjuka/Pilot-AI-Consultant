@@ -55,3 +55,6 @@ class DialogHistoryRepository(BaseRepository[DialogHistory]):
         self.db.refresh(message)
         return message
 
+
+
+
