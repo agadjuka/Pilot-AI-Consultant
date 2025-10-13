@@ -5,6 +5,7 @@ from typing import List, Dict, Optional
 import google.generativeai as genai
 from google.oauth2 import service_account
 from app.core.config import settings
+from app.utils.debug_logger import gemini_debug_logger
 
 
 class GeminiService:
@@ -92,6 +93,13 @@ class GeminiService:
         Returns:
             Текстовый ответ модели
         """
+        # Логируем запрос к Gemini
+        request_number = gemini_debug_logger.log_request(
+            user_message=user_message,
+            dialog_history=dialog_history,
+            system_instruction=self.system_instruction
+        )
+        
         # Формируем историю для чата
         history = []
         
@@ -118,6 +126,9 @@ class GeminiService:
             history,
             user_message
         )
+        
+        # Логируем ответ от Gemini
+        gemini_debug_logger.log_response(request_number, response)
         
         return response
 
