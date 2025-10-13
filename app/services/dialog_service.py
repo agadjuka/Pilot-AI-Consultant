@@ -2,6 +2,7 @@ from typing import List, Dict
 from sqlalchemy.orm import Session
 import google.generativeai as genai
 from google.generativeai import protos
+from datetime import datetime, timedelta
 from app.repositories.dialog_history_repository import DialogHistoryRepository
 from app.repositories.service_repository import ServiceRepository
 from app.repositories.master_repository import MasterRepository
@@ -81,8 +82,27 @@ class DialogService:
         
         # 3. Определяем контекст диалога для приветствия
         dialog_context = ""
+        
         if not dialog_history:  # Если история пустая - это первое сообщение
             dialog_context = "Это первое сообщение клиента. Обязательно поздоровайся в ответ."
+        else:  # Если история НЕ пустая - проверяем время последнего сообщения
+            # Берем последнее сообщение из истории (последний элемент, так как история отсортирована от старых к новым)
+            last_message = history_records[-1]
+            
+            # Извлекаем временную метку последнего сообщения
+            last_message_timestamp = last_message.timestamp
+            
+            # Вычисляем разницу между текущим временем и временем последнего сообщения
+            current_time = datetime.utcnow()
+            time_difference = current_time - last_message_timestamp
+            
+            # Устанавливаем временной порог (1 час)
+            threshold_hours = 1
+            threshold_delta = timedelta(hours=threshold_hours)
+            
+            # Если разница во времени больше порога - клиент вернулся после долгого перерыва
+            if time_difference > threshold_delta:
+                dialog_context = "Клиент вернулся в диалог после долгого перерыва. Начни ответ с короткого приветствия (например, 'Снова здравствуйте!')."
         
         # 4. Формируем полную историю с системной инструкцией
         full_history = self.gemini_service.build_history_with_system_instruction(dialog_history, dialog_context)
