@@ -396,6 +396,31 @@ class GoogleCalendarService:
             tzinfo=moscow_tz
         )
         
+        # Если запрашивается сегодняшний день, учитываем текущее время + буфер 1 час
+        now = datetime.now(moscow_tz)
+        if target_date.date() == now.date():
+            # Минимальное время для записи = текущее время + 1 час
+            min_booking_time = now + timedelta(hours=1)
+            # Округляем до ближайшего получаса в большую сторону
+            min_hour = min_booking_time.hour
+            min_minute = 30 if min_booking_time.minute > 0 else 0
+            if min_booking_time.minute > 30:
+                min_hour += 1
+                min_minute = 0
+            
+            # Обновляем начало рабочего дня, если нужно
+            adjusted_work_start = target_date.replace(
+                hour=min_hour,
+                minute=min_minute,
+                second=0,
+                microsecond=0,
+                tzinfo=moscow_tz
+            )
+            
+            if adjusted_work_start > work_start:
+                work_start = adjusted_work_start
+                print(f"   ⏰ Сегодняшний день: минимальное время записи {work_start.strftime('%H:%M')} (текущее время + 1 час)")
+        
         # Находим свободные интервалы с учетом количества мастеров (хотя бы один свободен)
         capacity = len(master_names) if master_names else 1
         print(f"   Емкость (кол-во мастеров под услугу): {capacity}")
