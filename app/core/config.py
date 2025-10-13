@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     GCP_PROJECT_ID: str
     GCP_REGION: str
     GOOGLE_APPLICATION_CREDENTIALS: str
+    GOOGLE_CALENDAR_ID: str
 
 # Глобальная переменная для ленивой инициализации
 _settings: Optional[Settings] = None
