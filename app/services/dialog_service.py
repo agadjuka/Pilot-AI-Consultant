@@ -1,7 +1,10 @@
 from typing import List, Dict
 from sqlalchemy.orm import Session
 from app.repositories.dialog_history_repository import DialogHistoryRepository
+from app.repositories.service_repository import ServiceRepository
+from app.repositories.master_repository import MasterRepository
 from app.services.gemini_service import gemini_service
+from app.services.tool_service import ToolService
 
 
 class DialogService:
@@ -19,6 +22,16 @@ class DialogService:
         """
         self.repository = DialogHistoryRepository(db_session)
         self.gemini_service = gemini_service
+        
+        # Инициализируем репозитории для ToolService
+        self.service_repository = ServiceRepository(db_session)
+        self.master_repository = MasterRepository(db_session)
+        
+        # Создаем экземпляр ToolService
+        self.tool_service = ToolService(
+            service_repository=self.service_repository,
+            master_repository=self.master_repository
+        )
 
     async def process_user_message(self, user_id: int, text: str) -> str:
         """
@@ -55,9 +68,10 @@ class DialogService:
             message_text=text
         )
         
-        # 3. Генерируем ответ через Gemini
+        # 3. Генерируем ответ через Gemini с передачей ToolService
         bot_response = await self.gemini_service.generate_response(
             user_message=text,
+            tool_service=self.tool_service,
             dialog_history=dialog_history
         )
         
