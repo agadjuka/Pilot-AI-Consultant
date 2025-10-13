@@ -89,7 +89,7 @@ class ToolService:
     def get_available_slots(self, service_name: str, master_name: str, date: str) -> str:
         """
         Получает свободные временные слоты для услуги у мастера на указанную дату.
-        Группирует слоты в человекочитаемые диапазоны времени.
+        Адаптивно форматирует результат в зависимости от количества слотов.
 
         Args:
             service_name: Название услуги
@@ -97,7 +97,7 @@ class ToolService:
             date: Дата в формате строки (например, "2025-10-15")
 
         Returns:
-            Отформатированная строка с диапазонами свободного времени
+            Отформатированная строка с диапазонами свободного времени или инструкция для уточнения
         """
         try:
             # Находим услугу по имени с нечетким поиском
@@ -121,14 +121,21 @@ class ToolService:
                 duration_minutes
             )
             
-            # Форматируем ответ для пользователя
-            if not free_slots:
+            # Адаптивная логика в зависимости от количества слотов
+            slots_count = len(free_slots)
+            threshold = 5
+            
+            if slots_count == 0:
                 return f"К сожалению, на {date} у мастера {master_name} нет свободных окон для услуги '{service_name}' (длительность {duration_minutes} мин)."
             
-            # Форматируем слоты в диапазоны
-            formatted_ranges = SlotFormatter.format_slots_to_ranges(free_slots)
+            elif slots_count > threshold:
+                # Слишком много слотов - возвращаем инструкцию для уточнения
+                return "Слишком много слотов. Спроси у пользователя, какая половина дня ему удобнее: утро, день или вечер."
             
-            return f"На {date} у мастера {master_name} есть свободные окна для услуги '{service_name}': {formatted_ranges}."
+            else:
+                # Количество слотов в пределах порога - форматируем список
+                formatted_ranges = SlotFormatter.format_slots_to_ranges(free_slots)
+                return f"На {date} у мастера {master_name} есть свободные окна для услуги '{service_name}': {formatted_ranges}."
             
         except Exception as e:
             return f"Ошибка при поиске свободных слотов: {str(e)}"
