@@ -1,6 +1,7 @@
 from typing import List, Dict
 from sqlalchemy.orm import Session
 import google.generativeai as genai
+from google.generativeai import protos
 from app.repositories.dialog_history_repository import DialogHistoryRepository
 from app.repositories.service_repository import ServiceRepository
 from app.repositories.master_repository import MasterRepository
@@ -85,7 +86,7 @@ class DialogService:
         chat = self.gemini_service.create_chat(full_history)
         
         # 5. Запускаем цикл обработки Function Calling
-        max_iterations = 3  # Защита от бесконечного цикла
+        max_iterations = 5  # Увеличиваем лимит для более сложных запросов
         iteration = 0
         bot_response_text = None
         current_message = text  # Первое сообщение - это сообщение пользователя
@@ -147,8 +148,8 @@ class DialogService:
                     iteration_log["response"] = f"Model вызвала функцию: {function_name}"
                     
                     # Формируем ответ функции для отправки обратно в модель
-                    function_response_part = genai.protos.Part(
-                        function_response=genai.protos.FunctionResponse(
+                    function_response_part = protos.Part(
+                        function_response=protos.FunctionResponse(
                             name=function_name,
                             response={"result": result}
                         )
@@ -172,6 +173,13 @@ class DialogService:
             # Если есть вызовы функций - подготавливаем их результаты для следующей итерации
             if has_function_call:
                 current_message = function_response_parts
+                # Если это последняя итерация и Gemini не вернул текст, 
+                # попробуем принудительно запросить итоговый ответ
+                if iteration == max_iterations - 1:
+                    # Добавляем явный запрос на формирование ответа
+                    current_message = function_response_parts + [
+                        protos.Part(text="Пожалуйста, сформируй итоговый ответ для пользователя на основе полученной информации о свободных слотах.")
+                    ]
                 continue
             
             # Если нет ни функции, ни текста - выходим с ошибкой
@@ -182,7 +190,23 @@ class DialogService:
         
         # Проверка на превышение лимита итераций
         if iteration >= max_iterations and not bot_response_text:
-            bot_response_text = "Извините, не удалось обработать ваш запрос. Попробуйте переформулировать вопрос."
+            # Если мы достигли лимита итераций, но функции выполнились успешно,
+            # попробуем сформировать ответ на основе собранной информации
+            if debug_iterations and any(iter_log.get("function_calls") for iter_log in debug_iterations):
+                # Собираем результаты всех выполненных функций
+                all_results = []
+                for iter_log in debug_iterations:
+                    for func_call in iter_log.get("function_calls", []):
+                        if "get_available_slots" in func_call.get("name", ""):
+                            all_results.append(func_call.get("result", ""))
+                
+                if all_results:
+                    # Формируем сводный ответ на основе результатов
+                    bot_response_text = self._generate_summary_response(all_results)
+                else:
+                    bot_response_text = "Извините, не удалось обработать ваш запрос. Попробуйте переформулировать вопрос."
+            else:
+                bot_response_text = "Извините, не удалось обработать ваш запрос. Попробуйте переформулировать вопрос."
         
         # Логируем весь цикл Function Calling
         gemini_debug_logger.log_function_calling_cycle(
@@ -254,6 +278,44 @@ class DialogService:
         
         else:
             return f"Ошибка: неизвестная функция '{function_name}'"
+    
+    def _generate_summary_response(self, results: List[str]) -> str:
+        """
+        Формирует сводный ответ на основе результатов выполнения функций.
+        
+        Args:
+            results: Список результатов выполнения функций get_available_slots
+            
+        Returns:
+            Отформатированный ответ для пользователя
+        """
+        available_slots = []
+        no_slots = []
+        
+        # Анализируем результаты
+        for result in results:
+            if "есть свободные окна" in result or "свободные окна" in result:
+                available_slots.append(result)
+            elif "нет свободных окон" in result:
+                no_slots.append(result)
+        
+        # Формируем ответ
+        if available_slots:
+            response = "📅 Вот доступные варианты записи:\n\n"
+            for slot_info in available_slots:
+                response += f"• {slot_info}\n\n"
+            
+            if no_slots:
+                response += "❌ К сожалению, у некоторых мастеров нет свободного времени.\n\n"
+            
+            response += "💡 Чтобы записаться, уточните пожалуйста:\n"
+            response += "• К какому мастеру хотите записаться?\n"
+            response += "• На какое время?\n"
+            response += "• Какую услугу планируете?"
+            
+            return response
+        else:
+            return "😔 К сожалению, на выбранную дату нет свободных окон у мастеров. Попробуйте выбрать другую дату или обратитесь к администратору салона."
 
 
 

@@ -4,6 +4,7 @@ from app.services.google_calendar_service import GoogleCalendarService
 from app.services.slot_formatter import SlotFormatter
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
+from difflib import SequenceMatcher
 
 
 class ToolService:
@@ -65,23 +66,22 @@ class ToolService:
         Returns:
             Отформатированная строка с именами мастеров или сообщение об ошибке
         """
-        # Сначала находим услугу по имени
+        # Сначала находим услугу по имени с нечетким поиском
         all_services = self.service_repository.get_all()
-        service = None
-
-        for s in all_services:
-            if s.name.lower() == service_name.lower():
-                service = s
-                break
+        service = self._find_service_by_fuzzy_match(service_name, all_services)
 
         if not service:
+            # Если не найдено, показываем похожие услуги
+            similar_services = self._find_similar_services(service_name, all_services)
+            if similar_services:
+                return f"Услуга с названием '{service_name}' не найдена. Возможно, вы имели в виду: {', '.join(similar_services)}?"
             return f"Услуга с названием '{service_name}' не найдена."
 
         # Теперь ищем мастеров для этой услуги
         masters = self.master_repository.get_masters_for_service(service.id)
 
         if not masters:
-            return f"К сожалению, на данный момент нет мастеров, выполняющих услугу '{service_name}'."
+            return f"К сожалению, на данный момент нет мастеров, выполняющих услугу '{service.name}'."
 
         master_names = [master.name for master in masters]
         return f"Эту услугу выполняют мастера: {', '.join(master_names)}."
@@ -100,16 +100,15 @@ class ToolService:
             Отформатированная строка с диапазонами свободного времени
         """
         try:
-            # Находим услугу по имени
+            # Находим услугу по имени с нечетким поиском
             all_services = self.service_repository.get_all()
-            service = None
-            
-            for s in all_services:
-                if s.name.lower() == service_name.lower():
-                    service = s
-                    break
+            service = self._find_service_by_fuzzy_match(service_name, all_services)
             
             if not service:
+                # Если не найдено, показываем похожие услуги
+                similar_services = self._find_similar_services(service_name, all_services)
+                if similar_services:
+                    return f"Услуга '{service_name}' не найдена в нашем прайс-листе. Возможно, вы имели в виду: {', '.join(similar_services)}?"
                 return f"Услуга '{service_name}' не найдена в нашем прайс-листе."
             
             # Получаем длительность услуги
@@ -148,16 +147,15 @@ class ToolService:
             Строка с подтверждением записи или сообщение об ошибке
         """
         try:
-            # Находим услугу в БД для получения длительности
+            # Находим услугу в БД для получения длительности с нечетким поиском
             all_services = self.service_repository.get_all()
-            service = None
-            
-            for s in all_services:
-                if s.name.lower() == service_name.lower():
-                    service = s
-                    break
+            service = self._find_service_by_fuzzy_match(service_name, all_services)
             
             if not service:
+                # Если не найдено, показываем похожие услуги
+                similar_services = self._find_similar_services(service_name, all_services)
+                if similar_services:
+                    return f"Услуга '{service_name}' не найдена в нашем прайс-листе. Возможно, вы имели в виду: {', '.join(similar_services)}?"
                 return f"Услуга '{service_name}' не найдена в нашем прайс-листе."
             
             # Получаем длительность услуги
@@ -206,4 +204,74 @@ class ToolService:
                 
         except Exception as e:
             return f"Ошибка при создании записи: {str(e)}"
+
+    def _find_service_by_fuzzy_match(self, service_name: str, all_services: list) -> object:
+        """
+        Находит услугу по нечеткому совпадению названия.
+        
+        Args:
+            service_name: Название услуги для поиска
+            all_services: Список всех услуг
+            
+        Returns:
+            Найденная услуга или None
+        """
+        service_name_lower = service_name.lower().strip()
+        
+        # Сначала пробуем точное совпадение
+        for service in all_services:
+            if service.name.lower() == service_name_lower:
+                return service
+        
+        # Затем пробуем нечеткое совпадение
+        best_match = None
+        best_ratio = 0.0
+        
+        for service in all_services:
+            # Проверяем совпадение по словам
+            service_words = service.name.lower().split()
+            search_words = service_name_lower.split()
+            
+            # Если хотя бы одно слово совпадает точно
+            for search_word in search_words:
+                for service_word in service_words:
+                    if search_word in service_word or service_word in search_word:
+                        return service
+            
+            # Проверяем общее сходство строк
+            ratio = SequenceMatcher(None, service_name_lower, service.name.lower()).ratio()
+            if ratio > best_ratio and ratio > 0.6:  # Порог схожести 60%
+                best_ratio = ratio
+                best_match = service
+        
+        return best_match
+
+    def _find_similar_services(self, service_name: str, all_services: list) -> list:
+        """
+        Находит похожие услуги для предложения альтернатив.
+        
+        Args:
+            service_name: Название услуги для поиска
+            all_services: Список всех услуг
+            
+        Returns:
+            Список названий похожих услуг
+        """
+        service_name_lower = service_name.lower().strip()
+        similar_services = []
+        
+        # Ищем услуги, содержащие ключевые слова
+        keywords = service_name_lower.split()
+        
+        for service in all_services:
+            service_lower = service.name.lower()
+            
+            # Если хотя бы одно ключевое слово есть в названии услуги
+            for keyword in keywords:
+                if keyword in service_lower and len(keyword) > 2:  # Игнорируем короткие слова
+                    similar_services.append(service.name)
+                    break
+        
+        # Убираем дубликаты и ограничиваем количество
+        return list(set(similar_services))[:3]
 
