@@ -111,11 +111,16 @@ class ToolService:
             
             # Получаем длительность услуги
             duration_minutes = service.duration_minutes
+
+            # Получаем мастеров, выполняющих услугу
+            masters = self.master_repository.get_masters_for_service(service.id)
+            master_names = [m.name for m in masters] if masters else []
             
-            # Получаем свободные интервалы из Google Calendar
+            # Получаем свободные интервалы из Google Calendar (учитывая занятость только этих мастеров)
             free_intervals = self.google_calendar_service.get_free_slots(
-                date, 
-                duration_minutes
+                date,
+                duration_minutes,
+                master_names=master_names
             )
             
             if not free_intervals:

@@ -307,7 +307,7 @@ class GoogleCalendarService:
         except HttpError as error:
             raise Exception(f"Ошибка при обновлении события: {error}")
     
-    def get_free_slots(self, date: str, duration_minutes: int) -> List[Dict[str, str]]:
+    def get_free_slots(self, date: str, duration_minutes: int, master_names: Optional[List[str]] = None) -> List[Dict[str, str]]:
         """
         Получает свободные временные интервалы на указанную дату.
         Ищет непрерывные интервалы, достаточные для выполнения услуги заданной длительности.
@@ -339,11 +339,24 @@ class GoogleCalendarService:
         
         # Получаем все события за этот день (для всех мастеров)
         events = self.get_events(time_min=day_start, time_max=day_end)
+        print(f"\n🔎 get_free_slots: дата={date}, длительность={duration_minutes} мин")
+        print(f"   Всего событий за день: {len(events)}")
+        if master_names:
+            print(f"   Фильтр по мастерам: {', '.join(master_names)} (всего {len(master_names)})")
         
         # Создаем единый список всех занятых блоков
         occupied_blocks = []
         
         for event in events:
+            summary = (event.get('summary') or '').strip()
+            # Учитываем только реальные записи клиентов
+            if not summary.startswith('Запись:'):
+                continue
+            # Если задан список мастеров, фильтруем по их именам
+            if master_names:
+                is_for_tracked_master = any(name in summary for name in master_names)
+                if not is_for_tracked_master:
+                    continue
             start_str = event.get('start', {}).get('dateTime')
             end_str = event.get('end', {}).get('dateTime')
             
@@ -363,6 +376,9 @@ class GoogleCalendarService:
         
         # Сортируем занятые блоки по времени начала
         occupied_blocks.sort(key=lambda x: x['start'])
+        print(f"   Занятых блоков (после фильтрации по 'Запись:'{', по мастерам' if master_names else ''}): {len(occupied_blocks)}")
+        for i, b in enumerate(occupied_blocks[:10]):
+            print(f"   ⛔ {i+1}. {b['start'].strftime('%H:%M')} - {b['end'].strftime('%H:%M')}")
         
         # Определяем границы рабочего дня
         work_start = target_date.replace(
@@ -380,32 +396,57 @@ class GoogleCalendarService:
             tzinfo=moscow_tz
         )
         
-        # Находим свободные интервалы
-        free_intervals = []
-        current_time = work_start
+        # Находим свободные интервалы с учетом количества мастеров (хотя бы один свободен)
+        capacity = len(master_names) if master_names else 1
+        print(f"   Емкость (кол-во мастеров под услугу): {capacity}")
+        # Строим события изменения занятости
+        timeline: List[tuple[datetime, int]] = []
+        for b in occupied_blocks:
+            # Ограничиваем рамками рабочего дня
+            s = max(b['start'], work_start)
+            e = min(b['end'], work_end)
+            if s < e:
+                timeline.append((s, +1))
+                timeline.append((e, -1))
+        # Добавляем явные границы, чтобы закрыть интервалы
+        timeline.append((work_start, 0))
+        timeline.append((work_end, 0))
+        timeline.sort(key=lambda x: (x[0], -x[1]))
+
+        # Проходим по таймлайну, собирая интервалы, где занятость < capacity
+        free_segments: List[tuple[datetime, datetime]] = []
+        busy_count = 0
+        segment_start: Optional[datetime] = None
+        prev_time: Optional[datetime] = None
+        for t, delta in timeline:
+            if prev_time is not None and prev_time < t:
+                # Интервал [prev_time, t)
+                if busy_count < capacity:
+                    # Это свободный сегмент
+                    if segment_start is None:
+                        segment_start = prev_time
+                else:
+                    # Был занятый период, закрываем свободный сегмент если открыт
+                    if segment_start is not None and segment_start < prev_time:
+                        free_segments.append((segment_start, prev_time))
+                        segment_start = None
+            # Обновляем занятость на текущей точке
+            busy_count += delta
+            prev_time = t
+        # Закрываем последний свободный сегмент
+        if segment_start is not None and segment_start < work_end:
+            free_segments.append((segment_start, work_end))
+
+        # Фильтруем по длительности
+        free_intervals: List[Dict[str, str]] = []
+        for s, e in free_segments:
+            minutes = int((e - s).total_seconds() // 60)
+            if minutes >= duration_minutes:
+                free_intervals.append({'start': s.strftime('%H:%M'), 'end': e.strftime('%H:%M')})
         
-        for block in occupied_blocks:
-            # Если текущее время до начала занятого блока
-            if current_time < block['start']:
-                # Проверяем, достаточно ли времени для услуги
-                available_duration = (block['start'] - current_time).total_seconds() / 60
-                if available_duration >= duration_minutes:
-                    free_intervals.append({
-                        'start': current_time.strftime('%H:%M'),
-                        'end': block['start'].strftime('%H:%M')
-                    })
-            
-            # Переходим к концу занятого блока
-            current_time = max(current_time, block['end'])
-        
-        # Проверяем интервал после последнего занятого блока
-        if current_time < work_end:
-            available_duration = (work_end - current_time).total_seconds() / 60
-            if available_duration >= duration_minutes:
-                free_intervals.append({
-                    'start': current_time.strftime('%H:%M'),
-                    'end': work_end.strftime('%H:%M')
-                })
+        print(f"   ✅ Найдено свободных интервалов: {len(free_intervals)}")
+        if free_intervals:
+            print("   Первые интервалы: " + ", ".join([f"{i['start']}-{i['end']}" for i in free_intervals[:10]]))
         
         return free_intervals
 
