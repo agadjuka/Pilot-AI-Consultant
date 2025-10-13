@@ -8,6 +8,55 @@ from app.services.telegram_service import telegram_service
 from app.api.telegram import process_telegram_update
 from app.utils.debug_logger import gemini_debug_logger
 
+# === ВРЕМЕННЫЙ ТЕСТОВЫЙ БЛОК ДЛЯ ПРОВЕРКИ ToolService ===
+from app.core.database import get_session_local
+from app.repositories.service_repository import ServiceRepository
+from app.repositories.master_repository import MasterRepository
+from app.services.tool_service import ToolService
+
+print("\n" + "="*60)
+print("   🔧 ТЕСТИРОВАНИЕ ToolService")
+print("="*60)
+
+# Создаем сессию БД
+SessionLocal = get_session_local()
+db = SessionLocal()
+
+try:
+    # Инициализируем репозитории
+    service_repo = ServiceRepository(db)
+    master_repo = MasterRepository(db)
+    
+    # Создаем экземпляр ToolService
+    tool_service = ToolService(service_repo, master_repo)
+    
+    # Тест 1: Получение всех услуг
+    print("\n📋 Тест 1: Получение всех услуг")
+    print("-" * 60)
+    services_result = tool_service.get_all_services()
+    print(services_result)
+    
+    # Тест 2: Поиск мастеров для услуги (пример с "Женская стрижка")
+    print("\n👥 Тест 2: Поиск мастеров для услуги 'Женская стрижка'")
+    print("-" * 60)
+    masters_result = tool_service.get_masters_for_service("Женская стрижка")
+    print(masters_result)
+    
+    # Тест 3: Получение свободных слотов (заглушка)
+    print("\n⏰ Тест 3: Получение свободных слотов (заглушка)")
+    print("-" * 60)
+    slots_result = tool_service.get_available_slots("Анна", "2025-10-15")
+    print(slots_result)
+    
+    print("\n" + "="*60)
+    print("   ✅ Все тесты ToolService завершены")
+    print("="*60 + "\n")
+    
+finally:
+    db.close()
+
+# === КОНЕЦ ТЕСТОВОГО БЛОКА ===
+
 
 async def run_polling():
     """
