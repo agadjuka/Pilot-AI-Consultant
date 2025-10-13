@@ -1,32 +1,81 @@
 import asyncio
-from typing import List, Dict
-from vertexai.generative_models import GenerativeModel, Content, Part
-import vertexai
+import os
+import json
+from typing import List, Dict, Optional
+import google.generativeai as genai
+from google.oauth2 import service_account
 from app.core.config import settings
 
 
 class GeminiService:
-    """Сервис для взаимодействия с моделью Gemini через Vertex AI."""
+    """Сервис для взаимодействия с моделью Gemini через Google AI SDK."""
     
     def __init__(self):
         """
-        Инициализирует клиент Vertex AI и модель Gemini.
+        Инициализирует клиент Google AI и модель Gemini.
         Использует учетные данные из переменной окружения GOOGLE_APPLICATION_CREDENTIALS.
         """
-        # Инициализируем Vertex AI
-        vertexai.init(
-            project=settings.GCP_PROJECT_ID,
-            location=settings.GCP_REGION
-        )
+        # Загружаем credentials
+        credentials = self._load_credentials()
         
-        # Получаем модель Gemini
-        self.model = GenerativeModel("gemini-1.5-flash-001")
+        # Конфигурируем Google AI SDK
+        genai.configure(credentials=credentials)
+        
+        # Получаем модель Gemini 2.5 Flash
+        self._model = genai.GenerativeModel("gemini-2.5-flash")
         
         # Системная инструкция для персоны "Ева"
         self.system_instruction = """Ты — Ева, дружелюбный и профессиональный AI-ассистент салона красоты.
 Твоя задача — помогать клиентам с записью на услуги, отвечать на вопросы о мастерах и услугах.
 Общайся вежливо, по-дружески, но профессионально. Используй эмодзи там, где это уместно.
 Если клиент хочет записаться, уточни желаемую услугу, мастера (если есть предпочтения) и удобное время."""
+
+    def _load_credentials(self) -> service_account.Credentials:
+        """
+        Загружает credentials для Google Cloud.
+        Поддерживает 3 варианта загрузки (как в рабочем проекте):
+        1. GOOGLE_APPLICATION_CREDENTIALS_JSON - JSON напрямую в переменной
+        2. GOOGLE_APPLICATION_CREDENTIALS - путь к файлу или JSON строка
+        3. Application Default Credentials (ADC)
+        
+        Returns:
+            Объект Credentials для аутентификации
+        """
+        # Вариант 1: JSON напрямую в переменной окружения (для Cloud Run)
+        credentials_json = os.getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON")
+        if credentials_json:
+            credentials_info = json.loads(credentials_json)
+            return service_account.Credentials.from_service_account_info(
+                credentials_info,
+                scopes=["https://www.googleapis.com/auth/generative-language"]
+            )
+        
+        # Вариант 2: Путь к файлу credentials или JSON строка
+        credentials_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+        if credentials_path:
+            # Проверяем, это путь к файлу или JSON строка
+            if os.path.isfile(credentials_path):
+                return service_account.Credentials.from_service_account_file(
+                    credentials_path,
+                    scopes=["https://www.googleapis.com/auth/generative-language"]
+                )
+            else:
+                # Пробуем распарсить как JSON
+                try:
+                    credentials_info = json.loads(credentials_path)
+                    return service_account.Credentials.from_service_account_info(
+                        credentials_info,
+                        scopes=["https://www.googleapis.com/auth/generative-language"]
+                    )
+                except json.JSONDecodeError:
+                    raise ValueError(f"GOOGLE_APPLICATION_CREDENTIALS не является валидным путем или JSON: {credentials_path}")
+        
+        # Вариант 3: Application Default Credentials (для Cloud Run)
+        import google.auth
+        credentials, _ = google.auth.default(
+            scopes=["https://www.googleapis.com/auth/generative-language"]
+        )
+        return credentials
 
     async def generate_response(
         self,
@@ -43,68 +92,54 @@ class GeminiService:
         Returns:
             Текстовый ответ модели
         """
-        # Формируем историю в формате, понятном Gemini
-        contents = []
+        # Формируем историю для чата
+        history = []
         
         # Добавляем системную инструкцию как первое сообщение от модели
-        contents.append(
-            Content(
-                role="model",
-                parts=[Part.from_text(self.system_instruction)]
-            )
-        )
+        history.append({
+            "role": "model",
+            "parts": [self.system_instruction]
+        })
         
         # Добавляем историю диалога, если она есть
         if dialog_history:
             for message in dialog_history:
                 role = "user" if message["role"] == "user" else "model"
-                contents.append(
-                    Content(
-                        role=role,
-                        parts=[Part.from_text(message["text"])]
-                    )
-                )
-        
-        # Добавляем новое сообщение пользователя
-        contents.append(
-            Content(
-                role="user",
-                parts=[Part.from_text(user_message)]
-            )
-        )
+                history.append({
+                    "role": role,
+                    "parts": [message["text"]]
+                })
         
         # Используем asyncio для выполнения синхронного вызова в асинхронном контексте
         loop = asyncio.get_event_loop()
         response = await loop.run_in_executor(
             None,
             self._generate_content_sync,
-            contents
+            history,
+            user_message
         )
         
         return response
 
-    def _generate_content_sync(self, contents: List[Content]) -> str:
+    def _generate_content_sync(self, history: List[Dict], user_message: str) -> str:
         """
         Синхронная обертка для вызова API Gemini.
         
         Args:
-            contents: Список Content объектов с историей диалога
+            history: История диалога
+            user_message: Новое сообщение пользователя
             
         Returns:
             Текстовый ответ модели
         """
-        # Создаем чат с историей
-        chat = self.model.start_chat(history=contents[:-1])
+        # Создаем чат с историей (без последнего сообщения пользователя)
+        chat = self._model.start_chat(history=history)
         
-        # Отправляем последнее сообщение
-        response = chat.send_message(contents[-1].parts[0].text)
+        # Отправляем сообщение пользователя
+        response = chat.send_message(user_message)
         
         return response.text
 
 
 # Создаем единственный экземпляр сервиса
 gemini_service = GeminiService()
-
-
-
-

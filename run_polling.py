@@ -1,3 +1,8 @@
+from dotenv import load_dotenv
+
+# Загружаем переменные окружения из .env файла
+load_dotenv()
+
 import asyncio
 from app.services.telegram_service import telegram_service
 from app.api.telegram import process_telegram_update
