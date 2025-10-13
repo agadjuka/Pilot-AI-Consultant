@@ -88,6 +88,7 @@ class ToolService:
     def get_available_slots(self, service_name: str, date: str) -> str:
         """
         Получает свободные временные интервалы для услуги на указанную дату.
+        Если на запрошенную дату мест нет, ищет ближайшие доступные слоты в течение 7 дней.
         Возвращает сырые данные для анализа LLM.
 
         Args:
@@ -116,19 +117,39 @@ class ToolService:
             masters = self.master_repository.get_masters_for_service(service.id)
             master_names = [m.name for m in masters] if masters else []
             
-            # Получаем свободные интервалы из Google Calendar (учитывая занятость только этих мастеров)
+            # Получаем свободные интервалы из Google Calendar для запрошенной даты
             free_intervals = self.google_calendar_service.get_free_slots(
                 date,
                 duration_minutes,
                 master_names=master_names
             )
             
-            if not free_intervals:
-                return f"На {date} нет свободных окон для услуги '{service_name}' (длительность {duration_minutes} мин)."
+            # Если на запрошенную дату есть свободные слоты, возвращаем их
+            if free_intervals:
+                interval_strings = [f"{interval['start']}-{interval['end']}" for interval in free_intervals]
+                return ", ".join(interval_strings)
             
-            # Преобразуем интервалы в компактную строку
-            interval_strings = [f"{interval['start']}-{interval['end']}" for interval in free_intervals]
-            return ", ".join(interval_strings)
+            # Если на запрошенную дату мест нет, ищем ближайшие доступные слоты
+            original_date = datetime.strptime(date, "%Y-%m-%d")
+            
+            for i in range(1, 8):  # Проверяем следующие 7 дней
+                next_date = original_date + timedelta(days=i)
+                next_date_str = next_date.strftime("%Y-%m-%d")
+                
+                # Получаем свободные интервалы для следующей даты
+                next_free_intervals = self.google_calendar_service.get_free_slots(
+                    next_date_str,
+                    duration_minutes,
+                    master_names=master_names
+                )
+                
+                # Если нашли свободные слоты, возвращаем информацию о ближайшем окне
+                if next_free_intervals:
+                    first_interval = next_free_intervals[0]
+                    return f"На {date} мест нет. Ближайшее окно: {next_date_str}, {first_interval['start']}-{first_interval['end']}"
+            
+            # Если за 7 дней ничего не найдено
+            return f"На {date} и ближайшие 7 дней нет свободных окон для услуги '{service_name}' (длительность {duration_minutes} мин)."
             
         except Exception as e:
             return f"Ошибка при поиске свободных слотов: {str(e)}"

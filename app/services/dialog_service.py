@@ -79,13 +79,18 @@ class DialogService:
             message_text=text
         )
         
-        # 3. Формируем полную историю с системной инструкцией
-        full_history = self.gemini_service.build_history_with_system_instruction(dialog_history)
+        # 3. Определяем контекст диалога для приветствия
+        dialog_context = ""
+        if not dialog_history:  # Если история пустая - это первое сообщение
+            dialog_context = "Это первое сообщение клиента. Обязательно поздоровайся в ответ."
         
-        # 4. Создаем чат один раз для всего цикла
+        # 4. Формируем полную историю с системной инструкцией
+        full_history = self.gemini_service.build_history_with_system_instruction(dialog_history, dialog_context)
+        
+        # 5. Создаем чат один раз для всего цикла
         chat = self.gemini_service.create_chat(full_history)
         
-        # 5. Запускаем цикл обработки Function Calling
+        # 6. Запускаем цикл обработки Function Calling
         max_iterations = 5  # Увеличиваем лимит для более сложных запросов
         iteration = 0
         bot_response_text = None
@@ -215,14 +220,14 @@ class DialogService:
             iterations=debug_iterations
         )
         
-        # 5. Сохраняем финальный ответ бота в БД
+        # 7. Сохраняем финальный ответ бота в БД
         self.repository.add_message(
             user_id=user_id,
             role="model",
             message_text=bot_response_text
         )
         
-        # 6. Возвращаем сгенерированный текст
+        # 8. Возвращаем сгенерированный текст
         return bot_response_text
     
     def clear_history(self, user_id: int) -> int:
