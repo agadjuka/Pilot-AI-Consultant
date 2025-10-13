@@ -6,6 +6,7 @@ from app.repositories.service_repository import ServiceRepository
 from app.repositories.master_repository import MasterRepository
 from app.services.gemini_service import gemini_service
 from app.services.tool_service import ToolService
+from app.services.google_calendar_service import GoogleCalendarService
 from app.utils.debug_logger import gemini_debug_logger
 
 
@@ -29,10 +30,14 @@ class DialogService:
         self.service_repository = ServiceRepository(db_session)
         self.master_repository = MasterRepository(db_session)
         
+        # Инициализируем Google Calendar Service
+        self.google_calendar_service = GoogleCalendarService()
+        
         # Создаем экземпляр ToolService
         self.tool_service = ToolService(
             service_repository=self.service_repository,
-            master_repository=self.master_repository
+            master_repository=self.master_repository,
+            google_calendar_service=self.google_calendar_service
         )
 
     async def process_user_message(self, user_id: int, text: str) -> str:
@@ -195,6 +200,18 @@ class DialogService:
         
         # 6. Возвращаем сгенерированный текст
         return bot_response_text
+    
+    def clear_history(self, user_id: int) -> int:
+        """
+        Очищает всю историю диалога для пользователя.
+        
+        Args:
+            user_id: ID пользователя Telegram
+            
+        Returns:
+            Количество удаленных записей
+        """
+        return self.repository.clear_user_history(user_id)
     
     def _execute_function(self, function_name: str, function_args: Dict) -> str:
         """

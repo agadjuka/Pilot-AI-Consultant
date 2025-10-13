@@ -4,6 +4,7 @@
 """
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
+from zoneinfo import ZoneInfo
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
@@ -68,17 +69,26 @@ class GoogleCalendarService:
         Raises:
             HttpError: Ошибка при работе с API
         """
+        # Формируем время в формате ISO с московским offset +03:00
+        # Это гарантирует, что Google Calendar сохранит именно это время
+        if start_datetime.tzinfo is not None:
+            # Если есть timezone, форматируем с offset
+            start_str = start_datetime.strftime('%Y-%m-%dT%H:%M:%S+03:00')
+            end_str = end_datetime.strftime('%Y-%m-%dT%H:%M:%S+03:00')
+        else:
+            # Если нет timezone, добавляем московский offset
+            start_str = start_datetime.strftime('%Y-%m-%dT%H:%M:%S') + '+03:00'
+            end_str = end_datetime.strftime('%Y-%m-%dT%H:%M:%S') + '+03:00'
+        
         event = {
             'summary': summary,
             'description': description,
             'location': location,
             'start': {
-                'dateTime': start_datetime.isoformat(),
-                'timeZone': 'Europe/Moscow',
+                'dateTime': start_str,
             },
             'end': {
-                'dateTime': end_datetime.isoformat(),
-                'timeZone': 'Europe/Moscow',
+                'dateTime': end_str,
             },
         }
         
@@ -120,9 +130,19 @@ class GoogleCalendarService:
             }
             
             if time_min:
-                params['timeMin'] = time_min.isoformat() + 'Z'
+                # Если datetime имеет timezone, используем isoformat() как есть
+                # Иначе считаем его UTC и добавляем 'Z'
+                if time_min.tzinfo is not None:
+                    params['timeMin'] = time_min.isoformat()
+                else:
+                    params['timeMin'] = time_min.isoformat() + 'Z'
+            
             if time_max:
-                params['timeMax'] = time_max.isoformat() + 'Z'
+                # Аналогично для timeMax
+                if time_max.tzinfo is not None:
+                    params['timeMax'] = time_max.isoformat()
+                else:
+                    params['timeMax'] = time_max.isoformat() + 'Z'
             
             events_result = self.service.events().list(**params).execute()
             events = events_result.get('items', [])
@@ -236,4 +256,123 @@ class GoogleCalendarService:
             return updated_event
         except HttpError as error:
             raise Exception(f"Ошибка при обновлении события: {error}")
+    
+    def get_free_slots(self, master_name: str, date: str) -> List[str]:
+        """
+        Получает свободные временные слоты для мастера на указанную дату.
+        
+        Args:
+            master_name: Имя мастера
+            date: Дата в формате "YYYY-MM-DD"
+        
+        Returns:
+            List[str]: Список свободных слотов в формате "HH:MM"
+        
+        Raises:
+            Exception: Ошибка при работе с API или неверный формат даты
+        """
+        try:
+            # Парсим дату (просто как есть, без timezone для начала дня)
+            target_date = datetime.strptime(date, "%Y-%m-%d")
+        except ValueError:
+            raise Exception(f"Неверный формат даты: {date}. Ожидается формат YYYY-MM-DD")
+        
+        # Определяем рабочее время салона (10:00 - 20:00)
+        WORK_START_HOUR = 10
+        WORK_END_HOUR = 20
+        SLOT_DURATION_MINUTES = 30  # Шаг слотов - 30 минут
+        
+        # Формируем временные рамки для поиска
+        # Добавляем московский timezone для корректного запроса к API
+        moscow_tz = ZoneInfo('Europe/Moscow')
+        day_start = target_date.replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=moscow_tz)
+        day_end = target_date.replace(hour=23, minute=59, second=59, microsecond=999999, tzinfo=moscow_tz)
+        
+        # Получаем все события за этот день
+        events = self.get_events(time_min=day_start, time_max=day_end)
+        
+        # Фильтруем события для конкретного мастера
+        master_events = []
+        master_prefix = f"Запись: {master_name}"
+        
+        print(f"\n🔍 Поиск событий для мастера '{master_name}' на {date}")
+        print(f"   Всего событий в календаре за этот день: {len(events)}")
+        
+        for event in events:
+            summary = event.get('summary', '')
+            if summary.startswith(master_prefix):
+                # Извлекаем время начала и окончания события
+                start_str = event.get('start', {}).get('dateTime')
+                end_str = event.get('end', {}).get('dateTime')
+                
+                if start_str and end_str:
+                    print(f"   📅 Исходная строка из API: {start_str}")
+                    
+                    # Парсим дату и время без timezone - просто берём как строку
+                    # Формат: "2025-10-14T16:00:00+03:00"
+                    # Нам нужна только дата и время без timezone
+                    start_time = datetime.fromisoformat(start_str[:19])  # Берём только "2025-10-14T16:00:00"
+                    end_time = datetime.fromisoformat(end_str[:19])
+                    
+                    # Добавляем московский timezone для корректного сравнения
+                    moscow_tz = ZoneInfo('Europe/Moscow')
+                    start_time = start_time.replace(tzinfo=moscow_tz)
+                    end_time = end_time.replace(tzinfo=moscow_tz)
+                    
+                    master_events.append({
+                        'start': start_time,
+                        'end': end_time
+                    })
+                    print(f"   ✓ Найдена запись: {start_time.strftime('%H:%M')} - {end_time.strftime('%H:%M')}")
+        
+        print(f"   Записей мастера {master_name}: {len(master_events)}")
+        
+        # Вычисляем свободные слоты
+        free_slots = []
+        
+        # Начинаем с начала рабочего дня (добавляем timezone для сравнения)
+        moscow_tz = ZoneInfo('Europe/Moscow')
+        current_slot = target_date.replace(
+            hour=WORK_START_HOUR, 
+            minute=0, 
+            second=0, 
+            microsecond=0,
+            tzinfo=moscow_tz
+        )
+        work_end = target_date.replace(
+            hour=WORK_END_HOUR, 
+            minute=0, 
+            second=0, 
+            microsecond=0,
+            tzinfo=moscow_tz
+        )
+        
+        print(f"\n⏰ Вычисление свободных слотов:")
+        print(f"   Рабочее время: {WORK_START_HOUR}:00 - {WORK_END_HOUR}:00")
+        print(f"   Шаг слотов: {SLOT_DURATION_MINUTES} минут")
+        
+        # Проходим по всем слотам рабочего дня
+        while current_slot < work_end:
+            slot_end = current_slot + timedelta(minutes=SLOT_DURATION_MINUTES)
+            
+            # Проверяем, не пересекается ли слот с существующими записями
+            is_free = True
+            for event in master_events:
+                # Слот занят, если он пересекается с событием
+                if (current_slot < event['end'] and slot_end > event['start']):
+                    is_free = False
+                    break
+            
+            # Если слот свободен, добавляем его в список
+            if is_free:
+                free_slots.append(current_slot.strftime("%H:%M"))
+            
+            # Переходим к следующему слоту
+            current_slot = slot_end
+        
+        print(f"   ✅ Найдено свободных слотов: {len(free_slots)}")
+        if free_slots:
+            print(f"   Первые слоты: {', '.join(free_slots[:5])}")
+        
+        return free_slots
 

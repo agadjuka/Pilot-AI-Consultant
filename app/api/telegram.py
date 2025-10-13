@@ -26,11 +26,23 @@ async def process_telegram_update(update: Update):
             # Создаем экземпляр DialogService с сессией БД
             dialog_service = DialogService(db)
             
-            # Обрабатываем сообщение пользователя и получаем ответ от AI
-            bot_response = await dialog_service.process_user_message(user_id, text)
-            
-            # Отправляем ответ пользователю
-            await telegram_service.send_message(chat_id, bot_response)
+            # Проверяем, является ли сообщение командой /clear
+            if text.strip().lower() == "/clear":
+                # Очищаем историю диалога пользователя
+                deleted_count = dialog_service.clear_history(user_id)
+                
+                # Отправляем подтверждение
+                confirmation_message = (
+                    "✨ История диалога успешно очищена!\n\n"
+                    "Теперь вы можете начать новый разговор с чистого листа."
+                )
+                await telegram_service.send_message(chat_id, confirmation_message)
+            else:
+                # Обрабатываем обычное сообщение пользователя и получаем ответ от AI
+                bot_response = await dialog_service.process_user_message(user_id, text)
+                
+                # Отправляем ответ пользователю
+                await telegram_service.send_message(chat_id, bot_response)
         except Exception as e:
             # В случае ошибки отправляем пользователю дружелюбное сообщение
             error_message = "Извините, произошла ошибка при обработке вашего сообщения. Пожалуйста, попробуйте еще раз."

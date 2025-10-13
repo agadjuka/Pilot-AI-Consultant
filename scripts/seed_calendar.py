@@ -4,6 +4,7 @@
 """
 import random
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 import sys
 import os
 from pathlib import Path
@@ -32,14 +33,15 @@ GoogleCalendarService = google_calendar_module.GoogleCalendarService
 def generate_random_time_in_range(start_date: datetime, end_date: datetime) -> datetime:
     """
     Генерирует случайное время в заданном диапазоне.
-    Время выбирается в рабочие часы (с 9:00 до 19:00).
+    Время выбирается в рабочие часы (с 10:00 до 19:00).
+    Время создаётся с московским timezone.
     
     Args:
         start_date: Начало диапазона
         end_date: Конец диапазона
     
     Returns:
-        datetime: Случайное время в диапазоне
+        datetime: Случайное время в диапазоне с московским timezone
     """
     # Вычисляем количество дней в диапазоне
     days_diff = (end_date - start_date).days
@@ -48,15 +50,18 @@ def generate_random_time_in_range(start_date: datetime, end_date: datetime) -> d
     random_day_offset = random.randint(0, days_diff)
     selected_date = start_date + timedelta(days=random_day_offset)
     
-    # Выбираем случайное время в рабочем диапазоне (9:00 - 19:00)
-    random_hour = random.randint(9, 18)
+    # Выбираем случайное время в рабочем диапазоне (10:00 - 19:00)
+    random_hour = random.randint(10, 18)
     random_minute = random.choice([0, 15, 30, 45])  # Кратно 15 минутам
     
+    # Создаём datetime с московским timezone
+    moscow_tz = ZoneInfo('Europe/Moscow')
     return selected_date.replace(
         hour=random_hour,
         minute=random_minute,
         second=0,
-        microsecond=0
+        microsecond=0,
+        tzinfo=moscow_tz
     )
 
 

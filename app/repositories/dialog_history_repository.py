@@ -55,6 +55,24 @@ class DialogHistoryRepository(BaseRepository[DialogHistory]):
         self.db.refresh(message)
         return message
 
+    def clear_user_history(self, user_id: int) -> int:
+        """
+        Удаляет всю историю диалога для указанного пользователя.
+        
+        Args:
+            user_id: ID пользователя Telegram
+            
+        Returns:
+            Количество удаленных записей
+        """
+        deleted_count = (
+            self.db.query(self.model)
+            .filter(self.model.user_id == user_id)
+            .delete()
+        )
+        self.db.commit()
+        return deleted_count
+
 
 
 

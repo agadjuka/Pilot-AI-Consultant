@@ -1,5 +1,6 @@
 from app.repositories.service_repository import ServiceRepository
 from app.repositories.master_repository import MasterRepository
+from app.services.google_calendar_service import GoogleCalendarService
 
 
 class ToolService:
@@ -11,17 +12,20 @@ class ToolService:
     def __init__(
         self,
         service_repository: ServiceRepository,
-        master_repository: MasterRepository
+        master_repository: MasterRepository,
+        google_calendar_service: GoogleCalendarService
     ):
         """
-        Инициализирует ToolService с необходимыми репозиториями.
+        Инициализирует ToolService с необходимыми репозиториями и сервисами.
 
         Args:
             service_repository: Репозиторий для работы с услугами
             master_repository: Репозиторий для работы с мастерами
+            google_calendar_service: Сервис для работы с Google Calendar
         """
         self.service_repository = service_repository
         self.master_repository = master_repository
+        self.google_calendar_service = google_calendar_service
 
     def get_all_services(self) -> str:
         """
@@ -82,8 +86,6 @@ class ToolService:
     def get_available_slots(self, master_name: str, date: str) -> str:
         """
         Получает свободные временные слоты для мастера на указанную дату.
-        
-        ВНИМАНИЕ: Это заглушка. Реальная интеграция с календарем будет реализована позже.
 
         Args:
             master_name: Имя мастера
@@ -92,6 +94,17 @@ class ToolService:
         Returns:
             Отформатированная строка со списком свободных слотов
         """
-        # Заглушка: возвращаем статичные слоты
-        return f"Свободные слоты для мастера {master_name} на {date}: 10:00, 12:00, 15:00."
+        try:
+            # Получаем свободные слоты из Google Calendar
+            free_slots = self.google_calendar_service.get_free_slots(master_name, date)
+            
+            # Форматируем ответ для пользователя
+            if not free_slots:
+                return f"К сожалению, на {date} у мастера {master_name} нет свободных окон."
+            
+            slots_str = ", ".join(free_slots)
+            return f"Свободные слоты для мастера {master_name} на {date}: {slots_str}."
+            
+        except Exception as e:
+            return f"Ошибка при поиске свободных слотов: {str(e)}"
 
