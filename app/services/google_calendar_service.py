@@ -47,6 +47,56 @@ class GoogleCalendarService:
     
     def create_event(
         self,
+        master_name: str,
+        service_name: str,
+        start_time_iso: str,
+        end_time_iso: str
+    ) -> bool:
+        """
+        Создание записи в календаре для мастера и услуги.
+        
+        Args:
+            master_name: Имя мастера
+            service_name: Название услуги
+            start_time_iso: Время начала в формате ISO 8601 (например, '2025-10-27T10:00:00')
+            end_time_iso: Время окончания в формате ISO 8601 (например, '2025-10-27T11:00:00')
+        
+        Returns:
+            bool: True в случае успешного создания записи
+        
+        Raises:
+            Exception: Ошибка при создании события
+        """
+        try:
+            # Формируем название события
+            summary = f"Запись: {master_name} - {service_name}"
+            
+            # Создаем объект события для Google Calendar API
+            event = {
+                'summary': summary,
+                'start': {
+                    'dateTime': start_time_iso,
+                    'timeZone': 'Europe/Moscow'
+                },
+                'end': {
+                    'dateTime': end_time_iso,
+                    'timeZone': 'Europe/Moscow'
+                }
+            }
+            
+            # Вызываем API для создания события
+            created_event = self.service.events().insert(
+                calendarId=self.calendar_id,
+                body=event
+            ).execute()
+            
+            return True
+            
+        except HttpError as error:
+            raise Exception(f"Ошибка при создании записи: {error}")
+    
+    def create_event_legacy(
+        self,
         summary: str,
         start_datetime: datetime,
         end_datetime: datetime,
@@ -54,7 +104,7 @@ class GoogleCalendarService:
         location: Optional[str] = None
     ) -> Dict[str, Any]:
         """
-        Создание нового события в календаре.
+        Создание нового события в календаре (legacy метод).
         
         Args:
             summary: Название события

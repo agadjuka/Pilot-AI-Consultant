@@ -245,8 +245,16 @@ class DialogService:
             date = function_args.get("date", "")
             return method(service_name, master_name, date)
         
+        elif function_name == "create_appointment":
+            master_name = function_args.get("master_name", "")
+            service_name = function_args.get("service_name", "")
+            date = function_args.get("date", "")
+            time = function_args.get("time", "")
+            return method(master_name, service_name, date, time)
+        
         else:
             return f"Ошибка: неизвестная функция '{function_name}'"
+
 
 
 

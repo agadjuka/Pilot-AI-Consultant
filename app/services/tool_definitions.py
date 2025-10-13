@@ -86,12 +86,61 @@ get_available_slots_declaration = FunctionDeclaration(
 )
 
 
+# Определение инструмента для создания записи
+create_appointment_declaration = FunctionDeclaration(
+    name="create_appointment",
+    description=(
+        "Создает запись в календаре для мастера и услуги. "
+        "Используй эту функцию, когда пользователь подтвердил время и готов записаться на услугу. "
+        "Функция автоматически вычисляет время окончания на основе длительности услуги и создает событие в календаре."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "master_name": {
+                "type": "string",
+                "description": (
+                    "Имя мастера, к которому записывается клиент. "
+                    "Например: 'Анна', 'Мария', 'Елена'. "
+                    "Должно точно соответствовать имени мастера из базы данных."
+                )
+            },
+            "service_name": {
+                "type": "string",
+                "description": (
+                    "Название услуги, на которую записывается клиент. "
+                    "Например: 'Женская стрижка', 'Маникюр', 'Окрашивание волос'. "
+                    "Должно точно соответствовать названию услуги из прайс-листа."
+                )
+            },
+            "date": {
+                "type": "string",
+                "description": (
+                    "Дата записи в формате YYYY-MM-DD (например, '2025-10-15'). "
+                    "Если клиент говорит 'на завтра' или 'на понедельник', "
+                    "нужно преобразовать это в конкретную дату."
+                )
+            },
+            "time": {
+                "type": "string",
+                "description": (
+                    "Время записи в формате HH:MM (например, '14:30', '10:00'). "
+                    "Время должно быть в 24-часовом формате."
+                )
+            }
+        },
+        "required": ["master_name", "service_name", "date", "time"]
+    }
+)
+
+
 # Создаем Tool объект, содержащий все наши функции
 salon_tools = Tool(
     function_declarations=[
         get_all_services_declaration,
         get_masters_for_service_declaration,
-        get_available_slots_declaration
+        get_available_slots_declaration,
+        create_appointment_declaration
     ]
 )
 

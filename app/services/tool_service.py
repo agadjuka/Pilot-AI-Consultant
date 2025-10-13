@@ -2,6 +2,8 @@ from app.repositories.service_repository import ServiceRepository
 from app.repositories.master_repository import MasterRepository
 from app.services.google_calendar_service import GoogleCalendarService
 from app.services.slot_formatter import SlotFormatter
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 
 class ToolService:
@@ -131,4 +133,77 @@ class ToolService:
             
         except Exception as e:
             return f"Ошибка при поиске свободных слотов: {str(e)}"
+
+    def create_appointment(self, master_name: str, service_name: str, date: str, time: str) -> str:
+        """
+        Создает запись в календаре для мастера и услуги.
+        
+        Args:
+            master_name: Имя мастера
+            service_name: Название услуги
+            date: Дата в формате "YYYY-MM-DD"
+            time: Время в формате "HH:MM"
+        
+        Returns:
+            Строка с подтверждением записи или сообщение об ошибке
+        """
+        try:
+            # Находим услугу в БД для получения длительности
+            all_services = self.service_repository.get_all()
+            service = None
+            
+            for s in all_services:
+                if s.name.lower() == service_name.lower():
+                    service = s
+                    break
+            
+            if not service:
+                return f"Услуга '{service_name}' не найдена в нашем прайс-листе."
+            
+            # Получаем длительность услуги
+            duration_minutes = service.duration_minutes
+            
+            # Преобразуем date и time в объекты datetime
+            try:
+                # Парсим дату и время
+                appointment_date = datetime.strptime(date, "%Y-%m-%d")
+                appointment_time = datetime.strptime(time, "%H:%M")
+                
+                # Объединяем дату и время
+                start_datetime = appointment_date.replace(
+                    hour=appointment_time.hour,
+                    minute=appointment_time.minute,
+                    second=0,
+                    microsecond=0
+                )
+                
+                # Вычисляем время окончания
+                end_datetime = start_datetime + timedelta(minutes=duration_minutes)
+                
+            except ValueError as e:
+                return f"Ошибка в формате даты или времени: {str(e)}"
+            
+            # Конвертируем время в формат ISO 8601
+            moscow_tz = ZoneInfo('Europe/Moscow')
+            start_datetime = start_datetime.replace(tzinfo=moscow_tz)
+            end_datetime = end_datetime.replace(tzinfo=moscow_tz)
+            
+            start_time_iso = start_datetime.strftime('%Y-%m-%dT%H:%M:%S')
+            end_time_iso = end_datetime.strftime('%Y-%m-%dT%H:%M:%S')
+            
+            # Вызываем метод создания события в Google Calendar
+            success = self.google_calendar_service.create_event(
+                master_name=master_name,
+                service_name=service_name,
+                start_time_iso=start_time_iso,
+                end_time_iso=end_time_iso
+            )
+            
+            if success:
+                return f"Отлично! Я записала вас на {service_name} к мастеру {master_name} на {date} в {time}."
+            else:
+                return f"Произошла ошибка при создании записи. Попробуйте еще раз."
+                
+        except Exception as e:
+            return f"Ошибка при создании записи: {str(e)}"
 
