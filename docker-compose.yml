@@ -14,7 +14,18 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
+  chroma:
+    image: chromadb/chroma:latest
+    container_name: beauty_salon_chroma
+    restart: always
+    ports:
+      - "8000:8000"
+    volumes:
+      - chroma_data:/chroma/chroma
+
 volumes:
   postgres_data:
     name: beauty_salon_postgres_data
+  chroma_data:
+    name: beauty_salon_chroma_data
 

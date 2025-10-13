@@ -153,3 +153,6 @@ Thumbs.db
 # Debug logs
 debug_logs/
 
+# ChromaDB local storage
+/chroma_db_local/
+

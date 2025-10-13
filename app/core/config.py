@@ -17,6 +17,9 @@ class Settings(BaseSettings):
     GOOGLE_APPLICATION_CREDENTIALS: str
     GOOGLE_CALENDAR_ID: str
 
+    # ChromaDB
+    CHROMA_HOST: Optional[str] = None
+
 # Глобальная переменная для ленивой инициализации
 _settings: Optional[Settings] = None
 
