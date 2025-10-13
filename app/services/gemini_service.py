@@ -1,6 +1,8 @@
 import asyncio
 import os
 import json
+from datetime import datetime
+from zoneinfo import ZoneInfo
 from typing import List, Dict, Optional, TYPE_CHECKING
 import google.generativeai as genai
 from google.oauth2 import service_account
@@ -32,11 +34,15 @@ class GeminiService:
         # Сохраняем описания инструментов
         self.tools = salon_tools
         
-        # Системная инструкция для персоны "Кэт"
-        self.system_instruction = """Ты — Кэт, дружелюбный и профессиональный AI-ассистент салона красоты.
+        # Базовая системная инструкция для персоны "Кэт"
+        self.system_instruction_template = """Ты — Кэт, дружелюбный и профессиональный AI-ассистент салона красоты.
 Твоя задача — помогать клиентам с записью на услуги, отвечать на вопросы о мастерах и услугах.
 Общайся вежливо, по-дружески, но профессионально. Используй эмодзи там, где это уместно.
 Если клиент хочет записаться, уточни желаемую услугу, мастера (если есть предпочтения) и удобное время.
+
+{current_datetime}
+
+Учитывай указанную выше дату и время при определении любых дат и временных интервалов в диалоге.
 
 У тебя есть доступ к инструментам для получения актуальной информации:
 - get_all_services: получить список всех услуг с ценами
@@ -124,9 +130,26 @@ class GeminiService:
         
         return response.candidates[0].content
 
+    def _get_current_datetime_info(self) -> str:
+        """
+        Получает текущую дату и время в московском часовом поясе.
+        
+        Returns:
+            Отформатированная строка с датой, временем и днем недели
+        """
+        moscow_tz = ZoneInfo('Europe/Moscow')
+        now = datetime.now(moscow_tz)
+        
+        # Дни недели на русском
+        weekdays = ['Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота', 'Воскресенье']
+        weekday = weekdays[now.weekday()]
+        
+        # Форматируем дату и время
+        return f"Сегодня: {weekday}, {now.strftime('%d.%m.%Y')}, время: {now.strftime('%H:%M')}"
+    
     def build_history_with_system_instruction(self, dialog_history: List[Dict] = None) -> List[Dict]:
         """
-        Формирует историю для чата, добавляя системную инструкцию.
+        Формирует историю для чата, добавляя системную инструкцию с текущей датой.
         
         Args:
             dialog_history: История диалога в расширенном формате
@@ -137,10 +160,18 @@ class GeminiService:
         # Формируем историю для чата
         history = []
         
+        # Получаем текущую дату и время
+        current_datetime_info = self._get_current_datetime_info()
+        
+        # Подставляем текущую дату в системную инструкцию
+        system_instruction = self.system_instruction_template.format(
+            current_datetime=current_datetime_info
+        )
+        
         # Добавляем системную инструкцию как первое сообщение от модели
         history.append({
             "role": "model",
-            "parts": [self.system_instruction]
+            "parts": [system_instruction]
         })
         
         # Добавляем историю диалога, если она есть

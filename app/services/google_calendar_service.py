@@ -257,16 +257,18 @@ class GoogleCalendarService:
         except HttpError as error:
             raise Exception(f"Ошибка при обновлении события: {error}")
     
-    def get_free_slots(self, master_name: str, date: str) -> List[str]:
+    def get_free_slots(self, master_name: str, date: str, duration_minutes: int) -> List[str]:
         """
         Получает свободные временные слоты для мастера на указанную дату.
+        Ищет непрерывные интервалы, достаточные для выполнения услуги заданной длительности.
         
         Args:
             master_name: Имя мастера
             date: Дата в формате "YYYY-MM-DD"
+            duration_minutes: Длительность услуги в минутах
         
         Returns:
-            List[str]: Список свободных слотов в формате "HH:MM"
+            List[str]: Список начальных времен доступных слотов в формате "HH:MM"
         
         Raises:
             Exception: Ошибка при работе с API или неверный формат даты
@@ -350,25 +352,30 @@ class GoogleCalendarService:
         print(f"\n⏰ Вычисление свободных слотов:")
         print(f"   Рабочее время: {WORK_START_HOUR}:00 - {WORK_END_HOUR}:00")
         print(f"   Шаг слотов: {SLOT_DURATION_MINUTES} минут")
+        print(f"   Длительность услуги: {duration_minutes} минут")
         
         # Проходим по всем слотам рабочего дня
         while current_slot < work_end:
-            slot_end = current_slot + timedelta(minutes=SLOT_DURATION_MINUTES)
+            # Проверяем, достаточно ли времени до конца рабочего дня
+            required_end_time = current_slot + timedelta(minutes=duration_minutes)
+            if required_end_time > work_end:
+                break  # Нет смысла проверять дальше, услуга не влезет
             
-            # Проверяем, не пересекается ли слот с существующими записями
-            is_free = True
+            # Проверяем, свободен ли весь интервал для услуги
+            is_interval_free = True
             for event in master_events:
-                # Слот занят, если он пересекается с событием
-                if (current_slot < event['end'] and slot_end > event['start']):
-                    is_free = False
+                # Интервал занят, если он пересекается с событием
+                # Услуга требует интервал [current_slot, required_end_time)
+                if (current_slot < event['end'] and required_end_time > event['start']):
+                    is_interval_free = False
                     break
             
-            # Если слот свободен, добавляем его в список
-            if is_free:
+            # Если интервал свободен, добавляем начальное время в список
+            if is_interval_free:
                 free_slots.append(current_slot.strftime("%H:%M"))
             
-            # Переходим к следующему слоту
-            current_slot = slot_end
+            # Переходим к следующему слоту (шаг 30 минут)
+            current_slot = current_slot + timedelta(minutes=SLOT_DURATION_MINUTES)
         
         print(f"   ✅ Найдено свободных слотов: {len(free_slots)}")
         if free_slots:

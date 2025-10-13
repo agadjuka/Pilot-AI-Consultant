@@ -1,6 +1,7 @@
 from app.repositories.service_repository import ServiceRepository
 from app.repositories.master_repository import MasterRepository
 from app.services.google_calendar_service import GoogleCalendarService
+from app.services.slot_formatter import SlotFormatter
 
 
 class ToolService:
@@ -83,27 +84,50 @@ class ToolService:
         master_names = [master.name for master in masters]
         return f"Эту услугу выполняют мастера: {', '.join(master_names)}."
 
-    def get_available_slots(self, master_name: str, date: str) -> str:
+    def get_available_slots(self, service_name: str, master_name: str, date: str) -> str:
         """
-        Получает свободные временные слоты для мастера на указанную дату.
+        Получает свободные временные слоты для услуги у мастера на указанную дату.
+        Группирует слоты в человекочитаемые диапазоны времени.
 
         Args:
-            master_name: Имя мастера
+            service_name: Название услуги
+            master_name: Имя мастера (должен быть определен из контекста диалога)
             date: Дата в формате строки (например, "2025-10-15")
 
         Returns:
-            Отформатированная строка со списком свободных слотов
+            Отформатированная строка с диапазонами свободного времени
         """
         try:
-            # Получаем свободные слоты из Google Calendar
-            free_slots = self.google_calendar_service.get_free_slots(master_name, date)
+            # Находим услугу по имени
+            all_services = self.service_repository.get_all()
+            service = None
+            
+            for s in all_services:
+                if s.name.lower() == service_name.lower():
+                    service = s
+                    break
+            
+            if not service:
+                return f"Услуга '{service_name}' не найдена в нашем прайс-листе."
+            
+            # Получаем длительность услуги
+            duration_minutes = service.duration_minutes
+            
+            # Получаем свободные слоты из Google Calendar с учетом длительности
+            free_slots = self.google_calendar_service.get_free_slots(
+                master_name, 
+                date, 
+                duration_minutes
+            )
             
             # Форматируем ответ для пользователя
             if not free_slots:
-                return f"К сожалению, на {date} у мастера {master_name} нет свободных окон."
+                return f"К сожалению, на {date} у мастера {master_name} нет свободных окон для услуги '{service_name}' (длительность {duration_minutes} мин)."
             
-            slots_str = ", ".join(free_slots)
-            return f"Свободные слоты для мастера {master_name} на {date}: {slots_str}."
+            # Форматируем слоты в диапазоны
+            formatted_ranges = SlotFormatter.format_slots_to_ranges(free_slots)
+            
+            return f"На {date} у мастера {master_name} есть свободные окна для услуги '{service_name}': {formatted_ranges}."
             
         except Exception as e:
             return f"Ошибка при поиске свободных слотов: {str(e)}"

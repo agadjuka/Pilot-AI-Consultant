@@ -240,9 +240,10 @@ class DialogService:
             return method(service_name)
         
         elif function_name == "get_available_slots":
+            service_name = function_args.get("service_name", "")
             master_name = function_args.get("master_name", "")
             date = function_args.get("date", "")
-            return method(master_name, date)
+            return method(service_name, master_name, date)
         
         else:
             return f"Ошибка: неизвестная функция '{function_name}'"
