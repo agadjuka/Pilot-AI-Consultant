@@ -28,8 +28,8 @@ class GeminiService:
         # Конфигурируем Google AI SDK
         genai.configure(credentials=credentials)
         
-        # Получаем модель Gemini 2.5 Flash
-        self._model = genai.GenerativeModel("gemini-2.5-flash")
+        # Получаем модель Gemini 2.5 Flash с инструментами
+        self._model = genai.GenerativeModel("gemini-2.5-flash", tools=[salon_tools])
         
         # Сохраняем описания инструментов
         self.tools = salon_tools
@@ -125,7 +125,7 @@ class GeminiService:
         loop = asyncio.get_event_loop()
         response = await loop.run_in_executor(
             None,
-            lambda: chat.send_message(message, tools=[self.tools])
+            lambda: chat.send_message(message)
         )
         
         return response.candidates[0].content
