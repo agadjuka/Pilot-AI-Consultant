@@ -307,24 +307,23 @@ class GoogleCalendarService:
         except HttpError as error:
             raise Exception(f"Ошибка при обновлении события: {error}")
     
-    def get_free_slots(self, master_name: str, date: str, duration_minutes: int) -> List[str]:
+    def get_free_slots(self, date: str, duration_minutes: int) -> List[Dict[str, str]]:
         """
-        Получает свободные временные слоты для мастера на указанную дату.
+        Получает свободные временные интервалы на указанную дату.
         Ищет непрерывные интервалы, достаточные для выполнения услуги заданной длительности.
         
         Args:
-            master_name: Имя мастера
             date: Дата в формате "YYYY-MM-DD"
             duration_minutes: Длительность услуги в минутах
         
         Returns:
-            List[str]: Список начальных времен доступных слотов в формате "HH:MM"
+            List[Dict[str, str]]: Список свободных интервалов в формате [{'start': '10:15', 'end': '13:45'}, ...]
         
         Raises:
             Exception: Ошибка при работе с API или неверный формат даты
         """
         try:
-            # Парсим дату (просто как есть, без timezone для начала дня)
+            # Парсим дату
             target_date = datetime.strptime(date, "%Y-%m-%d")
         except ValueError:
             raise Exception(f"Неверный формат даты: {date}. Ожидается формат YYYY-MM-DD")
@@ -332,59 +331,41 @@ class GoogleCalendarService:
         # Определяем рабочее время салона (10:00 - 20:00)
         WORK_START_HOUR = 10
         WORK_END_HOUR = 20
-        SLOT_DURATION_MINUTES = 30  # Шаг слотов - 30 минут
         
         # Формируем временные рамки для поиска
-        # Добавляем московский timezone для корректного запроса к API
         moscow_tz = ZoneInfo('Europe/Moscow')
         day_start = target_date.replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=moscow_tz)
         day_end = target_date.replace(hour=23, minute=59, second=59, microsecond=999999, tzinfo=moscow_tz)
         
-        # Получаем все события за этот день
+        # Получаем все события за этот день (для всех мастеров)
         events = self.get_events(time_min=day_start, time_max=day_end)
         
-        # Фильтруем события для конкретного мастера
-        master_events = []
-        master_prefix = f"Запись: {master_name}"
-        
-        print(f"\n🔍 Поиск событий для мастера '{master_name}' на {date}")
-        print(f"   Всего событий в календаре за этот день: {len(events)}")
+        # Создаем единый список всех занятых блоков
+        occupied_blocks = []
         
         for event in events:
-            summary = event.get('summary', '')
-            if summary.startswith(master_prefix):
-                # Извлекаем время начала и окончания события
-                start_str = event.get('start', {}).get('dateTime')
-                end_str = event.get('end', {}).get('dateTime')
+            start_str = event.get('start', {}).get('dateTime')
+            end_str = event.get('end', {}).get('dateTime')
+            
+            if start_str and end_str:
+                # Парсим время без timezone
+                start_time = datetime.fromisoformat(start_str[:19])
+                end_time = datetime.fromisoformat(end_str[:19])
                 
-                if start_str and end_str:
-                    print(f"   📅 Исходная строка из API: {start_str}")
-                    
-                    # Парсим дату и время без timezone - просто берём как строку
-                    # Формат: "2025-10-14T16:00:00+03:00"
-                    # Нам нужна только дата и время без timezone
-                    start_time = datetime.fromisoformat(start_str[:19])  # Берём только "2025-10-14T16:00:00"
-                    end_time = datetime.fromisoformat(end_str[:19])
-                    
-                    # Добавляем московский timezone для корректного сравнения
-                    moscow_tz = ZoneInfo('Europe/Moscow')
-                    start_time = start_time.replace(tzinfo=moscow_tz)
-                    end_time = end_time.replace(tzinfo=moscow_tz)
-                    
-                    master_events.append({
-                        'start': start_time,
-                        'end': end_time
-                    })
-                    print(f"   ✓ Найдена запись: {start_time.strftime('%H:%M')} - {end_time.strftime('%H:%M')}")
+                # Добавляем московский timezone
+                start_time = start_time.replace(tzinfo=moscow_tz)
+                end_time = end_time.replace(tzinfo=moscow_tz)
+                
+                occupied_blocks.append({
+                    'start': start_time,
+                    'end': end_time
+                })
         
-        print(f"   Записей мастера {master_name}: {len(master_events)}")
+        # Сортируем занятые блоки по времени начала
+        occupied_blocks.sort(key=lambda x: x['start'])
         
-        # Вычисляем свободные слоты
-        free_slots = []
-        
-        # Начинаем с начала рабочего дня (добавляем timezone для сравнения)
-        moscow_tz = ZoneInfo('Europe/Moscow')
-        current_slot = target_date.replace(
+        # Определяем границы рабочего дня
+        work_start = target_date.replace(
             hour=WORK_START_HOUR, 
             minute=0, 
             second=0, 
@@ -399,37 +380,32 @@ class GoogleCalendarService:
             tzinfo=moscow_tz
         )
         
-        print(f"\n⏰ Вычисление свободных слотов:")
-        print(f"   Рабочее время: {WORK_START_HOUR}:00 - {WORK_END_HOUR}:00")
-        print(f"   Шаг слотов: {SLOT_DURATION_MINUTES} минут")
-        print(f"   Длительность услуги: {duration_minutes} минут")
+        # Находим свободные интервалы
+        free_intervals = []
+        current_time = work_start
         
-        # Проходим по всем слотам рабочего дня
-        while current_slot < work_end:
-            # Проверяем, достаточно ли времени до конца рабочего дня
-            required_end_time = current_slot + timedelta(minutes=duration_minutes)
-            if required_end_time > work_end:
-                break  # Нет смысла проверять дальше, услуга не влезет
+        for block in occupied_blocks:
+            # Если текущее время до начала занятого блока
+            if current_time < block['start']:
+                # Проверяем, достаточно ли времени для услуги
+                available_duration = (block['start'] - current_time).total_seconds() / 60
+                if available_duration >= duration_minutes:
+                    free_intervals.append({
+                        'start': current_time.strftime('%H:%M'),
+                        'end': block['start'].strftime('%H:%M')
+                    })
             
-            # Проверяем, свободен ли весь интервал для услуги
-            is_interval_free = True
-            for event in master_events:
-                # Интервал занят, если он пересекается с событием
-                # Услуга требует интервал [current_slot, required_end_time)
-                if (current_slot < event['end'] and required_end_time > event['start']):
-                    is_interval_free = False
-                    break
-            
-            # Если интервал свободен, добавляем начальное время в список
-            if is_interval_free:
-                free_slots.append(current_slot.strftime("%H:%M"))
-            
-            # Переходим к следующему слоту (шаг 30 минут)
-            current_slot = current_slot + timedelta(minutes=SLOT_DURATION_MINUTES)
+            # Переходим к концу занятого блока
+            current_time = max(current_time, block['end'])
         
-        print(f"   ✅ Найдено свободных слотов: {len(free_slots)}")
-        if free_slots:
-            print(f"   Первые слоты: {', '.join(free_slots[:5])}")
+        # Проверяем интервал после последнего занятого блока
+        if current_time < work_end:
+            available_duration = (work_end - current_time).total_seconds() / 60
+            if available_duration >= duration_minutes:
+                free_intervals.append({
+                    'start': current_time.strftime('%H:%M'),
+                    'end': work_end.strftime('%H:%M')
+                })
         
-        return free_slots
+        return free_intervals
 

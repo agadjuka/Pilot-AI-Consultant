@@ -265,9 +265,8 @@ class DialogService:
         
         elif function_name == "get_available_slots":
             service_name = function_args.get("service_name", "")
-            master_name = function_args.get("master_name", "")
             date = function_args.get("date", "")
-            return method(service_name, master_name, date)
+            return method(service_name, date)
         
         elif function_name == "create_appointment":
             master_name = function_args.get("master_name", "")

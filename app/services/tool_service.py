@@ -1,7 +1,6 @@
 from app.repositories.service_repository import ServiceRepository
 from app.repositories.master_repository import MasterRepository
 from app.services.google_calendar_service import GoogleCalendarService
-from app.services.slot_formatter import SlotFormatter
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from difflib import SequenceMatcher
@@ -86,18 +85,17 @@ class ToolService:
         master_names = [master.name for master in masters]
         return f"Эту услугу выполняют мастера: {', '.join(master_names)}."
 
-    def get_available_slots(self, service_name: str, master_name: str, date: str) -> str:
+    def get_available_slots(self, service_name: str, date: str) -> str:
         """
-        Получает свободные временные слоты для услуги у мастера на указанную дату.
-        Адаптивно форматирует результат в зависимости от количества слотов.
+        Получает свободные временные интервалы для услуги на указанную дату.
+        Возвращает сырые данные для анализа LLM.
 
         Args:
             service_name: Название услуги
-            master_name: Имя мастера (должен быть определен из контекста диалога)
             date: Дата в формате строки (например, "2025-10-15")
 
         Returns:
-            Отформатированная строка с диапазонами свободного времени или инструкция для уточнения
+            Компактная строка с интервалами свободного времени или сообщение об ошибке
         """
         try:
             # Находим услугу по имени с нечетким поиском
@@ -114,28 +112,18 @@ class ToolService:
             # Получаем длительность услуги
             duration_minutes = service.duration_minutes
             
-            # Получаем свободные слоты из Google Calendar с учетом длительности
-            free_slots = self.google_calendar_service.get_free_slots(
-                master_name, 
+            # Получаем свободные интервалы из Google Calendar
+            free_intervals = self.google_calendar_service.get_free_slots(
                 date, 
                 duration_minutes
             )
             
-            # Адаптивная логика в зависимости от количества слотов
-            slots_count = len(free_slots)
-            threshold = 5
+            if not free_intervals:
+                return f"На {date} нет свободных окон для услуги '{service_name}' (длительность {duration_minutes} мин)."
             
-            if slots_count == 0:
-                return f"К сожалению, на {date} у мастера {master_name} нет свободных окон для услуги '{service_name}' (длительность {duration_minutes} мин)."
-            
-            elif slots_count > threshold:
-                # Слишком много слотов - возвращаем инструкцию для уточнения
-                return "Слишком много слотов. Спроси у пользователя, какая половина дня ему удобнее: утро, день или вечер."
-            
-            else:
-                # Количество слотов в пределах порога - форматируем список
-                formatted_ranges = SlotFormatter.format_slots_to_ranges(free_slots)
-                return f"На {date} у мастера {master_name} есть свободные окна для услуги '{service_name}': {formatted_ranges}."
+            # Преобразуем интервалы в компактную строку
+            interval_strings = [f"{interval['start']}-{interval['end']}" for interval in free_intervals]
+            return ", ".join(interval_strings)
             
         except Exception as e:
             return f"Ошибка при поиске свободных слотов: {str(e)}"
