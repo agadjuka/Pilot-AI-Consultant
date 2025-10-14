@@ -126,13 +126,41 @@ create_appointment_declaration = FunctionDeclaration(
 )
 
 
+# Определение инструмента для вызова менеджера
+call_manager_declaration = FunctionDeclaration(
+    name="call_manager",
+    description=(
+        "Вызывай эту функцию ТОЛЬКО в крайнем случае, если: "
+        "1) Клиент выражает сильное недовольство, жалуется на качество или просит вернуть деньги. "
+        "2) Запрос клиента очень нестандартный и требует принятия решения, которое не входит в твои полномочия (например, обсуждение особых скидок, партнерства). "
+        "3) Клиент прямо просит позвать живого человека/менеджера. "
+        "В параметре 'reason' кратко опиши причину вызова."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "reason": {
+                "type": "string",
+                "description": (
+                    "Краткое описание причины вызова менеджера. "
+                    "Например: 'Клиент недоволен качеством услуги', "
+                    "'Запрос на особую скидку', 'Прямой запрос на менеджера'."
+                )
+            }
+        },
+        "required": ["reason"]
+    }
+)
+
+
 # Создаем Tool объект, содержащий все наши функции
 salon_tools = Tool(
     function_declarations=[
         get_all_services_declaration,
         get_masters_for_service_declaration,
         get_available_slots_declaration,
-        create_appointment_declaration
+        create_appointment_declaration,
+        call_manager_declaration
     ]
 )
 

@@ -97,15 +97,42 @@ class DialogService:
         # 4. Этап 2: Определение стратегии обработки (План А или План Б)
         print(f"[DEBUG] Результат классификации: '{dialogue_stage}'")
         
+        # Быстрый путь для конфликтных ситуаций
+        if dialogue_stage == 'conflict_escalation':
+            print(f"[DEBUG] КОНФЛИКТНАЯ СТАДИЯ: Немедленная эскалация на менеджера")
+            
+            # Вызываем менеджера с текстом сообщения пользователя как причиной
+            manager_response = self.tool_service.call_manager(text)
+            
+            # Сохраняем системный сигнал для будущей обработки
+            print(f"[DEBUG] Системный сигнал: {manager_response['system_signal']}")
+            
+            # Сохраняем ответ бота в БД
+            self.repository.add_message(
+                user_id=user_id,
+                role="model",
+                message_text=manager_response['response_to_user']
+            )
+            
+            # Возвращаем ответ пользователю и завершаем обработку
+            return manager_response['response_to_user']
+        
         if dialogue_stage is not None:
             # План А: Валидная стадия найдена - используем паттерны диалога
             print(f"[DEBUG] План А: Используем стадию '{dialogue_stage}'")
             stage_patterns = dialogue_patterns.get(dialogue_stage, {})
-            principles = stage_patterns.get("principles", [])
-            examples = stage_patterns.get("examples", [])
             
-            # Формируем динамический системный промпт на основе паттернов
-            system_prompt = self._build_dynamic_system_prompt(principles, examples, dialog_history)
+            # Проверяем, есть ли у стадии принципы и примеры (обычные стадии)
+            if "principles" in stage_patterns and "examples" in stage_patterns:
+                principles = stage_patterns.get("principles", [])
+                examples = stage_patterns.get("examples", [])
+                
+                # Формируем динамический системный промпт на основе паттернов
+                system_prompt = self._build_dynamic_system_prompt(principles, examples, dialog_history)
+            else:
+                # Специальная стадия (например, conflict_escalation) - используем fallback
+                print(f"[DEBUG] Специальная стадия '{dialogue_stage}' - используем fallback промпт")
+                system_prompt = self._build_fallback_system_prompt()
         else:
             # План Б: Fallback - используем универсальный системный промпт
             print(f"[DEBUG] План Б: Используем fallback промпт")
@@ -205,7 +232,9 @@ class DialogService:
 
 Если клиент задает вопрос не по теме салона красоты (например, о науке, политике, личных темах), вежливо ответь, что ты не можешь помочь с этим, и верни диалог к услугам салона.
 
-Всегда будь дружелюбной, используй эмодзи ТОЛЬКО при приветствии клиента и при подтверждении записи. В остальных сообщениях общайся без эмодзи, но сохраняй дружелюбный тон. Предлагай конкретные варианты записи на услуги салона."""
+Всегда будь дружелюбной, используй эмодзи ТОЛЬКО при приветствии клиента и при подтверждении записи. В остальных сообщениях общайся без эмодзи, но сохраняй дружелюбный тон. Предлагай конкретные варианты записи на услуги салона.
+
+Однако, если ситуация становится конфликтной, клиент жалуется или просит позвать человека, используй инструмент 'call_manager', чтобы передать диалог менеджеру."""
     
     async def _execute_generation_cycle(self, user_id: int, user_message: str, dialog_history: List[Dict], system_prompt: str) -> str:
         """
@@ -303,6 +332,12 @@ class DialogService:
                         "result": result
                     })
                     iteration_log["response"] = f"Model вызвала функцию: {function_name}"
+                    
+                    # Специальная обработка для call_manager - завершаем цикл
+                    if function_name == "call_manager":
+                        bot_response_text = result
+                        iteration_log["final_answer"] = bot_response_text
+                        break
                     
                     # Формируем ответ функции для отправки обратно в модель
                     function_response_part = protos.Part(
@@ -480,6 +515,12 @@ class DialogService:
             date = function_args.get("date", "")
             time = function_args.get("time", "")
             return method(master_name, service_name, date, time)
+        
+        elif function_name == "call_manager":
+            reason = function_args.get("reason", "")
+            result = method(reason)
+            # Возвращаем только response_to_user для совместимости с существующей логикой
+            return result.get("response_to_user", "Ошибка при вызове менеджера")
         
         else:
             return f"Ошибка: неизвестная функция '{function_name}'"

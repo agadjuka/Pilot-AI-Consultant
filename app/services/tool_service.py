@@ -267,6 +267,24 @@ class ToolService:
         
         return best_match
 
+    def call_manager(self, reason: str) -> dict:
+        """
+        Вызывает менеджера для эскалации сложного диалога.
+        
+        Args:
+            reason: Причина вызова менеджера
+            
+        Returns:
+            Словарь с ответом для пользователя и системным сигналом
+        """
+        # В будущем здесь будет логика отправки уведомления менеджеру
+        print(f"!!! MANAGER ALERT: {reason} !!!")
+        
+        return {
+            "response_to_user": "Секундочку, уточню у менеджера ваш вопрос.",
+            "system_signal": "[CALL_MANAGER]"
+        }
+
     def _find_similar_services(self, service_name: str, all_services: list) -> list:
         """
         Находит похожие услуги для предложения альтернатив.

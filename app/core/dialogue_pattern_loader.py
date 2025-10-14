@@ -35,15 +35,29 @@ def load_patterns() -> Dict[str, Any]:
         if not isinstance(patterns, dict):
             raise ValueError("Файл паттернов должен содержать словарь")
         
-        # Проверяем, что все стадии имеют необходимые поля
+        # Проверяем структуру стадий
         for stage_id, stage_data in patterns.items():
             if not isinstance(stage_data, dict):
                 raise ValueError(f"Стадия '{stage_id}' должна быть словарем")
             
-            required_fields = ['principles', 'examples']
-            for field in required_fields:
-                if field not in stage_data:
-                    raise ValueError(f"Стадия '{stage_id}' не содержит поле '{field}'")
+            # Проверяем, что стадия имеет либо полную структуру (principles + examples), 
+            # либо только описание (для специальных стадий типа conflict_escalation)
+            has_principles = 'principles' in stage_data
+            has_examples = 'examples' in stage_data
+            has_description = 'description' in stage_data
+            
+            if has_principles or has_examples:
+                # Обычная стадия - должна иметь оба поля
+                if not has_principles:
+                    raise ValueError(f"Стадия '{stage_id}' содержит 'examples', но не содержит 'principles'")
+                if not has_examples:
+                    raise ValueError(f"Стадия '{stage_id}' содержит 'principles', но не содержит 'examples'")
+            elif has_description:
+                # Специальная стадия только с описанием - это нормально
+                pass
+            else:
+                # Стадия должна иметь либо полную структуру, либо описание
+                raise ValueError(f"Стадия '{stage_id}' должна содержать либо 'principles' и 'examples', либо 'description'")
         
         return patterns
         
