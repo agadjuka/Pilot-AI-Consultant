@@ -58,3 +58,14 @@ class AppointmentRepository(BaseRepository[Appointment]):
                 Appointment.start_time > now
             )
         ).order_by(Appointment.start_time).first()
+    
+    def check_duplicate_appointment(self, user_telegram_id: int, master_id: int, service_id: int, start_time: datetime) -> Optional[Appointment]:
+        """Проверить наличие дублирующейся записи"""
+        return self.db.query(Appointment).filter(
+            and_(
+                Appointment.user_telegram_id == user_telegram_id,
+                Appointment.master_id == master_id,
+                Appointment.service_id == service_id,
+                Appointment.start_time == start_time
+            )
+        ).first()

@@ -158,7 +158,7 @@ class ToolService:
         except Exception as e:
             return f"Ошибка при поиске свободных слотов: {str(e)}"
 
-    def create_appointment(self, master_name: str, service_name: str, date: str, time: str, user_telegram_id: int) -> str:
+    def create_appointment(self, master_name: str, service_name: str, date: str, time: str, client_name: str, user_telegram_id: int) -> str:
         """
         Создает запись в календаре для мастера и услуги.
         
@@ -167,6 +167,7 @@ class ToolService:
             service_name: Название услуги
             date: Дата в формате "YYYY-MM-DD"
             time: Время в формате "HH:MM"
+            client_name: Имя клиента
             user_telegram_id: ID пользователя в Telegram
         
         Returns:
@@ -246,7 +247,7 @@ class ToolService:
             
             self.appointment_repository.create(appointment_data)
             
-            return f"Отлично! Я записала вас на {service_name} к мастеру {master_name} на {date} в {time}."
+            return f"Отлично! Я записала {client_name} на {service_name} к мастеру {master_name} на {date} в {time}."
                 
         except Exception as e:
             return f"Ошибка при создании записи: {str(e)}"

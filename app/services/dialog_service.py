@@ -518,7 +518,8 @@ class DialogService:
             service_name = function_args.get("service_name", "")
             date = function_args.get("date", "")
             time = function_args.get("time", "")
-            return method(master_name, service_name, date, time, user_id)
+            client_name = function_args.get("client_name", "")
+            return method(master_name, service_name, date, time, client_name, user_id)
         
         elif function_name == "get_my_appointments":
             return method(user_id)
