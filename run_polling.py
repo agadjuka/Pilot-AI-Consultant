@@ -6,7 +6,7 @@ load_dotenv()
 import asyncio
 from app.services.telegram_service import telegram_service
 from app.api.telegram import process_telegram_update
-from app.utils.debug_logger import gemini_debug_logger
+from app.services.dialogue_tracer_service import clear_debug_logs
 
 
 async def run_polling():
@@ -18,8 +18,8 @@ async def run_polling():
     print("   🤖 Бот запущен в режиме Polling")
     print("="*60)
     
-    # Очищаем папку с debug логами при каждом запуске
-    gemini_debug_logger.clear_debug_logs()
+    # Очищаем папку с логами при каждом запуске
+    clear_debug_logs()
     
     print("="*60)
     print("   🔄 Удаление webhook...")

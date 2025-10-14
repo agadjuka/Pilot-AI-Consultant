@@ -5,7 +5,6 @@ from app.services.llm_service import LLMService
 from app.services.tool_service import ToolService
 from app.services.prompt_builder_service import PromptBuilderService
 from app.repositories.client_repository import ClientRepository
-from app.utils.debug_logger import gemini_debug_logger
 
 
 class ToolOrchestratorService:
@@ -36,7 +35,7 @@ class ToolOrchestratorService:
         self.client_repository = client_repository
     
     async def execute_tool_cycle(self, system_prompt: str, history: List[Dict], 
-                               user_message: str, user_id: int) -> Tuple[str, List[Dict]]:
+                               user_message: str, user_id: int, tracer=None) -> Tuple[str, List[Dict]]:
         """
         Выполняет цикл обработки инструментов с LLM.
         
@@ -51,6 +50,9 @@ class ToolOrchestratorService:
         """
         # Формируем полную историю с системной инструкцией
         full_history = self.prompt_builder.build_full_history_with_system_prompt(history, system_prompt)
+        
+        if tracer:
+            tracer.add_event("🔧 Инициализация ToolOrchestrator", f"Системный промпт: {len(system_prompt)} символов, История: {len(history)} сообщений")
         
         # Создаем чат один раз для всего цикла
         chat = self.llm_service.create_chat(full_history)
@@ -75,6 +77,9 @@ class ToolOrchestratorService:
         
         while iteration < max_iterations:
             iteration += 1
+            
+            if tracer:
+                tracer.add_event(f"🔄 Итерация {iteration}", f"Максимум итераций: {max_iterations}")
             
             # Информация для debug логирования текущей итерации
             iteration_log = {
@@ -103,6 +108,9 @@ class ToolOrchestratorService:
                 message=current_message,
                 user_id=user_id
             )
+            
+            if tracer:
+                tracer.add_event(f"🤖 Ответ LLM (итерация {iteration})", f"Получен ответ от модели", is_json=True)
             
             # Анализируем ответ
             has_function_call = False
@@ -133,6 +141,9 @@ class ToolOrchestratorService:
                         result = self._execute_function(function_name, function_args, user_id)
                     except Exception as e:
                         result = f"Ошибка при выполнении функции: {str(e)}"
+                    
+                    if tracer:
+                        tracer.add_event(f"⚙️ Выполнение инструмента: {function_name}", f"Аргументы: {function_args}\nРезультат: {result}")
                     
                     # Компактный лог вызова инструмента
                     def _short(v):
@@ -172,7 +183,7 @@ class ToolOrchestratorService:
                             client_phone_saved=bool(client.phone_number)
                         )
                         # Запускаем отдельный цикл генерации с новой инструкцией
-                        final_text, _ = await self.execute_tool_cycle(contact_prompt, history, user_message, user_id)
+                        final_text, _ = await self.execute_tool_cycle(contact_prompt, history, user_message, user_id, tracer)
                         return final_text, debug_iterations
                     
                     # Формируем ответ функции для отправки обратно в модель
@@ -225,7 +236,7 @@ class ToolOrchestratorService:
                                 client_name=client.first_name,
                                 client_phone_saved=bool(client.phone_number)
                             )
-                            final_text, _ = await self.execute_tool_cycle(contact_prompt, history, user_message, user_id)
+                            final_text, _ = await self.execute_tool_cycle(contact_prompt, history, user_message, user_id, tracer)
                             return final_text, debug_iterations
 
                         # Готовим ответ функции для следующей итерации
@@ -256,6 +267,8 @@ class ToolOrchestratorService:
             # Если есть текстовый ответ - это финальный ответ
             if has_text and not has_function_call:
                 iteration_log["final_answer"] = bot_response_text
+                if tracer:
+                    tracer.add_event(f"✅ Финальный ответ получен", f"Текст: {bot_response_text}")
                 break
             
             # Если есть вызовы функций - подготавливаем их результаты для следующей итерации
@@ -295,24 +308,6 @@ class ToolOrchestratorService:
                     bot_response_text = "Извините, не удалось обработать ваш запрос. Попробуйте переформулировать вопрос."
             else:
                 bot_response_text = "Извините, не удалось обработать ваш запрос. Попробуйте переформулировать вопрос."
-        
-        # Логируем диалог
-        if debug_iterations and any(iter_log.get("function_calls") for iter_log in debug_iterations):
-            # Если были вызовы функций - логируем как Function Calling цикл
-            gemini_debug_logger.log_function_calling_cycle(
-                user_id=user_id,
-                user_message=user_message,
-                iterations=debug_iterations
-            )
-        else:
-            # Если не было вызовов функций - логируем как простой диалог
-            gemini_debug_logger.log_simple_dialog(
-                user_id=user_id,
-                user_message=user_message,
-                system_prompt=system_prompt,
-                dialog_history=history,
-                gemini_response=bot_response_text or "Ошибка генерации ответа"
-            )
         
         return bot_response_text, debug_iterations
     

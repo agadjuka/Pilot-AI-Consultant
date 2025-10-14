@@ -7,7 +7,6 @@ import google.generativeai as genai
 from google.oauth2 import service_account
 import requests
 from app.core.config import settings
-from app.utils.debug_logger import gemini_debug_logger
 from app.services.tool_definitions import salon_tools
 
 if TYPE_CHECKING:
@@ -146,13 +145,6 @@ class LLMService:
                 request_text = str(message)
             print(f"[LLM:Gemini] → {request_text[:140]}")
         
-        # Логируем сырой запрос (полная history содержится в объекте chat, но SDK её не раскрывает;
-        # логируем хотя бы текст отправляемого сообщения)
-        try:
-            gemini_debug_logger.log_provider_call("Gemini", history=None, message=message)
-        except Exception:
-            pass
-
         # Используем asyncio для выполнения синхронного вызова
         loop = asyncio.get_event_loop()
         try:
@@ -182,12 +174,6 @@ class LLMService:
         if user_id is not None:
             print(f"[LLM:Yandex] → {message[:140]}")
         
-        # Логируем сырой запрос перед формированием payload
-        try:
-            gemini_debug_logger.log_provider_call("Yandex", history=history, message={"role": "user", "text": message})
-        except Exception:
-            pass
-
         # Если history уже в формате YandexGPT, используем как есть
         if history and isinstance(history[0], dict) and "text" in history[0]:
             updated_history = history.copy()

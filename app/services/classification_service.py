@@ -8,7 +8,6 @@ import re
 from app.core.dialogue_pattern_loader import dialogue_patterns
 from app.services.llm_service import LLMService
 from app.services.prompt_builder_service import PromptBuilderService
-from app.utils.debug_logger import gemini_debug_logger
 
 
 class ClassificationService:
@@ -104,16 +103,6 @@ class ClassificationService:
             
             # Вызываем LLM для классификации
             response = await self.llm_service.generate_response(classification_history)
-            
-            # Логируем классификацию
-            if user_id is not None:
-                gemini_debug_logger.log_simple_dialog(
-                    user_id=user_id,
-                    user_message=f"Классификация стадии диалога. История: {len(history)} сообщений, Новое сообщение: {user_message}",
-                    system_prompt=f"Определи стадию диалога из: {stages_list}",
-                    dialog_history=[],
-                    gemini_response=response
-                )
             
             # Очищаем ответ от лишних пробелов, точек и других знаков препинания
             stage_id = response.strip().lower().rstrip('.,!?;:')

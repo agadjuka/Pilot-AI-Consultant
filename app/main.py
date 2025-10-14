@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from app.core.config import settings
 from app.api import telegram
-from app.utils.debug_logger import gemini_debug_logger
+from app.services.dialogue_tracer_service import clear_debug_logs
 
 app = FastAPI(
     title="Beauty Salon AI Assistant",
@@ -17,7 +17,10 @@ async def startup_event():
     print("\n" + "="*60)
     print("   🚀 Приложение запускается...")
     print("="*60)
-    gemini_debug_logger.clear_debug_logs()
+    
+    # Очищаем папку с логами при каждом запуске
+    clear_debug_logs()
+    
     print("="*60)
 
 
