@@ -152,15 +152,26 @@ class DialogService:
                 proactive_params = stage_patterns.get("proactive_params", {})
                 
                 # Формируем динамический системный промпт на основе паттернов
-                # Добавляем контекст об имени клиента, если есть
-                dialog_context_hint = ""
-                if client.first_name:
-                    dialog_context_hint = f"КОНТЕКСТ: Клиента зовут {client.first_name}. Обращайся к нему по имени, где это уместно."
+                # Добавляем контекст о наличии ПДн клиента (имя и телефон)
+                name_part = f"имя: '{client.first_name}' (сохранено)" if client.first_name else "имя: не сохранено"
+                phone_part = "телефон: сохранён" if client.phone_number else "телефон: не сохранён"
+                dialog_context_hint = (
+                    "КОНТЕКСТ: В БД по текущему клиенту: "
+                    f"{name_part}; {phone_part}. "
+                    "Если указано, что имя и/или телефон не сохранены — при оформлении записи сначала узнай недостающие данные. "
+                    "Если оба уже сохранены — не спрашивай их и переходи к записи."
+                )
                 system_prompt = self._build_dynamic_system_prompt(principles, examples, dialog_history, proactive_params, extra_context=dialog_context_hint)
             else:
                 # Специальная стадия (например, conflict_escalation) - используем fallback
                 print(f"[DEBUG] Специальная стадия '{dialogue_stage}' - используем fallback промпт")
-                dialog_context_hint = f"КОНТЕКСТ: Клиента зовут {client.first_name}. Обращайся к нему по имени, где это уместно." if client.first_name else ""
+                name_part = f"имя: '{client.first_name}' (сохранено)" if client.first_name else "имя: не сохранено"
+                phone_part = "телефон: сохранён" if client.phone_number else "телефон: не сохранён"
+                dialog_context_hint = (
+                    (f"КОНТЕКСТ: В БД по текущему клиенту: {name_part}; {phone_part}. "
+                     "Если указано, что имя и/или телефон не сохранены — при оформлении записи сначала узнай недостающие данные. "
+                     "Если оба уже сохранены — не спрашивай их и переходи к записи.")
+                )
                 system_prompt = self._build_fallback_system_prompt(dialog_context_hint)
         else:
             # План Б: Fallback - используем универсальный системный промпт
@@ -229,6 +240,12 @@ class DialogService:
         if extra_context:
             dialog_context = f"{dialog_context} {extra_context}".strip()
 
+        # Всегда проговариваем правило работы с недостающими/имеющимися ПДн
+        pdn_rule = (
+            "\n\nПравило ПДн: Если в контексте указано, что имя и/или телефон клиента не сохранены — при оформлении записи аккуратно запроси недостающие данные. "
+            "Если указано, что оба сохранены — не запрашивай их повторно и оформляй запись сразу."
+        )
+
         # Формируем принципы
         principles_text = ""
         if principles:
@@ -256,7 +273,7 @@ class DialogService:
                         proactive_params_text += f"  - {param_name}: {description}\n"
 
         # Собираем финальный промпт
-        system_prompt = f"{base_persona}{principles_text}{examples_text}{proactive_params_text}"
+        system_prompt = f"{base_persona}{principles_text}{examples_text}{proactive_params_text}{pdn_rule}"
         
         if dialog_context:
             system_prompt += f"\n\nКонтекст диалога: {dialog_context}"

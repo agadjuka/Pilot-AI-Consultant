@@ -235,6 +235,76 @@ class GeminiDebugLogger:
         
         print(f"   📝 Сохранен Function Calling цикл: {filename}")
     
+    def _make_json_serializable(self, obj):
+        """
+        Преобразует произвольные объекты (Part, FunctionResponse и т.п.) в сериализуемый словарь.
+        Используется для логирования сырых запросов к провайдерам.
+        """
+        try:
+            import google.ai.generativelanguage as protos  # type: ignore
+        except Exception:
+            protos = None  # не критично для сериализации
+        
+        # Примитивы
+        if obj is None or isinstance(obj, (str, int, float, bool)):
+            return obj
+        # Списки/кортежи
+        if isinstance(obj, (list, tuple)):
+            return [self._make_json_serializable(x) for x in obj]
+        # Словари
+        if isinstance(obj, dict):
+            return {str(k): self._make_json_serializable(v) for k, v in obj.items()}
+        
+        # Объекты Gemini Parts
+        text = getattr(obj, 'text', None)
+        if text is not None:
+            return {"type": "text_part", "text": text}
+        
+        function_call = getattr(obj, 'function_call', None)
+        if function_call is not None:
+            try:
+                args = dict(getattr(function_call, 'args', {}))
+            except Exception:
+                args = {}
+            return {"type": "function_call", "name": getattr(function_call, 'name', ''), "args": args}
+        
+        function_response = getattr(obj, 'function_response', None)
+        if function_response is not None:
+            return {
+                "type": "function_response",
+                "name": getattr(function_response, 'name', ''),
+                "response": getattr(function_response, 'response', {})
+            }
+        
+        # Фоллбек — строковое представление
+        try:
+            return str(obj)
+        except Exception:
+            return "<unserializable>"
+
+    def log_provider_call(self, provider: str, history, message) -> None:
+        """
+        Логирует сырой запрос, отправляемый провайдеру (Gemini/Yandex): полная history и message.
+        """
+        self._request_counter += 1
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"{self._request_counter:04d}_{timestamp}_{provider.lower()}_raw_request.json"
+        filepath = self.debug_dir / filename
+        
+        try:
+            import json
+            payload = {
+                "provider": provider,
+                "history": self._make_json_serializable(history),
+                "message": self._make_json_serializable(message)
+            }
+            self.debug_dir.mkdir(parents=True, exist_ok=True)
+            with open(filepath, "w", encoding="utf-8") as f:
+                json.dump(payload, f, ensure_ascii=False, indent=2)
+            print(f"   📦 Сохранен сырой запрос провайдеру: {filename}")
+        except Exception as e:
+            print(f"[DEBUG LOGGER] Не удалось сохранить сырой запрос: {e}")
+    
     def log_simple_dialog(
         self,
         user_id: int,
