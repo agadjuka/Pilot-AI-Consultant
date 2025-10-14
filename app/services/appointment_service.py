@@ -6,6 +6,10 @@ from app.services.google_calendar_service import GoogleCalendarService
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from difflib import SequenceMatcher
+import logging
+
+# Получаем логгер для этого модуля
+logger = logging.getLogger(__name__)
 
 
 class AppointmentService:
@@ -130,7 +134,7 @@ class AppointmentService:
                 # Это позволяет не блокировать продажи из-за внешнего сервиса
                 from uuid import uuid4
                 event_id = f"LOCAL-{uuid4()}"
-                print(f"[WARN] Calendar unavailable, fallback to local event_id: {event_id}. Error: {calendar_error}")
+                logger.warning(f"⚠️ Календарь недоступен, используем локальный event_id: {event_id}. Ошибка: {calendar_error}")
             
             # Сохраняем запись в нашу БД
             appointment_data = {
@@ -215,7 +219,7 @@ class AppointmentService:
                 self.google_calendar_service.delete_event(appointment.google_event_id)
             except Exception as calendar_error:
                 # Логируем, но не блокируем удаление в БД
-                print(f"[WARN] Не удалось удалить событие в календаре: {calendar_error}")
+                logger.warning(f"⚠️ Не удалось удалить событие в календаре: {calendar_error}")
 
             # Удаляем запись из нашей БД напрямую по объекту и проверяем результат
             deleted = self.appointment_repository.delete(appointment)
@@ -296,7 +300,7 @@ class AppointmentService:
                 )
             except Exception as calendar_error:
                 # Логируем, но не блокируем обновление в БД
-                print(f"[WARN] Не удалось обновить событие в календаре: {calendar_error}")
+                logger.warning(f"⚠️ Не удалось обновить событие в календаре: {calendar_error}")
 
             # Обновляем запись в нашей БД
             update_data = {

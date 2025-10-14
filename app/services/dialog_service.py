@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 import google.generativeai as genai
 from google.generativeai import protos
 from datetime import datetime, timedelta
+import logging
 from app.repositories.dialog_history_repository import DialogHistoryRepository
 from app.repositories.service_repository import ServiceRepository
 from app.repositories.master_repository import MasterRepository
@@ -17,6 +18,10 @@ from app.services.prompt_builder_service import PromptBuilderService
 from app.services.tool_orchestrator_service import ToolOrchestratorService
 from app.core.dialogue_pattern_loader import dialogue_patterns
 from app.services.dialogue_tracer_service import DialogueTracer
+from app.core.logging_config import log_dialog_start, log_dialog_end, log_error
+
+# Получаем логгер для этого модуля
+logger = logging.getLogger(__name__)
 
 
 class DialogService:
@@ -146,6 +151,9 @@ class DialogService:
         Returns:
             Сгенерированный ответ бота
         """
+        # Логируем начало обработки диалога
+        log_dialog_start(logger, user_id, text)
+        
         # Создаем трейсер для этого диалога
         tracer = DialogueTracer(user_id=user_id, user_message=text)
         
@@ -153,7 +161,6 @@ class DialogService:
             # 0. Загружаем (или создаем) клиента
             client = self.client_repository.get_or_create_by_telegram_id(user_id)
             tracer.add_event("👤 Клиент загружен", f"ID клиента: {client.id}, Имя: {client.first_name}, Телефон: {client.phone_number}")
-
             # 1. Получаем историю диалога (последние 20 сообщений)
             history_records = self.repository.get_recent_messages(user_id, limit=20)
             tracer.add_event("📚 История диалога загружена", f"Количество сообщений: {len(history_records)}")
@@ -176,8 +183,6 @@ class DialogService:
             tracer.add_event("💾 Сообщение сохранено в БД", f"Роль: user, Текст: {text}")
             
             # 3. Этап 1: Классификация стадии диалога
-            print(f"[DEBUG] Начинаем классификацию для сообщения: '{text}'")
-            print(f"[DEBUG] Доступные паттерны: {list(dialogue_patterns.keys())}")
             
             tracer.add_event("🔍 Запрос на классификацию", f"Доступные стадии: {list(dialogue_patterns.keys())}")
             
@@ -192,6 +197,7 @@ class DialogService:
                 dialogue_stage, extracted_pd = stage_and_pd, {}
 
             tracer.add_event("✅ Результат классификации", f"Стадия: {dialogue_stage}, Извлеченные ПД: {extracted_pd}")
+            logger.info(f"🎯 Gemini определил стадию: '{dialogue_stage}'")
 
             # Если классификатор извлек ПДн — сохраняем их в БД
             if extracted_pd:
@@ -205,11 +211,10 @@ class DialogService:
                     tracer.add_event("📝 ПД обновлены в БД", f"Обновленные поля: {list(update_data.keys())}")
             
             # 4. Этап 2: Определение стратегии обработки (План А или План Б)
-            print(f"[DEBUG] Результат классификации: '{dialogue_stage}'")
             
             # Быстрый путь для конфликтных ситуаций
             if dialogue_stage == 'conflict_escalation':
-                print(f"[DEBUG] КОНФЛИКТНАЯ СТАДИЯ: Немедленная эскалация на менеджера")
+                logger.warning(f"⚠️ КОНФЛИКТНАЯ СТАДИЯ: Немедленная эскалация на менеджера")
                 
                 tracer.add_event("⚠️ Конфликтная ситуация", "Эскалация на менеджера")
                 
@@ -217,9 +222,7 @@ class DialogService:
                 manager_response = self.tool_service.call_manager(text)
                 
                 tracer.add_event("👨‍💼 Вызов менеджера", f"Ответ: {manager_response['response_to_user']}")
-                
-                # Сохраняем системный сигнал для будущей обработки
-                print(f"[DEBUG] Системный сигнал: {manager_response['system_signal']}")
+                logger.info(f"👨‍💼 Действие: эскалация на менеджера")
                 
                 # Сохраняем ответ бота в БД
                 self.repository.add_message(
@@ -230,12 +233,15 @@ class DialogService:
                 
                 tracer.add_event("💾 Ответ менеджера сохранен", f"Текст: {manager_response['response_to_user']}")
                 
+                # Логируем завершение обработки
+                log_dialog_end(logger, manager_response['response_to_user'])
+                
                 # Возвращаем ответ пользователю и завершаем обработку
                 return manager_response['response_to_user']
             
             if dialogue_stage is not None:
                 # План А: Валидная стадия найдена - используем паттерны диалога
-                print(f"[DEBUG] План А: Используем стадию '{dialogue_stage}'")
+                logger.info(f"📋 План А: Используем стадию '{dialogue_stage}'")
                 
                 tracer.add_event("📋 План А: Использование паттернов", f"Стадия: {dialogue_stage}")
                 
@@ -254,7 +260,7 @@ class DialogService:
                 tracer.add_event("📝 Финальный промпт для генерации", f"Длина промпта: {len(system_prompt)} символов")
             else:
                 # План Б: Fallback - используем универсальный системный промпт
-                print(f"[DEBUG] План Б: Используем fallback промпт")
+                logger.info(f"🔄 План Б: Используем fallback промпт")
                 
                 tracer.add_event("🔄 План Б: Fallback промпт", "Использование универсального промпта")
                 
@@ -269,6 +275,7 @@ class DialogService:
             
             # 5. Этап 3: Генерация и выполнение инструментов
             tracer.add_event("⚙️ Запуск цикла инструментов", "Начинаем выполнение ToolOrchestrator")
+            logger.info("⚙️ Запуск цикла инструментов")
             
             bot_response_text, intermediate_history = await self.tool_orchestrator.execute_tool_cycle(
                 system_prompt=system_prompt,
@@ -279,6 +286,7 @@ class DialogService:
             )
             
             tracer.add_event("✅ Цикл инструментов завершен", f"Финальный ответ: {bot_response_text}")
+            logger.info("✅ Цикл инструментов завершен")
             
             # 7. Сохраняем финальный ответ бота в БД
             self.repository.add_message(
@@ -289,11 +297,15 @@ class DialogService:
             
             tracer.add_event("💾 Финальный ответ сохранен", f"Текст: {bot_response_text}")
             
+            # Логируем завершение обработки
+            log_dialog_end(logger, bot_response_text)
+            
             # 8. Возвращаем сгенерированный текст
             return bot_response_text
             
         except Exception as e:
             tracer.add_event("❌ Ошибка обработки", f"Ошибка: {str(e)}")
+            log_error(logger, e, f"Обработка сообщения от user_id={user_id}")
             raise
         finally:
             # Сохраняем трассировку в любом случае

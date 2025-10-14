@@ -1,10 +1,14 @@
 from fastapi import APIRouter, Request, BackgroundTasks
 from sqlalchemy.orm import Session
+import logging
 from app.schemas.telegram import Update
 from app.services.telegram_service import telegram_service
 from app.services.dialog_service import DialogService
 from app.core.config import settings
 from app.core.database import get_session_local
+
+# Получаем логгер для этого модуля
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -48,10 +52,10 @@ async def process_telegram_update(update: Update):
             error_message = "Извините, произошла ошибка при обработке вашего сообщения. Пожалуйста, попробуйте еще раз."
             await telegram_service.send_message(chat_id, error_message)
             # Логируем ошибку для отладки с более подробной информацией
-            print(f"Error processing message: {e}")
-            print(f"Error type: {type(e).__name__}")
+            logger.error(f"❌ Ошибка обработки сообщения: {e}")
+            logger.error(f"❌ Тип ошибки: {type(e).__name__}")
             import traceback
-            print(f"Traceback: {traceback.format_exc()}")
+            logger.error(f"❌ Трассировка: {traceback.format_exc()}")
         finally:
             # Всегда закрываем сессию БД
             db.close()

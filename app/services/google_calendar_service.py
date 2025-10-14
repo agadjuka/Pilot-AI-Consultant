@@ -8,7 +8,11 @@ from zoneinfo import ZoneInfo
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
+import logging
 from app.core.config import settings
+
+# Получаем логгер для этого модуля
+logger = logging.getLogger(__name__)
 
 
 class GoogleCalendarService:
@@ -243,7 +247,7 @@ class GoogleCalendarService:
                 self.delete_event(event['id'])
                 deleted_count += 1
             except Exception as e:
-                print(f"Не удалось удалить событие {event.get('id')}: {str(e)}")
+                logger.warning(f"⚠️ Не удалось удалить событие {event.get('id')}: {str(e)}")
         
         return deleted_count
     
@@ -341,10 +345,6 @@ class GoogleCalendarService:
         
         # Получаем все события за этот день (для всех мастеров)
         events = self.get_events(time_min=day_start, time_max=day_end)
-        print(f"\n🔎 get_free_slots: дата={date}, длительность={duration_minutes} мин")
-        print(f"   Всего событий за день: {len(events)}")
-        if master_names:
-            print(f"   Фильтр по мастерам: {', '.join(master_names)} (всего {len(master_names)})")
         
         # Создаем единый список всех занятых блоков
         occupied_blocks = []
@@ -378,9 +378,6 @@ class GoogleCalendarService:
         
         # Сортируем занятые блоки по времени начала
         occupied_blocks.sort(key=lambda x: x['start'])
-        print(f"   Занятых блоков (после фильтрации по 'Запись:'{', по мастерам' if master_names else ''}): {len(occupied_blocks)}")
-        for i, b in enumerate(occupied_blocks[:10]):
-            print(f"   ⛔ {i+1}. {b['start'].strftime('%H:%M')} - {b['end'].strftime('%H:%M')}")
         
         # Определяем границы рабочего дня
         work_start = target_date.replace(
@@ -421,11 +418,9 @@ class GoogleCalendarService:
             
             if adjusted_work_start > work_start:
                 work_start = adjusted_work_start
-                print(f"   ⏰ Сегодняшний день: минимальное время записи {work_start.strftime('%H:%M')} (текущее время + 1 час)")
         
         # Находим свободные интервалы с учетом количества мастеров (хотя бы один свободен)
         capacity = len(master_names) if master_names else 1
-        print(f"   Емкость (кол-во мастеров под услугу): {capacity}")
         # Строим события изменения занятости
         timeline: List[tuple[datetime, int]] = []
         for b in occupied_blocks:
@@ -470,10 +465,6 @@ class GoogleCalendarService:
             minutes = int((e - s).total_seconds() // 60)
             if minutes >= duration_minutes:
                 free_intervals.append({'start': s.strftime('%H:%M'), 'end': e.strftime('%H:%M')})
-        
-        print(f"   ✅ Найдено свободных интервалов: {len(free_intervals)}")
-        if free_intervals:
-            print("   Первые интервалы: " + ", ".join([f"{i['start']}-{i['end']}" for i in free_intervals[:10]]))
         
         return free_intervals
 

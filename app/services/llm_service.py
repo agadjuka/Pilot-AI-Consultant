@@ -6,8 +6,12 @@ from typing import List, Dict, Optional, TYPE_CHECKING, Any
 import google.generativeai as genai
 from google.oauth2 import service_account
 import requests
+import logging
 from app.core.config import settings
 from app.services.tool_definitions import salon_tools
+
+# Получаем логгер для этого модуля
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from app.services.tool_service import ToolService
@@ -134,16 +138,7 @@ class LLMService:
 
     async def _send_gemini_message(self, chat, message, user_id: int = None):
         """Отправляет сообщение в Gemini чат."""
-        # Краткий лог запроса
-        if user_id is not None:
-            request_text = ""
-            if isinstance(message, str):
-                request_text = message
-            elif isinstance(message, list):
-                request_text = f"FunctionResponse x{len(message)}"
-            else:
-                request_text = str(message)
-            print(f"[LLM:Gemini] → {request_text[:140]}")
+        # Логируем только ошибки
         
         # Используем asyncio для выполнения синхронного вызова
         loop = asyncio.get_event_loop()
@@ -153,26 +148,16 @@ class LLMService:
                 lambda: chat.send_message(message)
             )
         except Exception as e:
-            print(f"[LLM:Gemini] ! {str(e)}")
+            logger.error(f"❌ [Gemini] Ошибка: {str(e)}")
             raise
         
-        # Краткий лог ответа
-        if user_id is not None:
-            response_text = ""
-            for part in response.candidates[0].content.parts:
-                if hasattr(part, 'text') and part.text:
-                    response_text += part.text
-                elif hasattr(part, 'function_call') and part.function_call:
-                    response_text += f"[call {part.function_call.name}]"
-            print(f"[LLM:Gemini] ← {response_text[:140]}")
+        # Логируем только ошибки
         
         return response.candidates[0].content
 
     async def _send_yandex_message(self, history: List[Dict], message: str, user_id: int = None):
         """Отправляет сообщение в YandexGPT."""
-        # Краткий лог запроса
-        if user_id is not None:
-            print(f"[LLM:Yandex] → {message[:140]}")
+        # Логируем только ошибки
         
         # Если history уже в формате YandexGPT, используем как есть
         if history and isinstance(history[0], dict) and "text" in history[0]:
@@ -215,21 +200,18 @@ class LLMService:
             
             # Логируем только ошибки
             if response.status_code != 200:
-                print(f"[LLM:Yandex] ! {response.status_code} {response.text[:120]}")
+                logger.error(f"❌ [Yandex] Ошибка HTTP {response.status_code}: {response.text[:120]}")
             
             response.raise_for_status()
             
             result = response.json()
-            # Короткий лог ответа
-            if user_id is not None:
-                ytxt = result.get("result", {}).get("alternatives", [{}])[0].get("message", {}).get("text", "")
-                print(f"[LLM:Yandex] ← {ytxt[:140]}")
+            # Логируем только ошибки
             
             # Возвращаем ответ в формате, совместимом с Gemini
             return self._format_yandex_response(result)
             
         except Exception as e:
-            print(f"[LLM:Yandex] ! {str(e)}")
+            logger.error(f"❌ [Yandex] Ошибка: {str(e)}")
             raise
 
     def _format_yandex_response(self, yandex_result: Dict) -> Any:

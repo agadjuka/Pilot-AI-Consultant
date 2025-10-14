@@ -5,9 +5,13 @@
 
 from typing import List, Dict, Optional, Tuple
 import re
+import logging
 from app.core.dialogue_pattern_loader import dialogue_patterns
 from app.services.llm_service import LLMService
 from app.services.prompt_builder_service import PromptBuilderService
+
+# Получаем логгер для этого модуля
+logger = logging.getLogger(__name__)
 
 
 class ClassificationService:
@@ -107,20 +111,14 @@ class ClassificationService:
             # Очищаем ответ от лишних пробелов, точек и других знаков препинания
             stage_id = response.strip().lower().rstrip('.,!?;:')
             
-            # Отладочная информация
-            print(f"[DEBUG] Классификация: получен ответ '{response}' -> очищенный '{stage_id}'")
-            print(f"[DEBUG] Доступные стадии: {list(dialogue_patterns.keys())}")
-            
             # Проверяем, что полученная стадия существует в паттернах
             if stage_id in dialogue_patterns:
-                print(f"[Stage] {stage_id}")
                 return stage_id, extracted
             
             # Если стадия не найдена или ответ пустой/некорректный - возвращаем None
-            print("[Stage] unknown -> fallback")
             return None, extracted
             
         except Exception as e:
             # В случае ошибки возвращаем None для активации fallback
-            print(f"Ошибка классификации стадии диалога: {e}")
+            logger.error(f"❌ Ошибка классификации стадии диалога: {e}", exc_info=True)
             return None, {"name": None, "phone": None}

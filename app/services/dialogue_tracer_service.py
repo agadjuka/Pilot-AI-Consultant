@@ -3,6 +3,10 @@ import shutil
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Any, Optional
+import logging
+
+# Получаем логгер для этого модуля
+logger = logging.getLogger(__name__)
 
 
 class DialogueTracer:
@@ -103,10 +107,10 @@ class DialogueTracer:
             with open(self.filepath, "w", encoding="utf-8") as f:
                 f.write("\n".join(content_lines))
             
-            print(f"   📝 Трассировка сохранена: {self.filename}")
+            # Трассировка сохранена
             
         except Exception as e:
-            print(f"❌ Ошибка при сохранении трассировки: {e}")
+            logger.error(f"❌ Ошибка при сохранении трассировки: {e}")
 
 
 def clear_debug_logs(debug_dir: str = "debug_logs") -> None:
@@ -121,7 +125,7 @@ def clear_debug_logs(debug_dir: str = "debug_logs") -> None:
     
     if debug_path.exists():
         shutil.rmtree(debug_path)
-        print(f"   🗑️  Папка {debug_path} очищена")
+        # Папка очищена
     
     debug_path.mkdir(parents=True, exist_ok=True)
-    print(f"   📁 Создана папка для трассировки: {debug_path}")
+    # Папка создана

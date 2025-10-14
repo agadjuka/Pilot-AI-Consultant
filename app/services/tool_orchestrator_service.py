@@ -1,10 +1,14 @@
 from typing import List, Dict, Tuple
 import google.generativeai as genai
 from google.generativeai import protos
+import logging
 from app.services.llm_service import LLMService
 from app.services.tool_service import ToolService
 from app.services.prompt_builder_service import PromptBuilderService
 from app.repositories.client_repository import ClientRepository
+
+# Получаем логгер для этого модуля
+logger = logging.getLogger(__name__)
 
 
 class ToolOrchestratorService:
@@ -152,8 +156,6 @@ class ToolOrchestratorService:
                             return (s[:120] + '…') if len(s) > 120 else s
                         except Exception:
                             return '—'
-                    print(f"[Tool] {function_name} args={_short(function_args)} → {_short(result)}")
-                    
                     # Логируем вызов функции
                     iteration_log["function_calls"].append({
                         "name": function_name,
@@ -215,7 +217,7 @@ class ToolOrchestratorService:
                             result = self._execute_function(function_name, args, user_id)
                         except Exception as e:
                             result = f"Ошибка при выполнении функции: {str(e)}"
-                        print(f"[Tool] {function_name} args={args} → {str(result)[:120]}")
+                        # Логируем вызов функции
                         iteration_log["function_calls"].append({
                             "name": function_name,
                             "args": args,
@@ -259,7 +261,7 @@ class ToolOrchestratorService:
                         has_text = True
                         bot_response_text = text_payload
                         iteration_log["response"] = text_payload
-                        print(f"[Answer] {bot_response_text[:140]}")
+                        logger.info(f"💬 [Answer] {bot_response_text[:140]}")
             
             # Сохраняем информацию об итерации
             debug_iterations.append(iteration_log)

@@ -1,7 +1,11 @@
 import httpx
 from typing import List
+import logging
 from app.core.config import settings
 from app.schemas.telegram import Update
+
+# Получаем логгер для этого модуля
+logger = logging.getLogger(__name__)
 
 class TelegramService:
     def __init__(self, token: str):
@@ -21,7 +25,7 @@ class TelegramService:
                 response.raise_for_status()
                 return True
             except httpx.HTTPStatusError as e:
-                print(f"Error sending message to Telegram: {e.response.text}")
+                logger.error(f"❌ Ошибка отправки сообщения в Telegram: {e.response.text}")
                 return False
 
     async def delete_webhook(self) -> bool:
@@ -40,7 +44,7 @@ class TelegramService:
                 data = response.json()
                 return data.get("ok", False)
             except Exception as e:
-                print(f"Error deleting webhook: {e}")
+                logger.error(f"❌ Ошибка удаления webhook: {e}")
                 return False
 
     async def get_updates(self, offset: int = 0) -> List[Update]:
@@ -68,13 +72,13 @@ class TelegramService:
                     updates = [Update.model_validate(update) for update in data.get("result", [])]
                     return updates
                 else:
-                    print(f"Error getting updates: {data}")
+                    logger.error(f"❌ Ошибка получения обновлений: {data}")
                     return []
             except httpx.HTTPError as e:
-                print(f"HTTP error getting updates: {e}")
+                logger.error(f"❌ HTTP ошибка получения обновлений: {e}")
                 return []
             except Exception as e:
-                print(f"Unexpected error getting updates: {e}")
+                logger.error(f"❌ Неожиданная ошибка получения обновлений: {e}")
                 return []
 
 telegram_service = TelegramService(token=settings.TELEGRAM_BOT_TOKEN)

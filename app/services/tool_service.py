@@ -3,6 +3,10 @@ from app.repositories.master_repository import MasterRepository
 from app.services.appointment_service import AppointmentService
 from datetime import datetime, timedelta
 from difflib import SequenceMatcher
+import logging
+
+# Получаем логгер для этого модуля
+logger = logging.getLogger(__name__)
 
 
 class ToolService:
@@ -189,7 +193,7 @@ class ToolService:
             Словарь с ответом для пользователя и системным сигналом
         """
         # В будущем здесь будет логика отправки уведомления менеджеру
-        print(f"!!! MANAGER ALERT: {reason} !!!")
+        logger.warning(f"🚨 MANAGER ALERT: {reason}")
         
         return {
             "response_to_user": "Секундочку, уточню у менеджера ваш вопрос.",
