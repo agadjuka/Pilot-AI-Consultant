@@ -20,6 +20,13 @@ class Settings(BaseSettings):
     # ChromaDB
     CHROMA_HOST: Optional[str] = None
 
+    # LLM Provider Configuration
+    LLM_PROVIDER: str = "google"  # "google" или "yandex"
+
+    # YandexGPT Configuration
+    YANDEX_FOLDER_ID: Optional[str] = None
+    YANDEX_API_KEY_SECRET: Optional[str] = None
+
 # Глобальная переменная для ленивой инициализации
 _settings: Optional[Settings] = None
 

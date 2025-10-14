@@ -5,7 +5,7 @@
 
 from typing import List, Dict, Optional
 from app.core.dialogue_pattern_loader import dialogue_patterns
-from app.services.gemini_service import GeminiService
+from app.services.llm_service import LLMService
 from app.utils.debug_logger import gemini_debug_logger
 
 
@@ -15,14 +15,14 @@ class ClassificationService:
     Использует быструю классификацию через Gemini для определения текущей стадии.
     """
     
-    def __init__(self, gemini_service: GeminiService):
+    def __init__(self, llm_service: LLMService):
         """
         Инициализация сервиса классификации.
         
         Args:
-            gemini_service: Сервис для работы с Gemini API
+            llm_service: Сервис для работы с LLM API (Gemini или YandexGPT)
         """
-        self.gemini_service = gemini_service
+        self.llm_service = llm_service
     
     async def get_dialogue_stage(self, history: List[Dict], user_message: str, user_id: int = None) -> Optional[str]:
         """
@@ -62,8 +62,8 @@ class ClassificationService:
                 }
             ]
             
-            # Вызываем Gemini для классификации
-            response = await self.gemini_service.generate_response(classification_history)
+            # Вызываем LLM для классификации
+            response = await self.llm_service.generate_response(classification_history)
             
             # Логируем классификацию
             if user_id is not None:

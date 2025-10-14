@@ -7,7 +7,7 @@ from app.repositories.dialog_history_repository import DialogHistoryRepository
 from app.repositories.service_repository import ServiceRepository
 from app.repositories.master_repository import MasterRepository
 from app.repositories.appointment_repository import AppointmentRepository
-from app.services.gemini_service import get_gemini_service
+from app.services.llm_service import get_llm_service
 from app.services.tool_service import ToolService
 from app.services.google_calendar_service import GoogleCalendarService
 from app.services.classification_service import ClassificationService
@@ -29,10 +29,10 @@ class DialogService:
             db_session: Сессия базы данных SQLAlchemy
         """
         self.repository = DialogHistoryRepository(db_session)
-        self.gemini_service = get_gemini_service()
+        self.llm_service = get_llm_service()
         
         # Инициализируем ClassificationService
-        self.classification_service = ClassificationService(self.gemini_service)
+        self.classification_service = ClassificationService(self.llm_service)
         
         # Инициализируем репозитории для ToolService
         self.service_repository = ServiceRepository(db_session)
@@ -270,7 +270,7 @@ class DialogService:
         full_history = self._build_full_history_with_system_prompt(dialog_history, system_prompt)
         
         # Создаем чат один раз для всего цикла
-        chat = self.gemini_service.create_chat(full_history)
+        chat = self.llm_service.create_chat(full_history)
         
         # Запускаем цикл обработки Function Calling
         max_iterations = 5
@@ -314,8 +314,8 @@ class DialogService:
                         func_result = part.function_response.response
                         iteration_log["request"] += f"\n  Функция {i+1}: {func_name} -> {func_result}"
             
-            # Получаем ответ от Gemini
-            response_content = await self.gemini_service.send_message_to_chat(
+            # Получаем ответ от LLM
+            response_content = await self.llm_service.send_message_to_chat(
                 chat=chat,
                 message=current_message,
                 user_id=user_id
