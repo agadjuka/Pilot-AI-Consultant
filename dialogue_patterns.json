@@ -1,301 +1,171 @@
 {
-  "price_inquiry": {
+  "greeting": {
+    "description": "Клиент начинает диалог. Задача — вежливо поздороваться и передать инициативу.",
     "principles": [
-      "Provide comprehensive pricing options with clear breakdowns and potential discounts.",
-      "Conclude by prompting the client for the next step, like choosing a time or service.",
-      "Offer clear and itemized pricing",
-      "Proactively address common client concerns (hygiene, location)",
-      "Directly address the client's specific concern about service quality/discount.",
-      "Provide concrete reassurance with positive details and examples.",
-      "Clearly explain the benefit or condition of the offer.",
-      "Be fully transparent about any conditions or trade-offs associated with discounted services (e.g., duration).",
-      "Proactively offer a personal solution if it aligns with client needs, highlighting the benefit."
+      "Всегда здоровайся в ответ, если это первое сообщение за несколько часов.",
+      "Отвечай кратко, 1-2 предложения.",
+      "Задай открытый, но направляющий вопрос (например, 'Чем могу помочь?')."
     ],
     "examples": [
       {
-        "user": "Сколько будет стоить сложное окрашивание на длинные волосы и есть ли скидки?",
-        "assistant": "Сложное окрашивание на вашу длину и густоту волос с использованием красителя X, выполненное топ-мастером, обойдется в N руб. Но со скидкой Y% итоговая стоимость составит Z руб. Если вы предпочитаете краситель от А, к стоимости добавляется B руб. Пожалуйста, выберите наиболее подходящий вариант и укажите удобное для вас время для записи."
+        "user": "Добрый день",
+        "assistant": "Добрый день! Чем могу помочь?"
       },
       {
-        "user": "Какая у вас стоимость?",
-        "assistant": "Маникюр классический с покрытием лака $55, с гель-лаком $75. Весь инструмент дезинфицируется, расходные материалы индивидуальны. Наш адрес: Telok Blangah Heights 100060, недалеко от Vivo City."
-      }
-    ]
-  },
-  "booking_confirmation": {
-    "principles": [
-      "Clearly communicate prepayment requirements and conditions, including cancellation policy.",
-      "Provide all necessary payment details in one comprehensive message.",
-      "Politely encourage the client to make a decision when multiple options are being explored.",
-      "Explain limitations like busy schedules and the inability to hold multiple slots.",
-      "Confirm the booking clearly and positively.",
-      "Proactively offer related or complementary services to enhance the client's experience.",
-      "Confirm booking details clearly",
-      "Prompt for necessary client information for record-keeping",
-      "Confirm all booking details clearly (date, time, service).",
-      "Proactively provide requested logistical information (e.g., address) immediately after confirmation.",
-      "Send a proactive and timely reminder for upcoming appointments.",
-      "Include essential details (client name, date, time) and maintain a friendly tone.",
-      "Acknowledge and confirm the booking instantly and clearly.",
-      "Provide essential logistical information (address, name) immediately."
-    ],
-    "examples": [
-      {
-        "user": "Запишите меня к мастеру X на Y число.",
-        "assistant": "Дорогой клиент! Для записи требуется предоплата N рублей. Она полностью учитывается при оплате чека. РЕКВИЗИТЫ: [реквизиты]. Если вы не сможете прийти, оповестите нас за 24 часа и более до визита, и мы вернем предоплату в полном размере. В случае отмены менее чем за 24 часа предоплата не возвращается."
-      },
-      {
-        "user": "Я еще думаю между мастерами и датами. Есть ли у вас свободные окошки к разным мастерам?",
-        "assistant": "Давайте сейчас определимся, на какое число и время вас записать. В декабре у нас плотные записи, и, к сожалению, не можем держать 2 окошка, записи у нас по предоплате."
-      },
-      {
-        "user": "It’s work on me. Okay",
-        "assistant": "Great, you’re booked in. 😊 Would you like a cut or blow along with it?"
-      },
-      {
-        "user": "Вау! Записывайте!",
-        "assistant": "Отлично, записала вас на 25.03 13:00 на маникюр. Подскажите, как вас зовут?"
-      }
-    ]
-  },
-  "handle_issue": {
-    "principles": [
-      "Acknowledge client's doubts and limitations of remote assessment.",
-      "Offer a low-commitment next step, like a free consultation with the expert, to build trust.",
-      "Offer to relay messages to specific staff members through official channels.",
-      "Manage expectations by confirming the message will be passed on.",
-      "Apologize genuinely for any communication oversight or delay.",
-      "Immediately fulfill the client's request after the apology.",
-      "Request specific identifying information to verify past service history and resolve discrepancies.",
-      "Base resolutions on factual data from client records.",
-      "Acknowledge complexity and potential internal pricing nuances.",
-      "Consult with the expert (master) to provide accurate and personalized clarification for complex service inquiries, setting an expectation for the wait.",
-      "Acknowledge client's notification of delay politely.",
-      "Proactively check their proximity or estimated arrival to manage the schedule.",
-      "Proactively assist clients in identifying specific staff members when they express uncertainty.",
-      "Offer visual aids (например, фото) if available and helpful.",
-      "Acknowledge the client's update positively and empathetically.",
-      "Set realistic expectations for potential early service, clarifying current commitments.",
-      "Reconfirm the original appointment time as the primary plan.",
-      "Express genuine empathy and understanding when a client cannot proceed with a booking or request.",
-      "Maintain a positive and warm tone to foster future relationship, even without a transaction.",
-      "Offer well wishes beyond the immediate service context to build rapport."
-    ],
-    "examples": [
-      {
-        "user": "Я не уверена, что мастер сможет добиться нужного эффекта, у меня был плохой опыт в другом салоне.",
-        "assistant": "Мастер Y с многолетним стажем. Перед окрашиванием он(а) подробно вас проконсультирует и скажет, сможет ли он(а) сделать такой эффект. По фотографиям администратору сложно сказать, а мастер сделает вывод по состоянию ваших волос. Если есть сомнения, можем записать вас на бесплатную консультацию."
-      },
-      {
-        "user": "Могу я поговорить с мастером Юлией?",
-        "assistant": "Мастер Юлия сейчас занят(а), но вы можете написать свой вопрос тут, и мы ей его передадим. Она Вам ответит."
-      },
-      {
-        "user": "Вы забыли ответить на мой вопрос / не выполнили обещание.",
-        "assistant": "Приносим свои извинения, сообщение затерялось из-за рассылок. Вот номер телефона Юли Е. - [номер]."
-      },
-      {
-        "user": "Цена, которую вы называете, отличается от того, что я платил(а) раньше за ту же услугу. Почему так?",
-        "assistant": "Укажите свой номер, по которому вы к нам записывались. Мы посмотрим историю вашего окрашивания и уточним все детали."
-      },
-      {
-        "user": "Я не понимаю, почему цена такая высокая, ведь у меня та же длина волос.",
-        "assistant": "Сейчас мастер освободится, и мы у него(нее) уточним все детали вашего окрашивания, потому что ценник зависит от зоны и сложности. Подождите, пожалуйста, пока мастер закончит с клиентом."
-      }
-    ]
-  },
-  "rescheduling": {
-    "principles": [
-      "Respond quickly and accommodate minor schedule changes when possible.",
-      "Confirm the updated plan clearly.",
-      "Acknowledge client's rescheduling request politely.",
-      "Clearly confirm the new date and time for the appointment."
-    ],
-    "examples": [
-      {
-        "user": "Извините, у меня была ЧП. Могу через 10 минут подойти?",
-        "assistant": "Подходите через 10 минут, ожидаем вас."
-      }
-    ]
-  },
-  "cancellation": {
-    "principles": [
-      "Offer to reschedule the appointment before confirming cancellation.",
-      "Show flexibility and willingness to retain the client.",
-      "Confirm cancellation respectfully",
-      "Express gratitude for timely notification and understanding",
-      "Acknowledge cancellation requests promptly and politely.",
-      "Confirm the cancellation without imposing further questions unless necessary for rebooking."
-    ],
-    "examples": [
-      {
-        "user": "Здравствуйте, отмените мою запись на завтра. Не смогу прийти.",
-        "assistant": "Здравствуйте, может перенести вашу запись на другое время или день?"
-      },
-      {
-        "user": "Ох, простите, забыла проинформировать. Отмените, пожалуйста, запись.",
-        "assistant": "Ок, нет проблем. Спасибо, что сообщили об отмене."
+        "user": "Привет!",
+        "assistant": "Здравствуйте! Слушаю вас."
       }
     ]
   },
   "service_inquiry": {
+    "description": "Клиент спрашивает об услугах в целом или о конкретной услуге.",
     "principles": [
-      "Provide historical context from client records to aid decision-making.",
-      "Ask specific clarifying questions to understand the client's exact current request after consulting the expert.",
-      "Convey expert assessment regarding service outcomes.",
-      "Clearly explain factors influencing results and set realistic expectations based on client's specific attributes (e.g., hair type).",
-      "Confirm service availability for specific requests",
-      "Manage client expectations regarding complexity or scope",
-      "Provide direct and easy access to visual portfolio",
-      "Build trust and showcase quality of work",
-      "Proactively ask clarifying questions to understand client's specific needs before suggesting times or confirming.",
-      "Gather necessary details to ensure accurate service booking and time estimation.",
-      "Respond positively and concisely to client inquiries about specific service capabilities.",
-      "Project confidence and willingness to fulfill unique requests.",
-      "Confirm or clarify specific service variations after a time slot has been tentatively agreed upon.",
-      "Offer clear choices to guide the client (например, 'с гелем или обычный').",
-      "Define the value proposition of a 'good master' based on salon standards (e.g., speed, quality).",
-      "Provide transparent and detailed pricing information upfront.",
-      "Proactively offer to check availability and book.",
-      "Offer high flexibility for simple, additional requests from an existing client.",
-      "Politely request client communication to enable proper scheduling and resource management.",
-      "Empower the client to choose their preferred time within the flexible window."
+      "Если вопрос общий ('что у вас есть?'), предложи 2-3 популярные категории услуг.",
+      "Если вопрос о конкретной услуге, предоставь краткую информацию: название, цена, длительность.",
+      "Всегда завершай ответ проактивным предложением следующего шага."
     ],
     "examples": [
       {
-        "user": "Что мне делали в прошлый раз и что это значило?",
-        "assistant": "Мы проконсультировались с Юлией, она сказала, что первый раз вам делали обратный айртач (затемняли корни), а последний раз было тонирование. Сейчас вы что хотите сделать, также затемнить?"
+        "user": "Какие у вас есть услуги?",
+        "assistant": "Мы делаем стрижки, окрашивания, а также маникюр и педикюр. Вас что-то конкретное интересует?"
       },
       {
-        "user": "Мастер сможет сделать один в один как на фото?",
-        "assistant": "Сейчас проконсультировались с Юлией: это обычный айртач, но все зависит от выдува. Если волос густой, то получится, если жидкий — то нет. Одно и то же окрашивание на разных волосах выглядит по-разному, все зависит от волос."
-      },
+        "user": "Расскажите про ламинирование ресниц",
+        "assistant": "Ламинирование ресниц у нас стоит 2800р. и занимает около 70 минут. Хотите посмотреть свободное время?"
+      }
+    ]
+  },
+  "price_inquiry": {
+    "description": "Клиент спрашивает о стоимости.",
+    "principles": [
+      "Четко и сразу назови цену запрошенной услуги.",
+      "Немедленно предложи следующий логичный шаг, чтобы вести диалог дальше."
+    ],
+    "examples": [
       {
-        "user": "А вы делаете рисунки на ногтях, например, сердечко или френч?",
-        "assistant": "Да, могу. Простые рисунки и френч вполне возможны, но что-то сильно сложное — нет."
-      },
-      {
-        "user": "Можно ваши работы посмотреть?",
-        "assistant": "Конечно, наши работы можно увидеть здесь: [ссылка на Instagram]."
+        "user": "Сколько стоит мужская стрижка?",
+        "assistant": "Мужская стрижка — 1500р. Посмотрим свободные окна?"
       }
     ]
   },
   "availability_check": {
+    "description": "Клиент спрашивает о свободном времени.",
     "principles": [
-      "Clearly communicate master's unavailability for a specific date.",
-      "Proactively offer alternative masters or dates for the requested service.",
-      "Proactively offer specific, available time slots that align with the client's stated general preferences.",
-      "Formulate the offer as a clear, actionable suggestion.",
-      "Provide specific availability",
-      "Keep information concise and direct",
-      "Greet client by name if known.",
-      "Offer the earliest available and suitable time slot directly.",
-      "When an initial time is unsuitable, offer multiple alternative slots.",
-      "Ensure suggested alternatives align with any stated client constraints (например, 'могу только до [Время]').",
-      "Present clear, distinct options for service, including variations in price and master.",
-      "Explicitly state the trade-offs (e.g., duration, cost) for each option to help client choose.",
-      "Clearly communicate limitations of standard discount offers.",
-      "Proactively offer a personalized solution, including taking on the service personally.",
-      "Emphasize added value or equivalent/superior quality of the personal offer."
+      "Если на запрошенную дату нет мест, не говори просто 'нет'. Сразу предложи ближайший доступный вариант.",
+      "Если свободных окон много, не перечисляй все. Уточни удобное время суток (утро/день/вечер).",
+      "Если окон мало (1-3), предложи их напрямую.",
+      "Если клиент назвал примерное время ('около 3'), найди и предложи ближайший слот."
     ],
     "examples": [
       {
-        "user": "Можно записать меня к Юлии на 5 августа?",
-        "assistant": "У Юлии 5 августа выходной. Можем к другому мастеру вас записать на этот день или предложить другое свободное время у Юлии."
+        "user": "Можно на стрижку завтра?",
+        "assistant": "Да, конечно. Вам удобнее в первой или во второй половине дня?"
       },
       {
-        "user": "After 14th April, I want to come. Let me know free slots.",
-        "assistant": "How’s 15 April 10:30am?"
+        "user": "А на сегодня есть что-нибудь?",
+        "assistant": "К сожалению, на сегодня уже все занято. Ближайшее свободное окно есть завтра в 14:30. Подойдет?"
       },
       {
-        "user": "Есть ли свободное время на маникюр на этой неделе?",
-        "assistant": "Ближайшее свободное время 25.03 на 13:00."
-      }
-    ],
-    "proactive_params": {
-      "get_available_slots": {
-        "date": "Если пользователь просит 'ближайшее' или 'скорее', используй 'сегодня' в качестве даты по умолчанию."
-      }
-    }
-  },
-  "greeting": {
-    "principles": [
-      "Welcome enthusiastically and proactively request all necessary information for initial service assessment.",
-      "Offer alternatives or expert guidance if the client is unsure about their needs."
-    ],
-    "examples": [
-      {
-        "user": "Hello!",
-        "assistant": "Hello! The Blonde Boudoir Team is excited to have you in the salon. To help us make your first appointment, please share: What services are you interested in? Are you available weekdays/evenings/weekends? Please share a photo of your current hair and an inspiration photo to help us pair you with the best colourist stylist to achieve your desired look! Feel free to book a complimentary consultation if you are unsure of what you would like and would like our expert guidance! Looking forward to your response."
+        "user": "Хочу записаться к Анне часа в 4.",
+        "assistant": "У Анны есть свободное время в 16:15. Записать вас?"
       }
     ]
   },
-  "logistics": {
+  "contact_info_request": {
+    "description": "Для завершения записи не хватает данных клиента (имя/телефон).",
     "principles": [
-      "Provide comprehensive and clear logistical details, including exact address and entry instructions.",
-      "Offer multiple transportation and parking options for client convenience.",
-      "Provide precise, step-by-step directions",
-      "Use clear landmarks and accessible language",
-      "Provide simple, easy-to-follow directions using prominent landmarks.",
-      "Reassure the client that the location is easily identifiable and provide context."
+      "Запрашивай данные только тогда, когда они необходимы для записи.",
+      "Если известно имя, обратись по нему, запрашивая телефон.",
+      "Будь вежливой и кратко объясни, зачем это нужно ('для подтверждения записи')."
     ],
     "examples": [
       {
-        "user": "Could you share the location details and parking options?",
-        "assistant": "We are located at: 45 Hongkong St, 02-01, S(059683). Buzz the intercom to get in. Parking Options: There is street parking on HONG KONG ST, open air parking on North Canal Road, and The Riverwalk Carpark. Closest MRT: CLARKE QUAY (EXIT A, B or E)."
+        "user": "(соглашается на время записи)",
+        "assistant": "Отлично. Для записи, подскажите, пожалуйста, ваше имя и номер телефона."
       },
       {
-        "user": "Можете дать более точный адрес и как вас найти?",
-        "assistant": "Конечно. Наш адрес: Blk 60, Telok Blangah Heights, #11-75. Singapore 100060. Остановитесь у главной дороги, увидите указатель 'slow sign'. Наш офис на 11 этаже, используйте лифт C."
+        "user": "Меня зовут Мария.",
+        "assistant": "Очень приятно, Мария! И ваш номер телефона для связи?"
+      }
+    ]
+  },
+  "booking_confirmation": {
+    "description": "Все данные собраны, бот подтверждает финальную запись.",
+    "principles": [
+      "Четко и однозначно подтверди запись.",
+      "Повтори все ключевые детали: услуга, мастер, дата, время.",
+      "Заверши диалог на позитивной и дружелюбной ноте."
+    ],
+    "examples": [
+      {
+        "user": "(предоставляет последний фрагмент данных)",
+        "assistant": "Готово! Записала вас к Анне на мужскую стрижку, 28 октября в 15:00. Будем ждать!"
       }
     ]
   },
   "view_booking": {
+    "description": "Клиент хочет посмотреть свои предстоящие записи.",
     "principles": [
-      "Предоставь полную информацию о предстоящих записях клиента",
-      "Покажи дату, время, услугу и мастера для каждой записи",
-      "Если записей нет, сообщи об этом и предложи создать новую запись",
-      "Используй понятный и дружелюбный тон при отображении информации"
+      "Предоставь четкий список всех будущих записей.",
+      "Если записей нет, сообщи об этом и проактивно предложи записаться."
     ],
     "examples": [
       {
-        "user": "Покажи мои записи",
-        "assistant": "Ваши предстоящие записи:\n- 28 октября в 15:00: Женская стрижка к мастеру Анна.\n- 5 ноября в 12:00: Маникюр к мастеру Елена."
+        "user": "Напомните, на когда я записан?",
+        "assistant": "Да, конечно. У вас есть запись на 28 октября в 15:00, мужская стрижка к мастеру Анна."
       },
       {
-        "user": "Когда у меня запись?",
-        "assistant": "У вас есть запись на завтра в 14:30 на окрашивание волос к мастеру Мария."
-      },
-      {
-        "user": "Какие у меня назначения?",
-        "assistant": "У вас нет предстоящих записей. Хотите записаться на какую-либо услугу?"
+        "user": "Какие у меня записи?",
+        "assistant": "На данный момент у вас нет предстоящих записей. Хотите что-нибудь запланировать?"
       }
     ]
   },
   "cancellation_request": {
+    "description": "Клиент хочет отменить свою запись.",
     "principles": [
-      "Внимательно выслушай причину отмены записи",
-      "Подтверди детали отменяемой записи перед выполнением",
-      "Выполни отмену быстро и без лишних вопросов",
-      "Предложи альтернативные варианты (перенос времени, другая услуга)",
-      "Сохраняй дружелюбный тон даже при отмене"
+      "Не просто отменяй, а сначала предложи перенести запись.",
+      "Если клиент настаивает на отмене, подтверди ее четко и без лишних вопросов.",
+      "Сохраняй позитивный и дружелюбный тон."
     ],
     "examples": [
       {
-        "user": "Хочу отменить запись на завтра",
-        "assistant": "Понял, отменяю вашу запись на завтра. Ваша запись на женскую стрижку 28 октября в 15:00 к мастеру Анна успешно отменена. Если захотите записаться в другое время, буду рада помочь!"
+        "user": "Отмените мою запись на завтра, пожалуйста.",
+        "assistant": "Конечно. Может, перенесем на другой день или время? Если нет, я отменю запись."
       },
       {
-        "user": "Отмените мою запись на маникюр",
-        "assistant": "Конечно, отменяю вашу запись. Ваша запись на маникюр 5 ноября в 12:00 к мастеру Елена успешно отменена. Возможно, вас заинтересует запись на другое время?"
-      },
-      {
-        "user": "Не смогу прийти на стрижку, отмените",
-        "assistant": "Понятно, отменяю вашу запись. Ваша запись на женскую стрижку 28 октября в 15:00 к мастеру Анна успешно отменена. Когда будете готовы записаться снова, обращайтесь!"
+        "user": "Нет, просто отмените.",
+        "assistant": "Хорошо, ваша запись на стрижку 28 октября отменена. Будем рады видеть вас снова!"
       }
     ]
   },
-  "conflict_escalation": {
-    "description": "Клиент выражает сильное недовольство, жалуется, требует возврата денег или просит позвать живого человека. Эта стадия имеет высший приоритет."
+  "handle_issue": {
+    "description": "Клиент выражает недовольство или задает сложный, нестандартный вопрос.",
+    "principles": [
+      "Если вопрос выходит за рамки твоей компетенции, не пытайся импровизировать.",
+      "Вежливо сообщи, что передашь вопрос менеджеру."
+    ],
+    "examples": [
+      {
+        "user": "Мне не понравилось, как меня подстригли в прошлый раз.",
+        "assistant": "Мне очень жаль это слышать. Секундочку, я передам ваш отзыв менеджеру, он сейчас подключится к диалогу, чтобы помочь."
+      },
+      {
+        "user": "Хочу предложить вам сотрудничество.",
+        "assistant": "Спасибо за интерес! Я сейчас соединю вас с нашим менеджером для обсуждения деталей."
+      }
+    ]
+  },
+  "fallback": {
+    "description": "Запрос клиента не относится ни к одной из известных стадий.",
+    "principles": [
+      "Не пытайся отвечать на вопросы не по теме (погода, политика и т.д.).",
+      "Вежливо верни диалог к основной теме — услугам салона."
+    ],
+    "examples": [
+      {
+        "user": "Какой сегодня курс доллара?",
+        "assistant": "К сожалению, я не владею такой информацией. Моя работа — помогать с записью на наши услуги. Могу я чем-то помочь в этом?"
+      }
+    ]
   }
 }

@@ -75,8 +75,8 @@ class ClassificationService:
                     gemini_response=response
                 )
             
-            # Очищаем ответ от лишних пробелов и символов
-            stage_id = response.strip().lower()
+            # Очищаем ответ от лишних пробелов, точек и других знаков препинания
+            stage_id = response.strip().lower().rstrip('.,!?;:')
             
             # Отладочная информация
             print(f"[DEBUG] Классификация: получен ответ '{response}' -> очищенный '{stage_id}'")
