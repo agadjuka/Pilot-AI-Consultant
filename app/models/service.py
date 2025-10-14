@@ -1,4 +1,5 @@
 from sqlalchemy import Column, Integer, String, Float, Text
+from sqlalchemy.orm import relationship
 from app.core.database import Base
 
 class Service(Base):
@@ -9,4 +10,6 @@ class Service(Base):
     description = Column(Text, nullable=True)
     price = Column(Float, nullable=False)
     duration_minutes = Column(Integer, nullable=False) # Длительность в минутах
+    
+    appointments = relationship("Appointment", back_populates="service")
 

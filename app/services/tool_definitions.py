@@ -126,6 +126,49 @@ create_appointment_declaration = FunctionDeclaration(
 )
 
 
+# Определение инструмента для просмотра записей пользователя
+get_my_appointments_declaration = FunctionDeclaration(
+    name="get_my_appointments",
+    description=(
+        "Получает все предстоящие записи пользователя. "
+        "Используй эту функцию, когда клиент хочет посмотреть свои записи, "
+        "узнать когда у него назначена встреча, или проверить расписание. "
+        "Например: 'Покажи мои записи', 'Когда у меня запись?', 'Какие у меня назначения?'"
+    ),
+    parameters={
+        "type": "object",
+        "properties": {},
+        "required": []
+    }
+)
+
+
+# Определение инструмента для отмены записи
+cancel_appointment_declaration = FunctionDeclaration(
+    name="cancel_appointment",
+    description=(
+        "Отменяет ближайшую предстоящую запись пользователя. "
+        "Используй эту функцию, когда клиент хочет отменить запись. "
+        "Передай в 'appointment_details' описание записи, которую нужно отменить, из слов клиента. "
+        "Например: 'отменить стрижку', 'отменить запись на завтра', 'отменить маникюр'."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "appointment_details": {
+                "type": "string",
+                "description": (
+                    "Описание записи для отмены из слов клиента. "
+                    "Например: 'стрижка на завтра', 'маникюр', 'запись к Анне'. "
+                    "Можно передать любую информацию, которую упомянул клиент."
+                )
+            }
+        },
+        "required": ["appointment_details"]
+    }
+)
+
+
 # Определение инструмента для вызова менеджера
 call_manager_declaration = FunctionDeclaration(
     name="call_manager",
@@ -160,6 +203,8 @@ salon_tools = Tool(
         get_masters_for_service_declaration,
         get_available_slots_declaration,
         create_appointment_declaration,
+        get_my_appointments_declaration,
+        cancel_appointment_declaration,
         call_manager_declaration
     ]
 )

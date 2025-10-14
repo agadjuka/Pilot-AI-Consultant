@@ -1,5 +1,6 @@
 from app.repositories.service_repository import ServiceRepository
 from app.repositories.master_repository import MasterRepository
+from app.repositories.appointment_repository import AppointmentRepository
 from app.services.google_calendar_service import GoogleCalendarService
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -16,6 +17,7 @@ class ToolService:
         self,
         service_repository: ServiceRepository,
         master_repository: MasterRepository,
+        appointment_repository: AppointmentRepository,
         google_calendar_service: GoogleCalendarService
     ):
         """
@@ -24,10 +26,12 @@ class ToolService:
         Args:
             service_repository: Репозиторий для работы с услугами
             master_repository: Репозиторий для работы с мастерами
+            appointment_repository: Репозиторий для работы с записями
             google_calendar_service: Сервис для работы с Google Calendar
         """
         self.service_repository = service_repository
         self.master_repository = master_repository
+        self.appointment_repository = appointment_repository
         self.google_calendar_service = google_calendar_service
 
     def get_all_services(self) -> str:
@@ -154,7 +158,7 @@ class ToolService:
         except Exception as e:
             return f"Ошибка при поиске свободных слотов: {str(e)}"
 
-    def create_appointment(self, master_name: str, service_name: str, date: str, time: str) -> str:
+    def create_appointment(self, master_name: str, service_name: str, date: str, time: str, user_telegram_id: int) -> str:
         """
         Создает запись в календаре для мастера и услуги.
         
@@ -163,6 +167,7 @@ class ToolService:
             service_name: Название услуги
             date: Дата в формате "YYYY-MM-DD"
             time: Время в формате "HH:MM"
+            user_telegram_id: ID пользователя в Telegram
         
         Returns:
             Строка с подтверждением записи или сообщение об ошибке
@@ -178,6 +183,17 @@ class ToolService:
                 if similar_services:
                     return f"Услуга '{service_name}' не найдена в нашем прайс-листе. Возможно, вы имели в виду: {', '.join(similar_services)}?"
                 return f"Услуга '{service_name}' не найдена в нашем прайс-листе."
+            
+            # Находим мастера в БД
+            all_masters = self.master_repository.get_all()
+            master = self._find_master_by_fuzzy_match(master_name, all_masters)
+            
+            if not master:
+                # Если не найдено, показываем похожих мастеров
+                similar_masters = self._find_similar_masters(master_name, all_masters)
+                if similar_masters:
+                    return f"Мастер '{master_name}' не найден. Возможно, вы имели в виду: {', '.join(similar_masters)}?"
+                return f"Мастер '{master_name}' не найден."
             
             # Получаем длительность услуги
             duration_minutes = service.duration_minutes
@@ -211,17 +227,26 @@ class ToolService:
             end_time_iso = end_datetime.strftime('%Y-%m-%dT%H:%M:%S')
             
             # Вызываем метод создания события в Google Calendar
-            success = self.google_calendar_service.create_event(
+            event_id = self.google_calendar_service.create_event(
                 master_name=master_name,
                 service_name=service_name,
                 start_time_iso=start_time_iso,
                 end_time_iso=end_time_iso
             )
             
-            if success:
-                return f"Отлично! Я записала вас на {service_name} к мастеру {master_name} на {date} в {time}."
-            else:
-                return f"Произошла ошибка при создании записи. Попробуйте еще раз."
+            # Сохраняем запись в нашу БД
+            appointment_data = {
+                'user_telegram_id': user_telegram_id,
+                'google_event_id': event_id,
+                'master_id': master.id,
+                'service_id': service.id,
+                'start_time': start_datetime,
+                'end_time': end_datetime
+            }
+            
+            self.appointment_repository.create(appointment_data)
+            
+            return f"Отлично! Я записала вас на {service_name} к мастеру {master_name} на {date} в {time}."
                 
         except Exception as e:
             return f"Ошибка при создании записи: {str(e)}"
@@ -313,4 +338,142 @@ class ToolService:
         
         # Убираем дубликаты и ограничиваем количество
         return list(set(similar_services))[:3]
+
+    def _find_master_by_fuzzy_match(self, master_name: str, all_masters: list) -> object:
+        """
+        Находит мастера по нечеткому совпадению имени.
+        
+        Args:
+            master_name: Имя мастера для поиска
+            all_masters: Список всех мастеров
+            
+        Returns:
+            Найденный мастер или None
+        """
+        master_name_lower = master_name.lower().strip()
+        
+        # Сначала пробуем точное совпадение
+        for master in all_masters:
+            if master.name.lower() == master_name_lower:
+                return master
+        
+        # Затем пробуем нечеткое совпадение
+        best_match = None
+        best_ratio = 0.0
+        
+        for master in all_masters:
+            # Проверяем совпадение по словам
+            master_words = master.name.lower().split()
+            search_words = master_name_lower.split()
+            
+            # Если хотя бы одно слово совпадает точно
+            for search_word in search_words:
+                for master_word in master_words:
+                    if search_word in master_word or master_word in search_word:
+                        return master
+            
+            # Проверяем общее сходство строк
+            ratio = SequenceMatcher(None, master_name_lower, master.name.lower()).ratio()
+            if ratio > best_ratio and ratio > 0.6:  # Порог схожести 60%
+                best_ratio = ratio
+                best_match = master
+        
+        return best_match
+
+    def _find_similar_masters(self, master_name: str, all_masters: list) -> list:
+        """
+        Находит похожих мастеров для предложения альтернатив.
+        
+        Args:
+            master_name: Имя мастера для поиска
+            all_masters: Список всех мастеров
+            
+        Returns:
+            Список имен похожих мастеров
+        """
+        master_name_lower = master_name.lower().strip()
+        similar_masters = []
+        
+        # Ищем мастеров, содержащих ключевые слова
+        keywords = master_name_lower.split()
+        
+        for master in all_masters:
+            master_lower = master.name.lower()
+            
+            # Если хотя бы одно ключевое слово есть в имени мастера
+            for keyword in keywords:
+                if keyword in master_lower and len(keyword) > 2:  # Игнорируем короткие слова
+                    similar_masters.append(master.name)
+                    break
+        
+        # Убираем дубликаты и ограничиваем количество
+        return list(set(similar_masters))[:3]
+
+    def get_my_appointments(self, user_telegram_id: int) -> str:
+        """
+        Получает все предстоящие записи пользователя.
+        
+        Args:
+            user_telegram_id: ID пользователя в Telegram
+        
+        Returns:
+            Отформатированная строка с записями или сообщение об их отсутствии
+        """
+        try:
+            appointments = self.appointment_repository.get_future_appointments_by_user(user_telegram_id)
+            
+            if not appointments:
+                return "У вас нет предстоящих записей."
+            
+            result_lines = ["Ваши предстоящие записи:"]
+            for appointment in appointments:
+                # Форматируем дату и время
+                date_str = appointment.start_time.strftime("%d %B")
+                time_str = appointment.start_time.strftime("%H:%M")
+                
+                # Получаем информацию о мастере и услуге
+                master_name = appointment.master.name
+                service_name = appointment.service.name
+                
+                result_lines.append(f"- {date_str} в {time_str}: {service_name} к мастеру {master_name}.")
+            
+            return "\n".join(result_lines)
+            
+        except Exception as e:
+            return f"Ошибка при получении записей: {str(e)}"
+
+    def cancel_appointment(self, appointment_details: str, user_telegram_id: int) -> str:
+        """
+        Отменяет ближайшую предстоящую запись пользователя.
+        
+        Args:
+            appointment_details: Описание записи для отмены (из слов клиента)
+            user_telegram_id: ID пользователя в Telegram
+        
+        Returns:
+            Подтверждение отмены или сообщение об ошибке
+        """
+        try:
+            # Находим ближайшую предстоящую запись пользователя
+            appointment = self.appointment_repository.get_next_appointment_by_user(user_telegram_id)
+            
+            if not appointment:
+                return "У вас нет предстоящих записей для отмены."
+            
+            # Получаем информацию о записи
+            master_name = appointment.master.name
+            service_name = appointment.service.name
+            date_str = appointment.start_time.strftime("%d %B")
+            time_str = appointment.start_time.strftime("%H:%M")
+            
+            # Удаляем событие из Google Calendar
+            self.google_calendar_service.delete_event(appointment.google_event_id)
+            
+            # Удаляем запись из нашей БД
+            self.appointment_repository.delete_by_event_id(appointment.google_event_id)
+            
+            return f"Ваша запись на {service_name} {date_str} в {time_str} к мастеру {master_name} успешно отменена."
+            
+        except Exception as e:
+            return f"Ошибка при отмене записи: {str(e)}"
 

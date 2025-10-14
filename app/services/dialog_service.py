@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 from app.repositories.dialog_history_repository import DialogHistoryRepository
 from app.repositories.service_repository import ServiceRepository
 from app.repositories.master_repository import MasterRepository
+from app.repositories.appointment_repository import AppointmentRepository
 from app.services.gemini_service import get_gemini_service
 from app.services.tool_service import ToolService
 from app.services.google_calendar_service import GoogleCalendarService
@@ -36,6 +37,7 @@ class DialogService:
         # Инициализируем репозитории для ToolService
         self.service_repository = ServiceRepository(db_session)
         self.master_repository = MasterRepository(db_session)
+        self.appointment_repository = AppointmentRepository(db_session)
         
         # Инициализируем Google Calendar Service
         self.google_calendar_service = GoogleCalendarService()
@@ -44,6 +46,7 @@ class DialogService:
         self.tool_service = ToolService(
             service_repository=self.service_repository,
             master_repository=self.master_repository,
+            appointment_repository=self.appointment_repository,
             google_calendar_service=self.google_calendar_service
         )
 
@@ -321,7 +324,7 @@ class DialogService:
                     
                     # Выполняем функцию через ToolService
                     try:
-                        result = self._execute_function(function_name, function_args)
+                        result = self._execute_function(function_name, function_args, user_id)
                     except Exception as e:
                         result = f"Ошибка при выполнении функции: {str(e)}"
                     
@@ -478,13 +481,14 @@ class DialogService:
         
         return "\n".join(formatted_history)
     
-    def _execute_function(self, function_name: str, function_args: Dict) -> str:
+    def _execute_function(self, function_name: str, function_args: Dict, user_id: int = None) -> str:
         """
         Динамически выполняет функцию из ToolService.
         
         Args:
             function_name: Имя функции для вызова
             function_args: Аргументы функции
+            user_id: ID пользователя для функций, требующих его
             
         Returns:
             Результат выполнения функции
@@ -514,7 +518,14 @@ class DialogService:
             service_name = function_args.get("service_name", "")
             date = function_args.get("date", "")
             time = function_args.get("time", "")
-            return method(master_name, service_name, date, time)
+            return method(master_name, service_name, date, time, user_id)
+        
+        elif function_name == "get_my_appointments":
+            return method(user_id)
+        
+        elif function_name == "cancel_appointment":
+            appointment_details = function_args.get("appointment_details", "")
+            return method(appointment_details, user_id)
         
         elif function_name == "call_manager":
             reason = function_args.get("reason", "")

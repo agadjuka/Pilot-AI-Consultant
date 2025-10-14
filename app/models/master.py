@@ -22,4 +22,6 @@ class Master(Base):
         secondary=master_services_association,
         backref="masters"
     )
+    
+    appointments = relationship("Appointment", back_populates="master")
 

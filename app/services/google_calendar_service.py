@@ -51,7 +51,7 @@ class GoogleCalendarService:
         service_name: str,
         start_time_iso: str,
         end_time_iso: str
-    ) -> bool:
+    ) -> str:
         """
         Создание записи в календаре для мастера и услуги.
         
@@ -62,7 +62,7 @@ class GoogleCalendarService:
             end_time_iso: Время окончания в формате ISO 8601 (например, '2025-10-27T11:00:00')
         
         Returns:
-            bool: True в случае успешного создания записи
+            str: ID созданного события в Google Calendar
         
         Raises:
             Exception: Ошибка при создании события
@@ -90,7 +90,7 @@ class GoogleCalendarService:
                 body=event
             ).execute()
             
-            return True
+            return created_event['id']
             
         except HttpError as error:
             raise Exception(f"Ошибка при создании записи: {error}")
