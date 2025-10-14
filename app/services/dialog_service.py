@@ -342,6 +342,15 @@ class DialogService:
                     except Exception as e:
                         result = f"Ошибка при выполнении функции: {str(e)}"
                     
+                    # Компактный лог вызова инструмента
+                    def _short(v):
+                        try:
+                            s = str(v)
+                            return (s[:120] + '…') if len(s) > 120 else s
+                        except Exception:
+                            return '—'
+                    print(f"[Tool] {function_name} args={_short(function_args)} → {_short(result)}")
+                    
                     # Логируем вызов функции
                     iteration_log["function_calls"].append({
                         "name": function_name,
@@ -370,6 +379,7 @@ class DialogService:
                     has_text = True
                     bot_response_text = part.text
                     iteration_log["response"] = part.text
+                    print(f"[Answer] {bot_response_text[:140]}")
             
             # Сохраняем информацию об итерации
             debug_iterations.append(iteration_log)

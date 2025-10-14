@@ -135,17 +135,16 @@ class LLMService:
 
     async def _send_gemini_message(self, chat, message, user_id: int = None):
         """Отправляет сообщение в Gemini чат."""
-        # Логируем отправляемый запрос
+        # Краткий лог запроса
         if user_id is not None:
             request_text = ""
             if isinstance(message, str):
                 request_text = message
             elif isinstance(message, list):
-                request_text = f"Function Response Parts ({len(message)} parts)"
+                request_text = f"FunctionResponse x{len(message)}"
             else:
                 request_text = str(message)
-            
-            print(f"   🔄 Отправка запроса к Gemini: {request_text[:100]}...")
+            print(f"[LLM:Gemini] → {request_text[:140]}")
         
         # Используем asyncio для выполнения синхронного вызова
         loop = asyncio.get_event_loop()
@@ -155,28 +154,26 @@ class LLMService:
                 lambda: chat.send_message(message)
             )
         except Exception as e:
-            if user_id is not None:
-                print(f"   ❌ Ошибка при отправке запроса к Gemini: {str(e)}")
+            print(f"[LLM:Gemini] ! {str(e)}")
             raise
         
-        # Логируем полученный ответ
+        # Краткий лог ответа
         if user_id is not None:
             response_text = ""
             for part in response.candidates[0].content.parts:
                 if hasattr(part, 'text') and part.text:
                     response_text += part.text
                 elif hasattr(part, 'function_call') and part.function_call:
-                    response_text += f"Function Call: {part.function_call.name}"
-            
-            print(f"   ✅ Получен ответ от Gemini: {response_text[:100]}...")
+                    response_text += f"[call {part.function_call.name}]"
+            print(f"[LLM:Gemini] ← {response_text[:140]}")
         
         return response.candidates[0].content
 
     async def _send_yandex_message(self, history: List[Dict], message: str, user_id: int = None):
         """Отправляет сообщение в YandexGPT."""
-        # Логируем отправляемый запрос
+        # Краткий лог запроса
         if user_id is not None:
-            print(f"   🔄 Отправка запроса к YandexGPT: {message[:100]}...")
+            print(f"[LLM:Yandex] → {message[:140]}")
         
         # Если history уже в формате YandexGPT, используем как есть
         if history and isinstance(history[0], dict) and "text" in history[0]:
@@ -210,14 +207,6 @@ class LLMService:
         }
         
         try:
-            # Логируем отладочную информацию
-            if user_id is not None:
-                print(f"   🔍 Отладочная информация:")
-                print(f"   📍 URL: {self._yandex_base_url}")
-                print(f"   🔑 Folder ID: {self._yandex_folder_id}")
-                print(f"   📝 Сообщений в истории: {len(updated_history)}")
-                print(f"   📋 Первое сообщение: {updated_history[0] if updated_history else 'Пусто'}")
-            
             # Используем asyncio для выполнения HTTP запроса
             loop = asyncio.get_event_loop()
             response = await loop.run_in_executor(
@@ -225,28 +214,23 @@ class LLMService:
                 lambda: requests.post(self._yandex_base_url, json=payload, headers=headers)
             )
             
-            # Логируем детали ответа
-            if user_id is not None:
-                print(f"   📊 Статус ответа: {response.status_code}")
-                if response.status_code != 200:
-                    print(f"   ❌ Текст ошибки: {response.text[:200]}...")
+            # Логируем только ошибки
+            if response.status_code != 200:
+                print(f"[LLM:Yandex] ! {response.status_code} {response.text[:120]}")
             
             response.raise_for_status()
             
             result = response.json()
-            
-            # Логируем полученный ответ
+            # Короткий лог ответа
             if user_id is not None:
-                response_text = result.get("result", {}).get("alternatives", [{}])[0].get("message", {}).get("text", "")
-                print(f"   ✅ Получен ответ от YandexGPT: {response_text[:100]}...")
+                ytxt = result.get("result", {}).get("alternatives", [{}])[0].get("message", {}).get("text", "")
+                print(f"[LLM:Yandex] ← {ytxt[:140]}")
             
             # Возвращаем ответ в формате, совместимом с Gemini
             return self._format_yandex_response(result)
             
         except Exception as e:
-            if user_id is not None:
-                print(f"   ❌ Ошибка при отправке запроса к YandexGPT: {str(e)}")
-                print(f"   📋 Payload: {payload}")
+            print(f"[LLM:Yandex] ! {str(e)}")
             raise
 
     def _format_yandex_response(self, yandex_result: Dict) -> Any:
