@@ -50,7 +50,8 @@ class GoogleCalendarService:
         master_name: str,
         service_name: str,
         start_time_iso: str,
-        end_time_iso: str
+        end_time_iso: str,
+        description: Optional[str] = None
     ) -> str:
         """
         Создание записи в календаре для мастера и услуги.
@@ -74,6 +75,7 @@ class GoogleCalendarService:
             # Создаем объект события для Google Calendar API
             event = {
                 'summary': summary,
+                'description': description,
                 'start': {
                     'dateTime': start_time_iso,
                     'timeZone': 'Europe/Moscow'

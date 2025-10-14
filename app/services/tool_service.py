@@ -2,6 +2,7 @@ from app.repositories.service_repository import ServiceRepository
 from app.repositories.master_repository import MasterRepository
 from app.repositories.appointment_repository import AppointmentRepository
 from app.services.google_calendar_service import GoogleCalendarService
+from app.repositories.client_repository import ClientRepository
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from difflib import SequenceMatcher
@@ -18,7 +19,8 @@ class ToolService:
         service_repository: ServiceRepository,
         master_repository: MasterRepository,
         appointment_repository: AppointmentRepository,
-        google_calendar_service: GoogleCalendarService
+        google_calendar_service: GoogleCalendarService,
+        client_repository: ClientRepository
     ):
         """
         Инициализирует ToolService с необходимыми репозиториями и сервисами.
@@ -33,6 +35,7 @@ class ToolService:
         self.master_repository = master_repository
         self.appointment_repository = appointment_repository
         self.google_calendar_service = google_calendar_service
+        self.client_repository = client_repository
 
     def get_all_services(self) -> str:
         """
@@ -174,6 +177,10 @@ class ToolService:
             Строка с подтверждением записи или сообщение об ошибке
         """
         try:
+            # Проверка наличия контактных данных клиента
+            client = self.client_repository.get_or_create_by_telegram_id(user_telegram_id)
+            if not client.first_name or not client.phone_number:
+                return "Требуются данные клиента. Перейди в стадию 'contact_info_request'."
             # Находим услугу в БД для получения длительности с нечетким поиском
             all_services = self.service_repository.get_all()
             service = self._find_service_by_fuzzy_match(service_name, all_services)
@@ -228,11 +235,15 @@ class ToolService:
             end_time_iso = end_datetime.strftime('%Y-%m-%dT%H:%M:%S')
             
             # Вызываем метод создания события в Google Calendar
+            # Формируем описание события для мастера
+            description = f"Клиент: {client.first_name or client_name} | Телефон: {client.phone_number or '-'} | Telegram ID: {user_telegram_id}"
+
             event_id = self.google_calendar_service.create_event(
                 master_name=master_name,
                 service_name=service_name,
                 start_time_iso=start_time_iso,
-                end_time_iso=end_time_iso
+                end_time_iso=end_time_iso,
+                description=description
             )
             
             # Сохраняем запись в нашу БД
@@ -247,7 +258,7 @@ class ToolService:
             
             self.appointment_repository.create(appointment_data)
             
-            return f"Отлично! Я записала {client_name} на {service_name} к мастеру {master_name} на {date} в {time}."
+            return f"Отлично! Я записала {client.first_name or client_name} на {service_name} к мастеру {master_name} на {date} в {time}."
                 
         except Exception as e:
             return f"Ошибка при создании записи: {str(e)}"

@@ -3,7 +3,8 @@
 Отвечает за определение текущей стадии диалога на основе истории и сообщения пользователя.
 """
 
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple
+import re
 from app.core.dialogue_pattern_loader import dialogue_patterns
 from app.services.llm_service import LLMService
 from app.utils.debug_logger import gemini_debug_logger
@@ -24,7 +25,7 @@ class ClassificationService:
         """
         self.llm_service = llm_service
     
-    async def get_dialogue_stage(self, history: List[Dict], user_message: str, user_id: int = None) -> Optional[str]:
+    async def get_dialogue_stage(self, history: List[Dict], user_message: str, user_id: int = None) -> Tuple[Optional[str], Dict[str, Optional[str]]]:
         """
         Определяет стадию диалога на основе истории и нового сообщения пользователя.
         
@@ -40,6 +41,22 @@ class ClassificationService:
             Exception: При ошибке классификации
         """
         try:
+            # Быстрое извлечение ПДн регулярками (имя и телефон)
+            extracted: Dict[str, Optional[str]] = {"name": None, "phone": None}
+            # Телефон: российский формат, допускаем +7, 8, пробелы, дефисы, скобки
+            phone_match = re.search(r"(?:\+7|8)?[\s-]*\(?\d{3}\)?[\s-]*\d{3}[\s-]*\d{2}[\s-]*\d{2}", user_message)
+            if phone_match:
+                phone = re.sub(r"[^\d+]", "", phone_match.group(0))
+                if phone.startswith("8"):
+                    phone = "+7" + phone[1:]
+                elif not phone.startswith("+7") and len(phone) == 10:
+                    phone = "+7" + phone
+                extracted["phone"] = phone
+
+            # Имя: простая эвристика — после слов "меня зовут", "я", "это" + слово с заглавной
+            name_match = re.search(r"(?i)(?:меня\s+зовут|я\s+)([A-ZА-ЯЁ][a-zа-яё]{1,20})", user_message)
+            if name_match:
+                extracted["name"] = name_match.group(1).capitalize()
             # Получаем список доступных стадий
             stages = list(dialogue_patterns.keys())
             stages_list = ", ".join(stages)
@@ -85,13 +102,13 @@ class ClassificationService:
             # Проверяем, что полученная стадия существует в паттернах
             if stage_id in dialogue_patterns:
                 print(f"[Stage] {stage_id}")
-                return stage_id
+                return stage_id, extracted
             
             # Если стадия не найдена или ответ пустой/некорректный - возвращаем None
             print("[Stage] unknown -> fallback")
-            return None
+            return None, extracted
             
         except Exception as e:
             # В случае ошибки возвращаем None для активации fallback
             print(f"Ошибка классификации стадии диалога: {e}")
-            return None
+            return None, {"name": None, "phone": None}

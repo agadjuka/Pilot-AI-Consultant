@@ -7,6 +7,7 @@ from app.repositories.dialog_history_repository import DialogHistoryRepository
 from app.repositories.service_repository import ServiceRepository
 from app.repositories.master_repository import MasterRepository
 from app.repositories.appointment_repository import AppointmentRepository
+from app.repositories.client_repository import ClientRepository
 from app.services.llm_service import get_llm_service
 from app.services.tool_service import ToolService
 from app.services.google_calendar_service import GoogleCalendarService
@@ -38,6 +39,7 @@ class DialogService:
         self.service_repository = ServiceRepository(db_session)
         self.master_repository = MasterRepository(db_session)
         self.appointment_repository = AppointmentRepository(db_session)
+        self.client_repository = ClientRepository(db_session)
         
         # Инициализируем Google Calendar Service
         self.google_calendar_service = GoogleCalendarService()
@@ -47,7 +49,8 @@ class DialogService:
             service_repository=self.service_repository,
             master_repository=self.master_repository,
             appointment_repository=self.appointment_repository,
-            google_calendar_service=self.google_calendar_service
+            google_calendar_service=self.google_calendar_service,
+            client_repository=self.client_repository
         )
 
     async def process_user_message(self, user_id: int, text: str) -> str:
@@ -68,6 +71,9 @@ class DialogService:
         Returns:
             Сгенерированный ответ бота
         """
+        # 0. Загружаем (или создаем) клиента
+        client = self.client_repository.get_or_create_by_telegram_id(user_id)
+
         # 1. Получаем историю диалога (последние 20 сообщений)
         history_records = self.repository.get_recent_messages(user_id, limit=20)
         
@@ -91,11 +97,25 @@ class DialogService:
         print(f"[DEBUG] Начинаем классификацию для сообщения: '{text}'")
         print(f"[DEBUG] Доступные паттерны: {list(dialogue_patterns.keys())}")
         
-        dialogue_stage = await self.classification_service.get_dialogue_stage(
+        stage_and_pd = await self.classification_service.get_dialogue_stage(
             history=dialog_history,
             user_message=text,
             user_id=user_id
         )
+        if isinstance(stage_and_pd, tuple):
+            dialogue_stage, extracted_pd = stage_and_pd
+        else:
+            dialogue_stage, extracted_pd = stage_and_pd, {}
+
+        # Если классификатор извлек ПДн — сохраняем их в БД
+        if extracted_pd:
+            update_data = {}
+            if extracted_pd.get('name') and not client.first_name:
+                update_data['first_name'] = extracted_pd['name']
+            if extracted_pd.get('phone') and not client.phone_number:
+                update_data['phone_number'] = extracted_pd['phone']
+            if update_data:
+                client = self.client_repository.update(client.id, update_data)
         
         # 4. Этап 2: Определение стратегии обработки (План А или План Б)
         print(f"[DEBUG] Результат классификации: '{dialogue_stage}'")
@@ -132,15 +152,21 @@ class DialogService:
                 proactive_params = stage_patterns.get("proactive_params", {})
                 
                 # Формируем динамический системный промпт на основе паттернов
-                system_prompt = self._build_dynamic_system_prompt(principles, examples, dialog_history, proactive_params)
+                # Добавляем контекст об имени клиента, если есть
+                dialog_context_hint = ""
+                if client.first_name:
+                    dialog_context_hint = f"КОНТЕКСТ: Клиента зовут {client.first_name}. Обращайся к нему по имени, где это уместно."
+                system_prompt = self._build_dynamic_system_prompt(principles, examples, dialog_history, proactive_params, extra_context=dialog_context_hint)
             else:
                 # Специальная стадия (например, conflict_escalation) - используем fallback
                 print(f"[DEBUG] Специальная стадия '{dialogue_stage}' - используем fallback промпт")
-                system_prompt = self._build_fallback_system_prompt()
+                dialog_context_hint = f"КОНТЕКСТ: Клиента зовут {client.first_name}. Обращайся к нему по имени, где это уместно." if client.first_name else ""
+                system_prompt = self._build_fallback_system_prompt(dialog_context_hint)
         else:
             # План Б: Fallback - используем универсальный системный промпт
             print(f"[DEBUG] План Б: Используем fallback промпт")
-            system_prompt = self._build_fallback_system_prompt()
+            dialog_context_hint = f"КОНТЕКСТ: Клиента зовут {client.first_name}. Обращайся к нему по имени, где это уместно." if client.first_name else ""
+            system_prompt = self._build_fallback_system_prompt(dialog_context_hint)
         
         # 5. Этап 3: Генерация и выполнение инструментов
         bot_response_text = await self._execute_generation_cycle(
@@ -172,7 +198,7 @@ class DialogService:
         """
         return self.repository.clear_user_history(user_id)
     
-    def _build_dynamic_system_prompt(self, principles: List[str], examples: List[str], dialog_history: List[Dict], proactive_params: Dict = None) -> str:
+    def _build_dynamic_system_prompt(self, principles: List[str], examples: List[str], dialog_history: List[Dict], proactive_params: Dict = None, extra_context: str = "") -> str:
         """
         Формирует динамический системный промпт на основе паттернов стадии диалога.
         
@@ -200,6 +226,8 @@ class DialogService:
         dialog_context = ""
         if not dialog_history:
             dialog_context = "Это первое сообщение клиента. Обязательно поздоровайся в ответ."
+        if extra_context:
+            dialog_context = f"{dialog_context} {extra_context}".strip()
 
         # Формируем принципы
         principles_text = ""
@@ -235,7 +263,7 @@ class DialogService:
 
         return system_prompt
     
-    def _build_fallback_system_prompt(self) -> str:
+    def _build_fallback_system_prompt(self, extra_context: str = "") -> str:
         """
         Формирует универсальный системный промпт для fallback режима.
         Используется когда классификация стадии диалога не удалась.
@@ -243,7 +271,7 @@ class DialogService:
         Returns:
             Универсальный системный промпт
         """
-        return """Ты — Кэт, вежливый и услужливый администратор салона красоты "Элегант". 
+        base = """Ты — Кэт, вежливый и услужливый администратор салона красоты "Элегант". 
 
 Твоя основная задача — помогать клиентам с записью на услуги салона красоты. 
 
@@ -252,6 +280,9 @@ class DialogService:
 Всегда будь дружелюбной, используй эмодзи ТОЛЬКО при приветствии клиента и при подтверждении записи. В остальных сообщениях общайся без эмодзи, но сохраняй дружелюбный тон. Предлагай конкретные варианты записи на услуги салона.
 
 Однако, если ситуация становится конфликтной, клиент жалуется или просит позвать человека, используй инструмент 'call_manager', чтобы передать диалог менеджеру."""
+        if extra_context:
+            return base + "\n\n" + extra_context
+        return base
     
     async def _execute_generation_cycle(self, user_id: int, user_message: str, dialog_history: List[Dict], system_prompt: str) -> str:
         """
@@ -364,6 +395,23 @@ class DialogService:
                         bot_response_text = result
                         iteration_log["final_answer"] = bot_response_text
                         break
+
+                    # Обработка ситуации, когда нужны ПДн для записи
+                    if function_name == "create_appointment" and isinstance(result, str) and result.startswith("Требуются данные клиента"):
+                        # Принудительно переключаемся на стадию contact_info_request и запускаем второй цикл
+                        contact_stage = 'contact_info_request'
+                        stage_patterns = dialogue_patterns.get(contact_stage, {})
+                        principles = stage_patterns.get("principles", [])
+                        examples = stage_patterns.get("examples", [])
+                        dialog_context_hint = ""
+                        # Попробуем обратиться по имени, если оно уже есть в БД
+                        client = self.client_repository.get_or_create_by_telegram_id(user_id)
+                        if client.first_name:
+                            dialog_context_hint = f"КОНТЕКСТ: Клиента зовут {client.first_name}. Обращайся к нему по имени, где это уместно."
+                        contact_prompt = self._build_dynamic_system_prompt(principles, examples, dialog_history, proactive_params=None, extra_context=dialog_context_hint)
+                        # Запускаем отдельный цикл генерации с новой инструкцией
+                        final_text = await self._execute_generation_cycle(user_id, user_message, dialog_history, contact_prompt)
+                        return final_text
                     
                     # Формируем ответ функции для отправки обратно в модель
                     function_response_part = protos.Part(
