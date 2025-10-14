@@ -69,3 +69,20 @@ class AppointmentRepository(BaseRepository[Appointment]):
                 Appointment.start_time == start_time
             )
         ).first()
+
+    def delete(self, appointment: Appointment) -> bool:
+        """Удалить конкретную запись (по объекту)."""
+        if not appointment:
+            return False
+        self.db.delete(appointment)
+        self.db.commit()
+        return True
+
+    def delete_by_id(self, appointment_id: int) -> bool:
+        """Удалить запись по её первичному ключу."""
+        appointment = self.get_by_id(appointment_id)
+        if not appointment:
+            return False
+        self.db.delete(appointment)
+        self.db.commit()
+        return True

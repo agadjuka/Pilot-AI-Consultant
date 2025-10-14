@@ -486,12 +486,18 @@ class ToolService:
             date_str = appointment.start_time.strftime("%d %B")
             time_str = appointment.start_time.strftime("%H:%M")
             
-            # Удаляем событие из Google Calendar
-            self.google_calendar_service.delete_event(appointment.google_event_id)
-            
-            # Удаляем запись из нашей БД
-            self.appointment_repository.delete_by_event_id(appointment.google_event_id)
-            
+            # Сначала пытаемся удалить событие в Google Calendar (не критично, если не удастся)
+            try:
+                self.google_calendar_service.delete_event(appointment.google_event_id)
+            except Exception as calendar_error:
+                # Логируем, но не блокируем удаление в БД
+                print(f"[WARN] Не удалось удалить событие в календаре: {calendar_error}")
+
+            # Удаляем запись из нашей БД напрямую по объекту и проверяем результат
+            deleted = self.appointment_repository.delete(appointment)
+            if not deleted:
+                return "Не удалось отменить запись: запись не найдена или уже удалена."
+
             return f"Ваша запись на {service_name} {date_str} в {time_str} к мастеру {master_name} успешно отменена."
             
         except Exception as e:

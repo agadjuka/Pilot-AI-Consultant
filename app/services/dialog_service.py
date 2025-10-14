@@ -141,17 +141,6 @@ class DialogService:
             return manager_response['response_to_user']
         
         if dialogue_stage is not None:
-            # Быстрый путь: некоторые стадии обслуживаем инструментами напрямую, без генерации LLM
-            if dialogue_stage == 'view_booking':
-                print("[DEBUG] Быстрый путь: 'view_booking' — получаем записи напрямую из БД")
-                bot_response_text = self.tool_service.get_my_appointments(user_id)
-                # Логируем ответ в историю
-                self.repository.add_message(
-                    user_id=user_id,
-                    role="model",
-                    message_text=bot_response_text
-                )
-                return bot_response_text
             # План А: Валидная стадия найдена - используем паттерны диалога
             print(f"[DEBUG] План А: Используем стадию '{dialogue_stage}'")
             stage_patterns = dialogue_patterns.get(dialogue_stage, {})
@@ -172,6 +161,18 @@ class DialogService:
                     "Если указано, что имя и/или телефон не сохранены — при оформлении записи сначала узнай недостающие данные. "
                     "Если оба уже сохранены — не спрашивай их и переходи к записи."
                 )
+                # Доп. контекст для стадии просмотра записей: передаем фактические записи из БД
+                if dialogue_stage == 'view_booking':
+                    try:
+                        appointments_text = self.tool_service.get_my_appointments(user_id)
+                    except Exception:
+                        appointments_text = "Ошибка получения записей."
+                    dialog_context_hint += (
+                        "\n\nДАННЫЕ_ЗАПИСЕЙ: "
+                        f"{appointments_text}. "
+                        "Если данные содержат список записей — перескажи их кратко и дружелюбно, ничего не выдумывай. "
+                        "Если там сказано, что записей нет — вежливо предложи помощь с записью."
+                    )
                 system_prompt = self._build_dynamic_system_prompt(principles, examples, dialog_history, proactive_params, extra_context=dialog_context_hint)
             else:
                 # Специальная стадия (например, conflict_escalation) - используем fallback
@@ -183,6 +184,16 @@ class DialogService:
                      "Если указано, что имя и/или телефон не сохранены — при оформлении записи сначала узнай недостающие данные. "
                      "Если оба уже сохранены — не спрашивай их и переходи к записи.")
                 )
+                if dialogue_stage == 'view_booking':
+                    try:
+                        appointments_text = self.tool_service.get_my_appointments(user_id)
+                    except Exception:
+                        appointments_text = "Ошибка получения записей."
+                    dialog_context_hint += (
+                        "\n\nДАННЫЕ_ЗАПИСЕЙ: "
+                        f"{appointments_text}. "
+                        "Если данные содержат список записей — перескажи их кратко и дружелюбно."
+                    )
                 system_prompt = self._build_fallback_system_prompt(dialog_context_hint)
         else:
             # План Б: Fallback - используем универсальный системный промпт
@@ -384,6 +395,15 @@ class DialogService:
             has_function_call = False
             has_text = False
             function_response_parts = []
+            # Специальный контекст: если это просмотр записей — подготовим данные заранее
+            precomputed_tool_result: str | None = None
+            try:
+                # Попробуем извлечь стадию из системного промпта (последняя добавленная строка в начале истории)
+                # и если это view_booking, заранее получим список записей
+                if "view_booking" in system_prompt:
+                    precomputed_tool_result = self.tool_service.get_my_appointments(user_id)
+            except Exception:
+                precomputed_tool_result = None
             
             for part in response_content.parts:
                 # Проверяем наличие вызова функции
@@ -502,6 +522,13 @@ class DialogService:
                         function_response_parts.append(function_response_part)
                         # Не выставляем текстовый финальный ответ — отдадим шанс модели сгенерировать подтверждение
                     else:
+                        # Если это стадия просмотра записей и текст не вызвал инструмент —
+                        # мягко вставим в ответ данные инструментов как контекст для LLM:
+                        if precomputed_tool_result is not None and "get_my_appointments" not in text_payload:
+                            text_payload = (
+                                f"КОНТЕКСТ_ЗАПИСЕЙ: {precomputed_tool_result}\n\n"
+                                f"СФОРМИРУЙ ОТВЕТ: {text_payload}"
+                            )
                         has_text = True
                         bot_response_text = text_payload
                         iteration_log["response"] = text_payload
