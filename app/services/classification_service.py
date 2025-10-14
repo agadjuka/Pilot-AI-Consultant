@@ -30,7 +30,7 @@ class ClassificationService:
         self.llm_service = llm_service
         self.prompt_builder = PromptBuilderService()
     
-    async def get_dialogue_stage(self, history: List[Dict], user_message: str, user_id: int = None) -> Tuple[Optional[str], Dict[str, Optional[str]]]:
+    async def get_dialogue_stage(self, history: List[Dict], user_message: str, user_id: int = None) -> Tuple[Optional[str], Dict[str, Optional[str]], str]:
         """
         Определяет стадию диалога на основе истории и нового сообщения пользователя.
         
@@ -40,7 +40,10 @@ class ClassificationService:
             user_id: ID пользователя для логирования
             
         Returns:
-            Optional[str]: ID стадии диалога или None если классификация не удалась
+            Tuple[Optional[str], Dict[str, Optional[str]], str]: 
+                - ID стадии диалога или None если классификация не удалась
+                - Извлеченные персональные данные
+                - Сырой ответ от LLM
             
         Raises:
             Exception: При ошибке классификации
@@ -108,17 +111,20 @@ class ClassificationService:
             # Вызываем LLM для классификации
             response = await self.llm_service.generate_response(classification_history)
             
+            # Сохраняем сырой ответ
+            raw_response = response
+            
             # Очищаем ответ от лишних пробелов, точек и других знаков препинания
             stage_id = response.strip().lower().rstrip('.,!?;:')
             
             # Проверяем, что полученная стадия существует в паттернах
             if stage_id in dialogue_patterns:
-                return stage_id, extracted
+                return stage_id, extracted, raw_response
             
             # Если стадия не найдена или ответ пустой/некорректный - возвращаем None
-            return None, extracted
+            return None, extracted, raw_response
             
         except Exception as e:
             # В случае ошибки возвращаем None для активации fallback
             logger.error(f"❌ Ошибка классификации стадии диалога: {e}", exc_info=True)
-            return None, {"name": None, "phone": None}
+            return None, {"name": None, "phone": None}, "Ошибка классификации"

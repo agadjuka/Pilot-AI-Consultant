@@ -1,8 +1,9 @@
 import os
 import shutil
+import json
 from datetime import datetime
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Union
 import logging
 
 # Получаем логгер для этого модуля
@@ -40,19 +41,28 @@ class DialogueTracer:
             f"**Пользователь ID:** {user_id}\n**Сообщение:** {user_message}\n**Время:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
         )
     
-    def add_event(self, title: str, content: str, is_json: bool = False) -> None:
+    def add_event(self, title: str, content: Union[str, Dict, List], is_json: bool = False) -> None:
         """
         Добавляет новое событие в трассировку.
         
         Args:
             title: Заголовок события
-            content: Содержимое события
+            content: Содержимое события (строка, словарь или список)
             is_json: Если True, содержимое будет отформатировано как JSON
         """
+        # Форматируем содержимое в зависимости от типа
+        if isinstance(content, (dict, list)):
+            # Если это словарь или список, форматируем как JSON
+            formatted_content = json.dumps(content, indent=2, ensure_ascii=False)
+            formatted_content = f"```json\n{formatted_content}\n```"
+        else:
+            # Если это строка, оборачиваем в блок цитаты
+            formatted_content = f"> {content}"
+        
         event = {
             "timestamp": datetime.now().strftime("%H:%M:%S.%f")[:-3],  # Миллисекунды
             "title": title,
-            "content": content,
+            "content": formatted_content,
             "is_json": is_json
         }
         self.trace_events.append(event)
@@ -84,14 +94,8 @@ class DialogueTracer:
                 content_lines.append(f"**Время:** {event['timestamp']}")
                 content_lines.append("")
                 
-                if event['is_json']:
-                    # Форматируем как JSON блок
-                    content_lines.append("```json")
-                    content_lines.append(event['content'])
-                    content_lines.append("```")
-                else:
-                    # Обычный текст
-                    content_lines.append(event['content'])
+                # Содержимое уже отформатировано в add_event
+                content_lines.append(event['content'])
                 
                 content_lines.append("")
                 content_lines.append("---")

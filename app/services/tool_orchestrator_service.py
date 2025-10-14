@@ -106,6 +106,14 @@ class ToolOrchestratorService:
                         func_result = part.function_response.response
                         iteration_log["request"] += f"\n  Функция {i+1}: {func_name} -> {func_result}"
             
+            # Логируем запрос к LLM перед вызовом
+            if tracer:
+                tracer.add_event(f"📤 Вызов LLM (итерация {iteration})", {
+                    "history": history,
+                    "message": current_message,
+                    "iteration": iteration
+                })
+            
             # Получаем ответ от LLM
             response_content = await self.llm_service.send_message_to_chat(
                 chat=chat,
@@ -113,8 +121,21 @@ class ToolOrchestratorService:
                 user_id=user_id
             )
             
+            # Логируем сырой ответ от LLM
             if tracer:
-                tracer.add_event(f"🤖 Ответ LLM (итерация {iteration})", f"Получен ответ от модели", is_json=True)
+                # Извлекаем текстовые части ответа
+                raw_text_parts = []
+                for part in response_content.parts:
+                    if hasattr(part, 'text') and part.text:
+                        raw_text_parts.append(part.text)
+                    elif hasattr(part, 'function_call') and part.function_call:
+                        raw_text_parts.append(f"Function call: {part.function_call.name}")
+                
+                tracer.add_event(f"📥 Ответ LLM (итерация {iteration})", {
+                    "raw_response": "\n".join(raw_text_parts) if raw_text_parts else "Пустой ответ",
+                    "parts_count": len(response_content.parts),
+                    "iteration": iteration
+                })
             
             # Анализируем ответ
             has_function_call = False
@@ -147,7 +168,12 @@ class ToolOrchestratorService:
                         result = f"Ошибка при выполнении функции: {str(e)}"
                     
                     if tracer:
-                        tracer.add_event(f"⚙️ Выполнение инструмента: {function_name}", f"Аргументы: {function_args}\nРезультат: {result}")
+                        tracer.add_event(f"⚙️ Выполнение инструмента: {function_name}", {
+                            "tool_name": function_name,
+                            "args": function_args,
+                            "result": result,
+                            "iteration": iteration
+                        })
                     
                     # Компактный лог вызова инструмента
                     def _short(v):
@@ -217,6 +243,17 @@ class ToolOrchestratorService:
                             result = self._execute_function(function_name, args, user_id)
                         except Exception as e:
                             result = f"Ошибка при выполнении функции: {str(e)}"
+                        
+                        # Логируем вызов функции в трейсер
+                        if tracer:
+                            tracer.add_event(f"⚙️ Выполнение инструмента (text): {function_name}", {
+                                "tool_name": function_name,
+                                "args": args,
+                                "result": result,
+                                "iteration": iteration,
+                                "format": "text"
+                            })
+                        
                         # Логируем вызов функции
                         iteration_log["function_calls"].append({
                             "name": function_name,
@@ -270,7 +307,11 @@ class ToolOrchestratorService:
             if has_text and not has_function_call:
                 iteration_log["final_answer"] = bot_response_text
                 if tracer:
-                    tracer.add_event(f"✅ Финальный ответ получен", f"Текст: {bot_response_text}")
+                    tracer.add_event(f"✅ Финальный ответ получен", {
+                        "text": bot_response_text,
+                        "iteration": iteration,
+                        "length": len(bot_response_text)
+                    })
                 break
             
             # Если есть вызовы функций - подготавливаем их результаты для следующей итерации

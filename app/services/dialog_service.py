@@ -184,19 +184,31 @@ class DialogService:
             
             # 3. Этап 1: Классификация стадии диалога
             
-            tracer.add_event("🔍 Запрос на классификацию", f"Доступные стадии: {list(dialogue_patterns.keys())}")
+            # Получаем полный промпт для классификации
+            stages_list = ", ".join(list(dialogue_patterns.keys()))
+            classification_prompt = self.prompt_builder.build_classification_prompt(
+                stages_list=stages_list,
+                history=dialog_history,
+                user_message=text
+            )
             
-            stage_and_pd = await self.classification_service.get_dialogue_stage(
+            tracer.add_event("🔍 Запрос на классификацию", {
+                "prompt": classification_prompt,
+                "available_stages": list(dialogue_patterns.keys())
+            })
+            
+            stage_and_pd_and_raw = await self.classification_service.get_dialogue_stage(
                 history=dialog_history,
                 user_message=text,
                 user_id=user_id
             )
-            if isinstance(stage_and_pd, tuple):
-                dialogue_stage, extracted_pd = stage_and_pd
-            else:
-                dialogue_stage, extracted_pd = stage_and_pd, {}
+            dialogue_stage, extracted_pd, raw_response = stage_and_pd_and_raw
 
-            tracer.add_event("✅ Результат классификации", f"Стадия: {dialogue_stage}, Извлеченные ПД: {extracted_pd}")
+            tracer.add_event("✅ Результат классификации", {
+                "stage": dialogue_stage,
+                "extracted_pd": extracted_pd,
+                "raw_response": raw_response
+            })
             logger.info(f"🎯 Gemini определил стадию: '{dialogue_stage}'")
 
             # Если классификатор извлек ПДн — сохраняем их в БД
@@ -257,7 +269,11 @@ class DialogService:
                     client_phone_saved=bool(client.phone_number)
                 )
                 
-                tracer.add_event("📝 Финальный промпт для генерации", f"Длина промпта: {len(system_prompt)} символов")
+                tracer.add_event("📝 Финальный промпт для генерации", {
+                    "prompt": system_prompt,
+                    "length": len(system_prompt),
+                    "stage": dialogue_stage
+                })
             else:
                 # План Б: Fallback - используем универсальный системный промпт
                 logger.info(f"🔄 План Б: Используем fallback промпт")
@@ -271,7 +287,11 @@ class DialogService:
                     client_phone_saved=bool(client.phone_number)
                 )
                 
-                tracer.add_event("📝 Fallback промпт сформирован", f"Длина промпта: {len(system_prompt)} символов")
+                tracer.add_event("📝 Fallback промпт сформирован", {
+                    "prompt": system_prompt,
+                    "length": len(system_prompt),
+                    "type": "fallback"
+                })
             
             # 5. Этап 3: Генерация и выполнение инструментов
             tracer.add_event("⚙️ Запуск цикла инструментов", "Начинаем выполнение ToolOrchestrator")
@@ -285,7 +305,10 @@ class DialogService:
                 tracer=tracer
             )
             
-            tracer.add_event("✅ Цикл инструментов завершен", f"Финальный ответ: {bot_response_text}")
+            tracer.add_event("✅ Цикл инструментов завершен", {
+                "final_response": bot_response_text,
+                "response_length": len(bot_response_text)
+            })
             logger.info("✅ Цикл инструментов завершен")
             
             # 7. Сохраняем финальный ответ бота в БД
@@ -295,7 +318,10 @@ class DialogService:
                 message_text=bot_response_text
             )
             
-            tracer.add_event("💾 Финальный ответ сохранен", f"Текст: {bot_response_text}")
+            tracer.add_event("💾 Финальный ответ сохранен", {
+                "text": bot_response_text,
+                "length": len(bot_response_text)
+            })
             
             # Логируем завершение обработки
             log_dialog_end(logger, bot_response_text)
