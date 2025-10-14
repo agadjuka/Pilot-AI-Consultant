@@ -6,9 +6,11 @@ from datetime import datetime, timedelta
 from app.repositories.dialog_history_repository import DialogHistoryRepository
 from app.repositories.service_repository import ServiceRepository
 from app.repositories.master_repository import MasterRepository
-from app.services.gemini_service import gemini_service
+from app.services.gemini_service import get_gemini_service
 from app.services.tool_service import ToolService
 from app.services.google_calendar_service import GoogleCalendarService
+from app.services.classification_service import ClassificationService
+from app.core.dialogue_pattern_loader import dialogue_patterns
 from app.utils.debug_logger import gemini_debug_logger
 
 
@@ -26,7 +28,10 @@ class DialogService:
             db_session: Сессия базы данных SQLAlchemy
         """
         self.repository = DialogHistoryRepository(db_session)
-        self.gemini_service = gemini_service
+        self.gemini_service = get_gemini_service()
+        
+        # Инициализируем ClassificationService
+        self.classification_service = ClassificationService(self.gemini_service)
         
         # Инициализируем репозитории для ToolService
         self.service_repository = ServiceRepository(db_session)
@@ -44,14 +49,14 @@ class DialogService:
 
     async def process_user_message(self, user_id: int, text: str) -> str:
         """
-        Обрабатывает сообщение пользователя с поддержкой цикла Function Calling:
+        Обрабатывает сообщение пользователя с использованием паттернов диалогов:
         1. Получает историю диалога из БД
         2. Сохраняет новое сообщение пользователя
-        3. В цикле:
-           - Генерирует ответ через Gemini
-           - Если есть вызов функции - выполняет и добавляет в историю
-           - Если есть текст - возвращает его пользователю
-        4. Сохраняет финальный ответ бота в БД
+        3. Классифицирует стадию диалога
+        4. Извлекает релевантные паттерны для стадии
+        5. Формирует динамический промпт с паттернами
+        6. Запускает цикл генерации с вызовами инструментов
+        7. Сохраняет финальный ответ в БД
         
         Args:
             user_id: ID пользователя Telegram
@@ -64,13 +69,12 @@ class DialogService:
         history_records = self.repository.get_recent_messages(user_id, limit=20)
         
         # Преобразуем историю в расширенный формат для Gemini
-        # Пока храним только текстовые сообщения
         dialog_history: List[Dict] = []
         for record in history_records:
             role = "user" if record.role == "user" else "model"
             dialog_history.append({
                 "role": role,
-                "parts": [record.message_text]
+                "parts": [{"text": record.message_text}]
             })
         
         # 2. Сохраняем новое сообщение пользователя в БД
@@ -80,41 +84,144 @@ class DialogService:
             message_text=text
         )
         
-        # 3. Определяем контекст диалога для приветствия
+        # 3. Этап 1: Классификация стадии диалога
+        dialogue_stage = await self.classification_service.get_dialogue_stage(
+            history=dialog_history,
+            user_message=text
+        )
+        
+        # 4. Этап 2: Определение стратегии обработки (План А или План Б)
+        if dialogue_stage is not None:
+            # План А: Валидная стадия найдена - используем паттерны диалога
+            stage_patterns = dialogue_patterns.get(dialogue_stage, {})
+            principles = stage_patterns.get("principles", [])
+            examples = stage_patterns.get("examples", [])
+            
+            # Формируем динамический системный промпт на основе паттернов
+            system_prompt = self._build_dynamic_system_prompt(principles, examples, dialog_history)
+        else:
+            # План Б: Fallback - используем универсальный системный промпт
+            system_prompt = self._build_fallback_system_prompt()
+        
+        # 5. Этап 3: Генерация и выполнение инструментов
+        bot_response_text = await self._execute_generation_cycle(
+            user_id=user_id,
+            user_message=text,
+            dialog_history=dialog_history,
+            system_prompt=system_prompt
+        )
+        
+        # 7. Сохраняем финальный ответ бота в БД
+        self.repository.add_message(
+            user_id=user_id,
+            role="model",
+            message_text=bot_response_text
+        )
+        
+        # 8. Возвращаем сгенерированный текст
+        return bot_response_text
+    
+    def clear_history(self, user_id: int) -> int:
+        """
+        Очищает всю историю диалога для пользователя.
+        
+        Args:
+            user_id: ID пользователя Telegram
+            
+        Returns:
+            Количество удаленных записей
+        """
+        return self.repository.clear_user_history(user_id)
+    
+    def _build_dynamic_system_prompt(self, principles: List[str], examples: List[str], dialog_history: List[Dict]) -> str:
+        """
+        Формирует динамический системный промпт на основе паттернов стадии диалога.
+        
+        Args:
+            principles: Принципы для текущей стадии диалога
+            examples: Примеры для текущей стадии диалога
+            dialog_history: История диалога
+            
+        Returns:
+            Сформированный системный промпт
+        """
+        # Базовая персона
+        base_persona = """Ты — AI-консультант салона красоты "Элегант". Твоя задача — помочь клиентам записаться на услуги, предоставить информацию о мастерах и услугах, ответить на вопросы о ценах и расписании.
+
+Твой стиль общения:
+- Дружелюбный и профессиональный
+- Используй эмодзи для создания теплой атмосферы
+- Будь конкретным в ответах
+- Всегда предлагай конкретные варианты записи
+- Если информации недостаточно — задавай уточняющие вопросы"""
+
+        # Определяем контекст диалога
         dialog_context = ""
-        
-        if not dialog_history:  # Если история пустая - это первое сообщение
+        if not dialog_history:
             dialog_context = "Это первое сообщение клиента. Обязательно поздоровайся в ответ."
-        else:  # Если история НЕ пустая - проверяем время последнего сообщения
-            # Берем последнее сообщение из истории (последний элемент, так как история отсортирована от старых к новым)
-            last_message = history_records[-1]
-            
-            # Извлекаем временную метку последнего сообщения
-            last_message_timestamp = last_message.timestamp
-            
-            # Вычисляем разницу между текущим временем и временем последнего сообщения
-            current_time = datetime.utcnow()
-            time_difference = current_time - last_message_timestamp
-            
-            # Устанавливаем временной порог (1 час)
-            threshold_hours = 1
-            threshold_delta = timedelta(hours=threshold_hours)
-            
-            # Если разница во времени больше порога - клиент вернулся после долгого перерыва
-            if time_difference > threshold_delta:
-                dialog_context = "Клиент вернулся в диалог после долгого перерыва. Начни ответ с короткого приветствия (например, 'Снова здравствуйте!')."
+
+        # Формируем принципы
+        principles_text = ""
+        if principles:
+            principles_text = "\n\nПринципы для текущей стадии диалога:\n"
+            for i, principle in enumerate(principles, 1):
+                principles_text += f"{i}. {principle}\n"
+
+        # Формируем примеры
+        examples_text = ""
+        if examples:
+            examples_text = "\n\nПримеры ответов для текущей стадии:\n"
+            for i, example in enumerate(examples, 1):
+                examples_text += f"{i}. {example}\n"
+
+        # Собираем финальный промпт
+        system_prompt = f"{base_persona}{principles_text}{examples_text}"
         
-        # 4. Формируем полную историю с системной инструкцией
-        full_history = self.gemini_service.build_history_with_system_instruction(dialog_history, dialog_context)
+        if dialog_context:
+            system_prompt += f"\n\nКонтекст диалога: {dialog_context}"
+
+        return system_prompt
+    
+    def _build_fallback_system_prompt(self) -> str:
+        """
+        Формирует универсальный системный промпт для fallback режима.
+        Используется когда классификация стадии диалога не удалась.
         
-        # 5. Создаем чат один раз для всего цикла
+        Returns:
+            Универсальный системный промпт
+        """
+        return """Ты — Кэт, вежливый и услужливый администратор салона красоты "Элегант". 
+
+Твоя основная задача — помогать клиентам с записью на услуги салона красоты. 
+
+Если клиент задает вопрос не по теме салона красоты (например, о науке, политике, личных темах), вежливо ответь, что ты не можешь помочь с этим, и верни диалог к услугам салона.
+
+Всегда будь дружелюбной, используй эмодзи для создания теплой атмосферы, и предлагай конкретные варианты записи на услуги салона."""
+    
+    async def _execute_generation_cycle(self, user_id: int, user_message: str, dialog_history: List[Dict], system_prompt: str) -> str:
+        """
+        Выполняет цикл генерации ответа с вызовами инструментов.
+        
+        Args:
+            user_id: ID пользователя
+            user_message: Сообщение пользователя
+            dialog_history: История диалога
+            system_prompt: Системный промпт
+            
+        Returns:
+            Финальный ответ бота
+        """
+        # Формируем полную историю с системной инструкцией
+        full_history = self._build_full_history_with_system_prompt(dialog_history, system_prompt)
+        
+        # Создаем чат один раз для всего цикла
         chat = self.gemini_service.create_chat(full_history)
         
-        # 6. Запускаем цикл обработки Function Calling
-        max_iterations = 5  # Увеличиваем лимит для более сложных запросов
+        # Запускаем цикл обработки Function Calling
+        max_iterations = 5
         iteration = 0
         bot_response_text = None
-        current_message = text  # Первое сообщение - это сообщение пользователя
+        current_message = user_message
         
         # Для логирования - собираем информацию о каждой итерации
         debug_iterations = []
@@ -146,7 +253,7 @@ class DialogService:
             # Анализируем ответ
             has_function_call = False
             has_text = False
-            function_response_parts = []  # Для сбора результатов функций
+            function_response_parts = []
             
             for part in response_content.parts:
                 # Проверяем наличие вызова функции
@@ -236,31 +343,35 @@ class DialogService:
         # Логируем весь цикл Function Calling
         gemini_debug_logger.log_function_calling_cycle(
             user_id=user_id,
-            user_message=text,
+            user_message=user_message,
             iterations=debug_iterations
         )
         
-        # 7. Сохраняем финальный ответ бота в БД
-        self.repository.add_message(
-            user_id=user_id,
-            role="model",
-            message_text=bot_response_text
-        )
-        
-        # 8. Возвращаем сгенерированный текст
         return bot_response_text
     
-    def clear_history(self, user_id: int) -> int:
+    def _build_full_history_with_system_prompt(self, dialog_history: List[Dict], system_prompt: str) -> List[Dict]:
         """
-        Очищает всю историю диалога для пользователя.
+        Формирует полную историю диалога с системной инструкцией.
         
         Args:
-            user_id: ID пользователя Telegram
+            dialog_history: История диалога
+            system_prompt: Системный промпт
             
         Returns:
-            Количество удаленных записей
+            Полная история с системной инструкцией
         """
-        return self.repository.clear_user_history(user_id)
+        # Добавляем системную инструкцию в начало истории
+        full_history = [
+            {
+                "role": "user",
+                "parts": [{"text": system_prompt}]
+            }
+        ]
+        
+        # Добавляем историю диалога
+        full_history.extend(dialog_history)
+        
+        return full_history
     
     def _execute_function(self, function_name: str, function_args: Dict) -> str:
         """
