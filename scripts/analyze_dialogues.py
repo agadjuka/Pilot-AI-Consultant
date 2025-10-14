@@ -94,6 +94,7 @@ class DialogueAnalyzer:
 1.  `stage`: Короткий, уникальный ID стадии диалога на английском. Используй один из следующих: `greeting` (приветствие/начало диалога), `service_inquiry` (вопрос об услугах), `price_inquiry` (вопрос о цене), `availability_check` (проверка свободного времени), `booking_confirmation` (подтверждение записи), `rescheduling` (перенос записи), `cancellation` (отмена записи), `handle_issue` (решение проблемы клиента), `logistics` (вопросы адреса/парковки). **Если паттерн не подходит ни под одну из этих стадий, проигнорируй его.**
 2.  `principles`: JSON-массив из 1-2 ключевых принципов, которые можно извлечь из **образцового** ответа менеджера. Принципы должны быть сформулированы как универсальные инструкции.
 3.  `examples`: JSON-массив, содержащий **только один, самый лучший и показательный** пример реплик "вопрос-ответ" с этой стадии в формате `{{"user": "...", "assistant": "..."}}`. Пример должен быть очищен от лишних деталей и легко адаптируем.
+4.  `proactive_params`: JSON-объект, описывающий, какие параметры для инструментов бот может определить самостоятельно на этой стадии. Формат: `{{"tool_name": {{"param_name": "описание логики определения параметра"}}}}`. Например: `{{"get_available_slots": {{"date": "Если пользователь просит 'ближайшее' или 'скорее', используй 'сегодня' в качестве даты по умолчанию"}}}}`. Если для стадии нет параметров для самостоятельного определения, используй пустой объект `{{}}`.
 
 Проанализируй следующий диалог:
 ---
@@ -129,7 +130,8 @@ class DialogueAnalyzer:
                             validated_pattern = {
                                 'stage': pattern.get('stage', ''),
                                 'principles': pattern.get('principles', []),
-                                'examples': pattern.get('examples', [])
+                                'examples': pattern.get('examples', []),
+                                'proactive_params': pattern.get('proactive_params', {})
                             }
                             # Фильтруем некорректные примеры
                             if isinstance(validated_pattern['examples'], list):
@@ -262,9 +264,16 @@ class DialogueAnalyzer:
             for examples in pattern_data.get('examples', []):
                 all_examples.extend(examples)
             
+            # Объединяем proactive_params
+            merged_proactive_params = {}
+            for proactive_params in pattern_data.get('proactive_params', []):
+                if isinstance(proactive_params, dict):
+                    merged_proactive_params.update(proactive_params)
+            
             merged_patterns[stage] = {
                 'principles': unique_principles,
-                'examples': all_examples
+                'examples': all_examples,
+                'proactive_params': merged_proactive_params
             }
         
         return merged_patterns
@@ -314,12 +323,14 @@ class DialogueAnalyzer:
                 if stage not in all_patterns:
                     all_patterns[stage] = {
                         'principles': [],
-                        'examples': []
+                        'examples': [],
+                        'proactive_params': []
                     }
                 
-                # Добавляем принципы и примеры
+                # Добавляем принципы, примеры и proactive_params
                 all_patterns[stage]['principles'].append(pattern.get('principles', []))
                 all_patterns[stage]['examples'].append(pattern.get('examples', []))
+                all_patterns[stage]['proactive_params'].append(pattern.get('proactive_params', {}))
         
         # Объединяем паттерны
         merged_patterns = self.merge_patterns(all_patterns)
@@ -378,7 +389,8 @@ async def main():
         for stage, data in patterns.items():
             principles_count = len(data.get('principles', []))
             examples_count = len(data.get('examples', []))
-            print(f"{stage}: {principles_count} принципов, {examples_count} примеров")
+            proactive_params_count = len(data.get('proactive_params', {}))
+            print(f"{stage}: {principles_count} принципов, {examples_count} примеров, {proactive_params_count} proactive параметров")
     else:
         print("Паттерны не найдены. Проверьте наличие диалогов в папке source_dialogues/")
 

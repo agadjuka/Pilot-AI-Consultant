@@ -129,9 +129,10 @@ class DialogService:
             if "principles" in stage_patterns and "examples" in stage_patterns:
                 principles = stage_patterns.get("principles", [])
                 examples = stage_patterns.get("examples", [])
+                proactive_params = stage_patterns.get("proactive_params", {})
                 
                 # Формируем динамический системный промпт на основе паттернов
-                system_prompt = self._build_dynamic_system_prompt(principles, examples, dialog_history)
+                system_prompt = self._build_dynamic_system_prompt(principles, examples, dialog_history, proactive_params)
             else:
                 # Специальная стадия (например, conflict_escalation) - используем fallback
                 print(f"[DEBUG] Специальная стадия '{dialogue_stage}' - используем fallback промпт")
@@ -171,7 +172,7 @@ class DialogService:
         """
         return self.repository.clear_user_history(user_id)
     
-    def _build_dynamic_system_prompt(self, principles: List[str], examples: List[str], dialog_history: List[Dict]) -> str:
+    def _build_dynamic_system_prompt(self, principles: List[str], examples: List[str], dialog_history: List[Dict], proactive_params: Dict = None) -> str:
         """
         Формирует динамический системный промпт на основе паттернов стадии диалога.
         
@@ -179,6 +180,7 @@ class DialogService:
             principles: Принципы для текущей стадии диалога
             examples: Примеры для текущей стадии диалога
             dialog_history: История диалога
+            proactive_params: Параметры для самостоятельного определения ботом
             
         Returns:
             Сформированный системный промпт
@@ -213,8 +215,20 @@ class DialogService:
             for i, example in enumerate(examples, 1):
                 examples_text += f"{i}. {example}\n"
 
+        # Формируем секцию с proactive_params
+        proactive_params_text = ""
+        if proactive_params and isinstance(proactive_params, dict):
+            proactive_params_text = "\n\n# ПРАВИЛА САМОСТОЯТЕЛЬНЫХ ДЕЙСТВИЙ (PROACTIVE ACTIONS)\n"
+            proactive_params_text += "На текущей стадии диалога, при вызове инструментов, ты можешь самостоятельно определять следующие параметры, если они не указаны клиентом явно:\n"
+            
+            for tool_name, params in proactive_params.items():
+                if isinstance(params, dict):
+                    proactive_params_text += f"- Для инструмента '{tool_name}':\n"
+                    for param_name, description in params.items():
+                        proactive_params_text += f"  - {param_name}: {description}\n"
+
         # Собираем финальный промпт
-        system_prompt = f"{base_persona}{principles_text}{examples_text}"
+        system_prompt = f"{base_persona}{principles_text}{examples_text}{proactive_params_text}"
         
         if dialog_context:
             system_prompt += f"\n\nКонтекст диалога: {dialog_context}"
