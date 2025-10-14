@@ -52,6 +52,10 @@ class DialogService:
             google_calendar_service=self.google_calendar_service,
             client_repository=self.client_repository
         )
+        
+        # Кратковременная память о показанных записях для каждого пользователя
+        # Формат: {user_id: [{"id": int, "details": str}, ...]}
+        self.last_shown_appointments = {}
 
     async def process_user_message(self, user_id: int, text: str) -> str:
         """
@@ -164,15 +168,65 @@ class DialogService:
                 # Доп. контекст для стадии просмотра записей: передаем фактические записи из БД
                 if dialogue_stage == 'view_booking':
                     try:
-                        appointments_text = self.tool_service.get_my_appointments(user_id)
+                        appointments_data = self.tool_service.get_my_appointments(user_id)
+                        # Сохраняем записи в кратковременной памяти
+                        self.last_shown_appointments[user_id] = appointments_data
+                        
+                        if appointments_data:
+                            # Формируем текст для LLM без ID
+                            appointments_text = "Ваши предстоящие записи:\n"
+                            for appointment in appointments_data:
+                                appointments_text += f"- {appointment['details']}\n"
+                        else:
+                            appointments_text = "У вас нет предстоящих записей."
                     except Exception:
                         appointments_text = "Ошибка получения записей."
+                        self.last_shown_appointments[user_id] = []
+                    
                     dialog_context_hint += (
                         "\n\nДАННЫЕ_ЗАПИСЕЙ: "
                         f"{appointments_text}. "
                         "Если данные содержат список записей — перескажи их кратко и дружелюбно, ничего не выдумывай. "
                         "Если там сказано, что записей нет — вежливо предложи помощь с записью."
                     )
+                
+                # Доп. контекст для стадий отмены и переноса: используем сохраненные записи
+                elif dialogue_stage in ['cancellation_request', 'rescheduling']:
+                    if user_id in self.last_shown_appointments and self.last_shown_appointments[user_id]:
+                        appointments_data = self.last_shown_appointments[user_id]
+                        appointments_text = "Доступные записи для изменения:\n"
+                        for appointment in appointments_data:
+                            appointments_text += f"- {appointment['details']}\n"
+                        
+                        dialog_context_hint += (
+                            "\n\nСКРЫТЫЙ_КОНТЕКСТ_ЗАПИСЕЙ: "
+                            f"{appointments_text} "
+                            "Определи, к какой из этих записей относится запрос клиента, и вызови соответствующий инструмент "
+                            f"({'cancel_appointment_by_id' if dialogue_stage == 'cancellation_request' else 'reschedule_appointment_by_id'}) "
+                            "с правильным ID. Не показывай ID клиенту."
+                        )
+                    else:
+                        # Если нет сохраненных записей, получаем их заново
+                        try:
+                            appointments_data = self.tool_service.get_my_appointments(user_id)
+                            self.last_shown_appointments[user_id] = appointments_data
+                            
+                            if appointments_data:
+                                appointments_text = "Доступные записи для изменения:\n"
+                                for appointment in appointments_data:
+                                    appointments_text += f"- {appointment['details']}\n"
+                                
+                                dialog_context_hint += (
+                                    "\n\nСКРЫТЫЙ_КОНТЕКСТ_ЗАПИСЕЙ: "
+                                    f"{appointments_text} "
+                                    "Определи, к какой из этих записей относится запрос клиента, и вызови соответствующий инструмент "
+                                    f"({'cancel_appointment_by_id' if dialogue_stage == 'cancellation_request' else 'reschedule_appointment_by_id'}) "
+                                    "с правильным ID. Не показывай ID клиенту."
+                                )
+                            else:
+                                dialog_context_hint += "\n\nУ клиента нет записей для отмены/переноса."
+                        except Exception:
+                            dialog_context_hint += "\n\nОшибка получения записей для отмены/переноса."
                 system_prompt = self._build_dynamic_system_prompt(principles, examples, dialog_history, proactive_params, extra_context=dialog_context_hint)
             else:
                 # Специальная стадия (например, conflict_escalation) - используем fallback
@@ -186,9 +240,21 @@ class DialogService:
                 )
                 if dialogue_stage == 'view_booking':
                     try:
-                        appointments_text = self.tool_service.get_my_appointments(user_id)
+                        appointments_data = self.tool_service.get_my_appointments(user_id)
+                        # Сохраняем записи в кратковременной памяти
+                        self.last_shown_appointments[user_id] = appointments_data
+                        
+                        if appointments_data:
+                            # Формируем текст для LLM без ID
+                            appointments_text = "Ваши предстоящие записи:\n"
+                            for appointment in appointments_data:
+                                appointments_text += f"- {appointment['details']}\n"
+                        else:
+                            appointments_text = "У вас нет предстоящих записей."
                     except Exception:
                         appointments_text = "Ошибка получения записей."
+                        self.last_shown_appointments[user_id] = []
+                    
                     dialog_context_hint += (
                         "\n\nДАННЫЕ_ЗАПИСЕЙ: "
                         f"{appointments_text}. "
@@ -701,9 +767,15 @@ class DialogService:
         elif function_name == "get_my_appointments":
             return method(user_id)
         
-        elif function_name == "cancel_appointment":
-            appointment_details = function_args.get("appointment_details", "")
-            return method(appointment_details, user_id)
+        elif function_name == "cancel_appointment_by_id":
+            appointment_id = function_args.get("appointment_id", 0)
+            return method(appointment_id)
+        
+        elif function_name == "reschedule_appointment_by_id":
+            appointment_id = function_args.get("appointment_id", 0)
+            new_date = function_args.get("new_date", "")
+            new_time = function_args.get("new_time", "")
+            return method(appointment_id, new_date, new_time)
         
         elif function_name == "call_manager":
             reason = function_args.get("reason", "")

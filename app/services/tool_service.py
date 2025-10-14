@@ -429,23 +429,23 @@ class ToolService:
         # Убираем дубликаты и ограничиваем количество
         return list(set(similar_masters))[:3]
 
-    def get_my_appointments(self, user_telegram_id: int) -> str:
+    def get_my_appointments(self, user_telegram_id: int) -> list:
         """
-        Получает все предстоящие записи пользователя.
+        Получает все предстоящие записи пользователя в структурированном виде.
         
         Args:
             user_telegram_id: ID пользователя в Telegram
         
         Returns:
-            Отформатированная строка с записями или сообщение об их отсутствии
+            Список словарей с записями, где каждый словарь содержит 'id' и 'details'
         """
         try:
             appointments = self.appointment_repository.get_future_appointments_by_user(user_telegram_id)
             
             if not appointments:
-                return "У вас нет предстоящих записей."
+                return []
             
-            result_lines = ["Ваши предстоящие записи:"]
+            result = []
             for appointment in appointments:
                 # Форматируем дату и время
                 date_str = appointment.start_time.strftime("%d %B")
@@ -455,30 +455,34 @@ class ToolService:
                 master_name = appointment.master.name
                 service_name = appointment.service.name
                 
-                result_lines.append(f"- {date_str} в {time_str}: {service_name} к мастеру {master_name}.")
+                details = f"{date_str} в {time_str}: {service_name} к мастеру {master_name}"
+                
+                result.append({
+                    "id": appointment.id,
+                    "details": details
+                })
             
-            return "\n".join(result_lines)
+            return result
             
         except Exception as e:
-            return f"Ошибка при получении записей: {str(e)}"
+            return []
 
-    def cancel_appointment(self, appointment_details: str, user_telegram_id: int) -> str:
+    def cancel_appointment_by_id(self, appointment_id: int) -> str:
         """
-        Отменяет ближайшую предстоящую запись пользователя.
+        Отменяет запись по её ID.
         
         Args:
-            appointment_details: Описание записи для отмены (из слов клиента)
-            user_telegram_id: ID пользователя в Telegram
+            appointment_id: ID записи для отмены
         
         Returns:
             Подтверждение отмены или сообщение об ошибке
         """
         try:
-            # Находим ближайшую предстоящую запись пользователя
-            appointment = self.appointment_repository.get_next_appointment_by_user(user_telegram_id)
+            # Находим запись по ID
+            appointment = self.appointment_repository.get_by_id(appointment_id)
             
             if not appointment:
-                return "У вас нет предстоящих записей для отмены."
+                return "Запись не найдена или уже удалена."
             
             # Получаем информацию о записи
             master_name = appointment.master.name
@@ -502,4 +506,90 @@ class ToolService:
             
         except Exception as e:
             return f"Ошибка при отмене записи: {str(e)}"
+
+    def reschedule_appointment_by_id(self, appointment_id: int, new_date: str, new_time: str) -> str:
+        """
+        Переносит запись на новую дату и время по её ID.
+        
+        Args:
+            appointment_id: ID записи для переноса
+            new_date: Новая дата в формате "YYYY-MM-DD"
+            new_time: Новое время в формате "HH:MM"
+        
+        Returns:
+            Подтверждение переноса или сообщение об ошибке
+        """
+        try:
+            # Находим запись по ID
+            appointment = self.appointment_repository.get_by_id(appointment_id)
+            
+            if not appointment:
+                return "Запись не найдена или уже удалена."
+            
+            # Получаем информацию о записи
+            master_name = appointment.master.name
+            service_name = appointment.service.name
+            old_date_str = appointment.start_time.strftime("%d %B")
+            old_time_str = appointment.start_time.strftime("%H:%M")
+            
+            # Получаем длительность услуги
+            duration_minutes = appointment.service.duration_minutes
+            
+            # Преобразуем новую дату и время в объекты datetime
+            try:
+                # Парсим дату и время
+                appointment_date = datetime.strptime(new_date, "%Y-%m-%d")
+                appointment_time = datetime.strptime(new_time, "%H:%M")
+                
+                # Объединяем дату и время
+                start_datetime = appointment_date.replace(
+                    hour=appointment_time.hour,
+                    minute=appointment_time.minute,
+                    second=0,
+                    microsecond=0
+                )
+                
+                # Вычисляем время окончания
+                end_datetime = start_datetime + timedelta(minutes=duration_minutes)
+                
+            except ValueError as e:
+                return f"Ошибка в формате даты или времени: {str(e)}"
+            
+            # Конвертируем время в формат ISO 8601
+            moscow_tz = ZoneInfo('Europe/Moscow')
+            start_datetime = start_datetime.replace(tzinfo=moscow_tz)
+            end_datetime = end_datetime.replace(tzinfo=moscow_tz)
+            
+            start_time_iso = start_datetime.strftime('%Y-%m-%dT%H:%M:%S')
+            end_time_iso = end_datetime.strftime('%Y-%m-%dT%H:%M:%S')
+            
+            # Сначала пытаемся обновить событие в Google Calendar
+            try:
+                # Формируем название события
+                summary = f"Запись: {master_name} - {service_name}"
+                
+                self.google_calendar_service.update_event(
+                    event_id=appointment.google_event_id,
+                    summary=summary,
+                    start_datetime=start_datetime,
+                    end_datetime=end_datetime
+                )
+            except Exception as calendar_error:
+                # Логируем, но не блокируем обновление в БД
+                print(f"[WARN] Не удалось обновить событие в календаре: {calendar_error}")
+
+            # Обновляем запись в нашей БД
+            update_data = {
+                'start_time': start_datetime,
+                'end_time': end_datetime
+            }
+            
+            updated_appointment = self.appointment_repository.update(appointment.id, update_data)
+            if not updated_appointment:
+                return "Не удалось перенести запись."
+
+            return f"Ваша запись на {service_name} перенесена с {old_date_str} в {old_time_str} на {new_date} в {new_time} к мастеру {master_name}."
+            
+        except Exception as e:
+            return f"Ошибка при переносе записи: {str(e)}"
 

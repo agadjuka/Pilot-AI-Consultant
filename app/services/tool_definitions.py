@@ -138,10 +138,11 @@ create_appointment_declaration = FunctionDeclaration(
 get_my_appointments_declaration = FunctionDeclaration(
     name="get_my_appointments",
     description=(
-        "Получает все предстоящие записи пользователя. "
+        "Получает все предстоящие записи пользователя в структурированном виде. "
         "Используй эту функцию, когда клиент хочет посмотреть свои записи, "
         "узнать когда у него назначена встреча, или проверить расписание. "
-        "Например: 'Покажи мои записи', 'Когда у меня запись?', 'Какие у меня назначения?'"
+        "Например: 'Покажи мои записи', 'Когда у меня запись?', 'Какие у меня назначения?' "
+        "Функция возвращает структурированные данные с ID записей для внутреннего использования."
     ),
     parameters={
         "type": "object",
@@ -151,28 +152,67 @@ get_my_appointments_declaration = FunctionDeclaration(
 )
 
 
-# Определение инструмента для отмены записи
-cancel_appointment_declaration = FunctionDeclaration(
-    name="cancel_appointment",
+# Определение инструмента для отмены записи по ID
+cancel_appointment_by_id_declaration = FunctionDeclaration(
+    name="cancel_appointment_by_id",
     description=(
-        "Отменяет ближайшую предстоящую запись пользователя. "
-        "Используй эту функцию, когда клиент хочет отменить запись. "
-        "Передай в 'appointment_details' описание записи, которую нужно отменить, из слов клиента. "
-        "Например: 'отменить стрижку', 'отменить запись на завтра', 'отменить маникюр'."
+        "Отменяет запись по её ID. "
+        "Используй эту функцию, когда клиент хочет отменить конкретную запись. "
+        "ID записи должен быть определен на основе ранее показанного списка записей. "
+        "Например: 'отмените мою запись на стрижку', 'отмените запись на завтра'."
     ),
     parameters={
         "type": "object",
         "properties": {
-            "appointment_details": {
-                "type": "string",
+            "appointment_id": {
+                "type": "integer",
                 "description": (
-                    "Описание записи для отмены из слов клиента. "
-                    "Например: 'стрижка на завтра', 'маникюр', 'запись к Анне'. "
-                    "Можно передать любую информацию, которую упомянул клиент."
+                    "ID записи для отмены. "
+                    "Этот ID должен быть определен на основе ранее показанного списка записей клиента."
                 )
             }
         },
-        "required": ["appointment_details"]
+        "required": ["appointment_id"]
+    }
+)
+
+
+# Определение инструмента для переноса записи по ID
+reschedule_appointment_by_id_declaration = FunctionDeclaration(
+    name="reschedule_appointment_by_id",
+    description=(
+        "Переносит запись на новую дату и время по её ID. "
+        "Используй эту функцию, когда клиент хочет перенести конкретную запись. "
+        "ID записи должен быть определен на основе ранее показанного списка записей. "
+        "Например: 'перенесите мою запись на завтра', 'измените время записи на стрижку'."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "appointment_id": {
+                "type": "integer",
+                "description": (
+                    "ID записи для переноса. "
+                    "Этот ID должен быть определен на основе ранее показанного списка записей клиента."
+                )
+            },
+            "new_date": {
+                "type": "string",
+                "description": (
+                    "Новая дата записи в формате YYYY-MM-DD (например, '2025-10-15'). "
+                    "Если клиент говорит 'на завтра' или 'на понедельник', "
+                    "нужно преобразовать это в конкретную дату."
+                )
+            },
+            "new_time": {
+                "type": "string",
+                "description": (
+                    "Новое время записи в формате HH:MM (например, '14:30', '10:00'). "
+                    "Время должно быть в 24-часовом формате."
+                )
+            }
+        },
+        "required": ["appointment_id", "new_date", "new_time"]
     }
 )
 
@@ -212,7 +252,8 @@ salon_tools = Tool(
         get_available_slots_declaration,
         create_appointment_declaration,
         get_my_appointments_declaration,
-        cancel_appointment_declaration,
+        cancel_appointment_by_id_declaration,
+        reschedule_appointment_by_id_declaration,
         call_manager_declaration
     ]
 )
