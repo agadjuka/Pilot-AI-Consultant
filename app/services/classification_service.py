@@ -53,10 +53,34 @@ class ClassificationService:
                     phone = "+7" + phone
                 extracted["phone"] = phone
 
-            # Имя: более точная эвристика — только после явных конструкций с именем
+            # Имя: более точная эвристика — сначала явные конструкции
             name_match = re.search(r"(?i)(?:меня\s+зовут|зовут\s+меня|я\s+—\s+|я\s+это\s+|это\s+)([A-ZА-ЯЁ][a-zа-яё]{1,20})", user_message)
             if name_match:
                 extracted["name"] = name_match.group(1).capitalize()
+            else:
+                # Доп. эвристика: если сообщение содержит телефон и на отдельной строке есть слово с заглавной буквы — считаем это именем
+                stopwords = {"Да", "Ок", "Окей", "Привет", "Здравствуйте", "Спасибо", "На", "Нет", "Добрый", "Доброе", "Вечер", "Утро", "День"}
+                lines = [ln.strip() for ln in user_message.splitlines() if ln.strip()]
+                candidate_name = None
+                if lines:
+                    # Если телефон найден, ищем имя в другой строке без цифр
+                    if phone_match:
+                        for ln in lines:
+                            if any(ch.isdigit() for ch in ln):
+                                continue
+                            m = re.fullmatch(r"([A-ZА-ЯЁ][a-zа-яё]{2,20})", ln)
+                            if m and m.group(1) not in stopwords:
+                                candidate_name = m.group(1)
+                                break
+                    # Если телефон не найден, но всё сообщение — одно слово с заглавной, принимаем как имя (если не стоп-слово)
+                    if not candidate_name and len(lines) == 1:
+                        ln = lines[0]
+                        if not any(ch.isdigit() for ch in ln):
+                            m = re.fullmatch(r"([A-ZА-ЯЁ][a-zа-яё]{2,20})", ln)
+                            if m and m.group(1) not in stopwords:
+                                candidate_name = m.group(1)
+                if candidate_name:
+                    extracted["name"] = candidate_name.capitalize()
             # Получаем список доступных стадий
             stages = list(dialogue_patterns.keys())
             stages_list = ", ".join(stages)
