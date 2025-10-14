@@ -53,8 +53,8 @@ class ClassificationService:
                     phone = "+7" + phone
                 extracted["phone"] = phone
 
-            # Имя: простая эвристика — после слов "меня зовут", "я", "это" + слово с заглавной
-            name_match = re.search(r"(?i)(?:меня\s+зовут|я\s+)([A-ZА-ЯЁ][a-zа-яё]{1,20})", user_message)
+            # Имя: более точная эвристика — только после явных конструкций с именем
+            name_match = re.search(r"(?i)(?:меня\s+зовут|зовут\s+меня|я\s+—\s+|я\s+это\s+|это\s+)([A-ZА-ЯЁ][a-zа-яё]{1,20})", user_message)
             if name_match:
                 extracted["name"] = name_match.group(1).capitalize()
             # Получаем список доступных стадий
