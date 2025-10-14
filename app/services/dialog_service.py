@@ -12,6 +12,7 @@ from app.services.llm_service import get_llm_service
 from app.services.tool_service import ToolService
 from app.services.google_calendar_service import GoogleCalendarService
 from app.services.classification_service import ClassificationService
+from app.services.prompt_builder_service import PromptBuilderService
 from app.core.dialogue_pattern_loader import dialogue_patterns
 from app.utils.debug_logger import gemini_debug_logger
 
@@ -35,6 +36,9 @@ class DialogService:
         # Инициализируем ClassificationService
         self.classification_service = ClassificationService(self.llm_service)
         
+        # Инициализируем PromptBuilderService
+        self.prompt_builder = PromptBuilderService()
+        
         # Инициализируем репозитории для ToolService
         self.service_repository = ServiceRepository(db_session)
         self.master_repository = MasterRepository(db_session)
@@ -56,6 +60,56 @@ class DialogService:
         # Кратковременная память о показанных записях для каждого пользователя
         # Формат: {user_id: [{"id": int, "details": str}, ...]}
         self.last_shown_appointments = {}
+    
+    def _build_dialog_context(self, dialogue_stage: str, user_id: int, client) -> str:
+        """
+        Формирует дополнительный контекст диалога на основе стадии и данных клиента.
+        
+        Args:
+            dialogue_stage: Стадия диалога
+            user_id: ID пользователя
+            client: Объект клиента
+            
+        Returns:
+            Строка с дополнительным контекстом
+        """
+        # Базовый контекст о записях для стадий просмотра, отмены и переноса
+        if dialogue_stage in ['view_booking', 'cancellation_request', 'rescheduling']:
+            try:
+                appointments_data = self.tool_service.get_my_appointments(user_id)
+                # Сохраняем записи в кратковременной памяти
+                self.last_shown_appointments[user_id] = appointments_data
+                
+                if appointments_data:
+                    if dialogue_stage == 'view_booking':
+                        appointments_text = "Ваши предстоящие записи:\n"
+                        for appointment in appointments_data:
+                            appointments_text += f"- {appointment['details']}\n"
+                        return (
+                            f"ДАННЫЕ_ЗАПИСЕЙ: {appointments_text}. "
+                            "Если данные содержат список записей — перескажи их кратко и дружелюбно, ничего не выдумывай. "
+                            "Если там сказано, что записей нет — вежливо предложи помощь с записью."
+                        )
+                    else:  # cancellation_request или rescheduling
+                        appointments_text = "Доступные записи для изменения:\n"
+                        for appointment in appointments_data:
+                            appointments_text += f"- {appointment['details']}\n"
+                        return (
+                            f"СКРЫТЫЙ_КОНТЕКСТ_ЗАПИСЕЙ: {appointments_text} "
+                            f"Определи, к какой из этих записей относится запрос клиента, и вызови соответствующий инструмент "
+                            f"({'cancel_appointment_by_id' if dialogue_stage == 'cancellation_request' else 'reschedule_appointment_by_id'}) "
+                            "с правильным ID. Не показывай ID клиенту."
+                        )
+                else:
+                    if dialogue_stage == 'view_booking':
+                        return "У вас нет предстоящих записей."
+                    else:
+                        return "У клиента нет записей для отмены/переноса."
+            except Exception:
+                self.last_shown_appointments[user_id] = []
+                return "Ошибка получения записей."
+        
+        return ""
 
     async def process_user_message(self, user_id: int, text: str) -> str:
         """
@@ -147,125 +201,28 @@ class DialogService:
         if dialogue_stage is not None:
             # План А: Валидная стадия найдена - используем паттерны диалога
             print(f"[DEBUG] План А: Используем стадию '{dialogue_stage}'")
-            stage_patterns = dialogue_patterns.get(dialogue_stage, {})
             
-            # Проверяем, есть ли у стадии принципы и примеры (обычные стадии)
-            if "principles" in stage_patterns and "examples" in stage_patterns:
-                principles = stage_patterns.get("principles", [])
-                examples = stage_patterns.get("examples", [])
-                proactive_params = stage_patterns.get("proactive_params", {})
-                
-                # Формируем динамический системный промпт на основе паттернов
-                # Добавляем контекст о наличии ПДн клиента (имя и телефон)
-                name_part = f"имя: '{client.first_name}' (сохранено)" if client.first_name else "имя: не сохранено"
-                phone_part = "телефон: сохранён" if client.phone_number else "телефон: не сохранён"
-                dialog_context_hint = (
-                    "КОНТЕКСТ: В БД по текущему клиенту: "
-                    f"{name_part}; {phone_part}. "
-                    "Если указано, что имя и/или телефон не сохранены — при оформлении записи сначала узнай недостающие данные. "
-                    "Если оба уже сохранены — не спрашивай их и переходи к записи."
-                )
-                # Доп. контекст для стадии просмотра записей: передаем фактические записи из БД
-                if dialogue_stage == 'view_booking':
-                    try:
-                        appointments_data = self.tool_service.get_my_appointments(user_id)
-                        # Сохраняем записи в кратковременной памяти
-                        self.last_shown_appointments[user_id] = appointments_data
-                        
-                        if appointments_data:
-                            # Формируем текст для LLM без ID
-                            appointments_text = "Ваши предстоящие записи:\n"
-                            for appointment in appointments_data:
-                                appointments_text += f"- {appointment['details']}\n"
-                        else:
-                            appointments_text = "У вас нет предстоящих записей."
-                    except Exception:
-                        appointments_text = "Ошибка получения записей."
-                        self.last_shown_appointments[user_id] = []
-                    
-                    dialog_context_hint += (
-                        "\n\nДАННЫЕ_ЗАПИСЕЙ: "
-                        f"{appointments_text}. "
-                        "Если данные содержат список записей — перескажи их кратко и дружелюбно, ничего не выдумывай. "
-                        "Если там сказано, что записей нет — вежливо предложи помощь с записью."
-                    )
-                
-                # Доп. контекст для стадий отмены и переноса: используем сохраненные записи
-                elif dialogue_stage in ['cancellation_request', 'rescheduling']:
-                    if user_id in self.last_shown_appointments and self.last_shown_appointments[user_id]:
-                        appointments_data = self.last_shown_appointments[user_id]
-                        appointments_text = "Доступные записи для изменения:\n"
-                        for appointment in appointments_data:
-                            appointments_text += f"- {appointment['details']}\n"
-                        
-                        dialog_context_hint += (
-                            "\n\nСКРЫТЫЙ_КОНТЕКСТ_ЗАПИСЕЙ: "
-                            f"{appointments_text} "
-                            "Определи, к какой из этих записей относится запрос клиента, и вызови соответствующий инструмент "
-                            f"({'cancel_appointment_by_id' if dialogue_stage == 'cancellation_request' else 'reschedule_appointment_by_id'}) "
-                            "с правильным ID. Не показывай ID клиенту."
-                        )
-                    else:
-                        # Если нет сохраненных записей, получаем их заново
-                        try:
-                            appointments_data = self.tool_service.get_my_appointments(user_id)
-                            self.last_shown_appointments[user_id] = appointments_data
-                            
-                            if appointments_data:
-                                appointments_text = "Доступные записи для изменения:\n"
-                                for appointment in appointments_data:
-                                    appointments_text += f"- {appointment['details']}\n"
-                                
-                                dialog_context_hint += (
-                                    "\n\nСКРЫТЫЙ_КОНТЕКСТ_ЗАПИСЕЙ: "
-                                    f"{appointments_text} "
-                                    "Определи, к какой из этих записей относится запрос клиента, и вызови соответствующий инструмент "
-                                    f"({'cancel_appointment_by_id' if dialogue_stage == 'cancellation_request' else 'reschedule_appointment_by_id'}) "
-                                    "с правильным ID. Не показывай ID клиенту."
-                                )
-                            else:
-                                dialog_context_hint += "\n\nУ клиента нет записей для отмены/переноса."
-                        except Exception:
-                            dialog_context_hint += "\n\nОшибка получения записей для отмены/переноса."
-                system_prompt = self._build_dynamic_system_prompt(principles, examples, dialog_history, proactive_params, extra_context=dialog_context_hint)
-            else:
-                # Специальная стадия (например, conflict_escalation) - используем fallback
-                print(f"[DEBUG] Специальная стадия '{dialogue_stage}' - используем fallback промпт")
-                name_part = f"имя: '{client.first_name}' (сохранено)" if client.first_name else "имя: не сохранено"
-                phone_part = "телефон: сохранён" if client.phone_number else "телефон: не сохранён"
-                dialog_context_hint = (
-                    (f"КОНТЕКСТ: В БД по текущему клиенту: {name_part}; {phone_part}. "
-                     "Если указано, что имя и/или телефон не сохранены — при оформлении записи сначала узнай недостающие данные. "
-                     "Если оба уже сохранены — не спрашивай их и переходи к записи.")
-                )
-                if dialogue_stage == 'view_booking':
-                    try:
-                        appointments_data = self.tool_service.get_my_appointments(user_id)
-                        # Сохраняем записи в кратковременной памяти
-                        self.last_shown_appointments[user_id] = appointments_data
-                        
-                        if appointments_data:
-                            # Формируем текст для LLM без ID
-                            appointments_text = "Ваши предстоящие записи:\n"
-                            for appointment in appointments_data:
-                                appointments_text += f"- {appointment['details']}\n"
-                        else:
-                            appointments_text = "У вас нет предстоящих записей."
-                    except Exception:
-                        appointments_text = "Ошибка получения записей."
-                        self.last_shown_appointments[user_id] = []
-                    
-                    dialog_context_hint += (
-                        "\n\nДАННЫЕ_ЗАПИСЕЙ: "
-                        f"{appointments_text}. "
-                        "Если данные содержат список записей — перескажи их кратко и дружелюбно."
-                    )
-                system_prompt = self._build_fallback_system_prompt(dialog_context_hint)
+            # Формируем дополнительный контекст диалога
+            dialog_context = self._build_dialog_context(dialogue_stage, user_id, client)
+            
+            # Формируем промпт через PromptBuilderService
+            system_prompt = self.prompt_builder.build_generation_prompt(
+                stage=dialogue_stage,
+                dialog_history=dialog_history,
+                dialog_context=dialog_context,
+                client_name=client.first_name,
+                client_phone_saved=bool(client.phone_number)
+            )
         else:
             # План Б: Fallback - используем универсальный системный промпт
             print(f"[DEBUG] План Б: Используем fallback промпт")
-            dialog_context_hint = f"КОНТЕКСТ: Клиента зовут {client.first_name}. Обращайся к нему по имени, где это уместно." if client.first_name else ""
-            system_prompt = self._build_fallback_system_prompt(dialog_context_hint)
+            
+            # Формируем промпт через PromptBuilderService
+            system_prompt = self.prompt_builder.build_fallback_prompt(
+                dialog_context="",
+                client_name=client.first_name,
+                client_phone_saved=bool(client.phone_number)
+            )
         
         # 5. Этап 3: Генерация и выполнение инструментов
         bot_response_text = await self._execute_generation_cycle(
@@ -297,97 +254,6 @@ class DialogService:
         """
         return self.repository.clear_user_history(user_id)
     
-    def _build_dynamic_system_prompt(self, principles: List[str], examples: List[str], dialog_history: List[Dict], proactive_params: Dict = None, extra_context: str = "") -> str:
-        """
-        Формирует динамический системный промпт на основе паттернов стадии диалога.
-        
-        Args:
-            principles: Принципы для текущей стадии диалога
-            examples: Примеры для текущей стадии диалога
-            dialog_history: История диалога
-            proactive_params: Параметры для самостоятельного определения ботом
-            
-        Returns:
-            Сформированный системный промпт
-        """
-        # Базовая персона
-        base_persona = """Ты — Кэт, вежливый и услужливый администратор салона красоты "Элегант". Твоя задача — помочь клиентам записаться на услуги, предоставить информацию о мастерах и услугах, ответить на вопросы о ценах и расписании.
-
-Твой стиль общения:
-- Дружелюбный и профессиональный
-- Используй эмодзи ТОЛЬКО в двух случаях: при приветствии клиента и при подтверждении записи
-- В остальных сообщениях общайся без эмодзи, но сохраняй дружелюбный тон
-- Будь конкретным в ответах
-- Всегда предлагай конкретные варианты записи
-- Если информации недостаточно — задавай уточняющие вопросы"""
-
-        # Определяем контекст диалога
-        dialog_context = ""
-        if not dialog_history:
-            dialog_context = "Это первое сообщение клиента. Обязательно поздоровайся в ответ."
-        if extra_context:
-            dialog_context = f"{dialog_context} {extra_context}".strip()
-
-        # Всегда проговариваем правило работы с недостающими/имеющимися ПДн
-        pdn_rule = (
-            "\n\nПравило ПДн: Если в контексте указано, что имя и/или телефон клиента не сохранены — при оформлении записи аккуратно запроси недостающие данные. "
-            "Если указано, что оба сохранены — не запрашивай их повторно и оформляй запись сразу."
-        )
-
-        # Формируем принципы
-        principles_text = ""
-        if principles:
-            principles_text = "\n\nПринципы для текущей стадии диалога:\n"
-            for i, principle in enumerate(principles, 1):
-                principles_text += f"{i}. {principle}\n"
-
-        # Формируем примеры
-        examples_text = ""
-        if examples:
-            examples_text = "\n\nПримеры ответов для текущей стадии:\n"
-            for i, example in enumerate(examples, 1):
-                examples_text += f"{i}. {example}\n"
-
-        # Формируем секцию с proactive_params
-        proactive_params_text = ""
-        if proactive_params and isinstance(proactive_params, dict):
-            proactive_params_text = "\n\n# ПРАВИЛА САМОСТОЯТЕЛЬНЫХ ДЕЙСТВИЙ (PROACTIVE ACTIONS)\n"
-            proactive_params_text += "На текущей стадии диалога, при вызове инструментов, ты можешь самостоятельно определять следующие параметры, если они не указаны клиентом явно:\n"
-            
-            for tool_name, params in proactive_params.items():
-                if isinstance(params, dict):
-                    proactive_params_text += f"- Для инструмента '{tool_name}':\n"
-                    for param_name, description in params.items():
-                        proactive_params_text += f"  - {param_name}: {description}\n"
-
-        # Собираем финальный промпт
-        system_prompt = f"{base_persona}{principles_text}{examples_text}{proactive_params_text}{pdn_rule}"
-        
-        if dialog_context:
-            system_prompt += f"\n\nКонтекст диалога: {dialog_context}"
-
-        return system_prompt
-    
-    def _build_fallback_system_prompt(self, extra_context: str = "") -> str:
-        """
-        Формирует универсальный системный промпт для fallback режима.
-        Используется когда классификация стадии диалога не удалась.
-        
-        Returns:
-            Универсальный системный промпт
-        """
-        base = """Ты — Кэт, вежливый и услужливый администратор салона красоты "Элегант". 
-
-Твоя основная задача — помогать клиентам с записью на услуги салона красоты. 
-
-Если клиент задает вопрос не по теме салона красоты (например, о науке, политике, личных темах), вежливо ответь, что ты не можешь помочь с этим, и верни диалог к услугам салона.
-
-Всегда будь дружелюбной, используй эмодзи ТОЛЬКО при приветствии клиента и при подтверждении записи. В остальных сообщениях общайся без эмодзи, но сохраняй дружелюбный тон. Предлагай конкретные варианты записи на услуги салона.
-
-Однако, если ситуация становится конфликтной, клиент жалуется или просит позвать человека, используй инструмент 'call_manager', чтобы передать диалог менеджеру."""
-        if extra_context:
-            return base + "\n\n" + extra_context
-        return base
     
     async def _execute_generation_cycle(self, user_id: int, user_message: str, dialog_history: List[Dict], system_prompt: str) -> str:
         """
@@ -403,7 +269,7 @@ class DialogService:
             Финальный ответ бота
         """
         # Формируем полную историю с системной инструкцией
-        full_history = self._build_full_history_with_system_prompt(dialog_history, system_prompt)
+        full_history = self.prompt_builder.build_full_history_with_system_prompt(dialog_history, system_prompt)
         
         # Создаем чат один раз для всего цикла
         chat = self.llm_service.create_chat(full_history)
@@ -514,15 +380,17 @@ class DialogService:
                     if function_name == "create_appointment" and isinstance(result, str) and result.startswith("Требуются данные клиента"):
                         # Принудительно переключаемся на стадию contact_info_request и запускаем второй цикл
                         contact_stage = 'contact_info_request'
-                        stage_patterns = dialogue_patterns.get(contact_stage, {})
-                        principles = stage_patterns.get("principles", [])
-                        examples = stage_patterns.get("examples", [])
-                        dialog_context_hint = ""
                         # Попробуем обратиться по имени, если оно уже есть в БД
                         client = self.client_repository.get_or_create_by_telegram_id(user_id)
-                        if client.first_name:
-                            dialog_context_hint = f"КОНТЕКСТ: Клиента зовут {client.first_name}. Обращайся к нему по имени, где это уместно."
-                        contact_prompt = self._build_dynamic_system_prompt(principles, examples, dialog_history, proactive_params=None, extra_context=dialog_context_hint)
+                        
+                        # Формируем промпт через PromptBuilderService
+                        contact_prompt = self.prompt_builder.build_generation_prompt(
+                            stage=contact_stage,
+                            dialog_history=dialog_history,
+                            dialog_context="",
+                            client_name=client.first_name,
+                            client_phone_saved=bool(client.phone_number)
+                        )
                         # Запускаем отдельный цикл генерации с новой инструкцией
                         final_text = await self._execute_generation_cycle(user_id, user_message, dialog_history, contact_prompt)
                         return final_text
@@ -567,14 +435,16 @@ class DialogService:
                         # Обработка нехватки ПДн
                         if function_name == "create_appointment" and isinstance(result, str) and result.startswith("Требуются данные клиента"):
                             contact_stage = 'contact_info_request'
-                            stage_patterns = dialogue_patterns.get(contact_stage, {})
-                            principles = stage_patterns.get("principles", [])
-                            examples = stage_patterns.get("examples", [])
-                            dialog_context_hint = ""
                             client = self.client_repository.get_or_create_by_telegram_id(user_id)
-                            if client.first_name:
-                                dialog_context_hint = f"КОНТЕКСТ: Клиента зовут {client.first_name}. Обращайся к нему по имени, где это уместно."
-                            contact_prompt = self._build_dynamic_system_prompt(principles, examples, dialog_history, proactive_params=None, extra_context=dialog_context_hint)
+                            
+                            # Формируем промпт через PromptBuilderService
+                            contact_prompt = self.prompt_builder.build_generation_prompt(
+                                stage=contact_stage,
+                                dialog_history=dialog_history,
+                                dialog_context="",
+                                client_name=client.first_name,
+                                client_phone_saved=bool(client.phone_number)
+                            )
                             final_text = await self._execute_generation_cycle(user_id, user_message, dialog_history, contact_prompt)
                             return final_text
 
@@ -666,35 +536,6 @@ class DialogService:
         
         return bot_response_text
     
-    def _build_full_history_with_system_prompt(self, dialog_history: List[Dict], system_prompt: str) -> List[Dict]:
-        """
-        Формирует полную историю диалога с системной инструкцией.
-        
-        Args:
-            dialog_history: История диалога
-            system_prompt: Системный промпт
-            
-        Returns:
-            Полная история с системной инструкцией
-        """
-        # Получаем текущую дату и время
-        current_datetime = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        
-        # Добавляем информацию о текущей дате и времени к системному промпту
-        enhanced_system_prompt = f"{system_prompt}\n\nТекущая дата и время: {current_datetime}"
-        
-        # Добавляем системную инструкцию в начало истории
-        full_history = [
-            {
-                "role": "user",
-                "parts": [{"text": enhanced_system_prompt}]
-            }
-        ]
-        
-        # Добавляем историю диалога
-        full_history.extend(dialog_history)
-        
-        return full_history
     
     def _format_dialog_history(self, dialog_history: List[Dict]) -> str:
         """

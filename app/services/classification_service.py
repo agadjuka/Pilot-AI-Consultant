@@ -7,6 +7,7 @@ from typing import List, Dict, Optional, Tuple
 import re
 from app.core.dialogue_pattern_loader import dialogue_patterns
 from app.services.llm_service import LLMService
+from app.services.prompt_builder_service import PromptBuilderService
 from app.utils.debug_logger import gemini_debug_logger
 
 
@@ -24,6 +25,7 @@ class ClassificationService:
             llm_service: Сервис для работы с LLM API (Gemini или YandexGPT)
         """
         self.llm_service = llm_service
+        self.prompt_builder = PromptBuilderService()
     
     async def get_dialogue_stage(self, history: List[Dict], user_message: str, user_id: int = None) -> Tuple[Optional[str], Dict[str, Optional[str]]]:
         """
@@ -85,15 +87,12 @@ class ClassificationService:
             stages = list(dialogue_patterns.keys())
             stages_list = ", ".join(stages)
             
-            # Формируем короткий и дешевый промпт для классификации
-            classification_prompt = f"""Проанализируй историю диалога и новое сообщение пользователя. Определи, к какой из следующих стадий относится ПОСЛЕДНЕЕ сообщение: {stages_list}.
-
-ВАЖНО: Если клиент выражает явное недовольство, жалуется, угрожает или прямо просит позвать человека, присвой стадию 'conflict_escalation'. Это высший приоритет.
-
-В ответе укажи ТОЛЬКО ID стадии.
-
-История: {history}
-Новое сообщение: {user_message}"""
+            # Формируем промпт для классификации через PromptBuilderService
+            classification_prompt = self.prompt_builder.build_classification_prompt(
+                stages_list=stages_list,
+                history=history,
+                user_message=user_message
+            )
             
             # Создаем историю для классификации
             classification_history = [
