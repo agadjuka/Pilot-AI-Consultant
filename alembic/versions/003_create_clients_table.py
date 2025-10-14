@@ -1,8 +1,8 @@
 """
 create clients table
 
-Revision ID: 003_create_clients
-Revises: 002_create_dialog_history_table
+Revision ID: 003_create_clients_table
+Revises: 002
 Create Date: 2025-10-14 00:00:00
 """
 
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision = '003'
+revision = '003_create_clients_table'
 down_revision = '002'
 branch_labels = None
 depends_on = None

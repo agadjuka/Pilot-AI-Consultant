@@ -141,6 +141,17 @@ class DialogService:
             return manager_response['response_to_user']
         
         if dialogue_stage is not None:
+            # Быстрый путь: некоторые стадии обслуживаем инструментами напрямую, без генерации LLM
+            if dialogue_stage == 'view_booking':
+                print("[DEBUG] Быстрый путь: 'view_booking' — получаем записи напрямую из БД")
+                bot_response_text = self.tool_service.get_my_appointments(user_id)
+                # Логируем ответ в историю
+                self.repository.add_message(
+                    user_id=user_id,
+                    role="model",
+                    message_text=bot_response_text
+                )
+                return bot_response_text
             # План А: Валидная стадия найдена - используем паттерны диалога
             print(f"[DEBUG] План А: Используем стадию '{dialogue_stage}'")
             stage_patterns = dialogue_patterns.get(dialogue_stage, {})
@@ -441,10 +452,60 @@ class DialogService:
                     
                 # Проверяем наличие текста
                 elif hasattr(part, 'text') and part.text:
-                    has_text = True
-                    bot_response_text = part.text
-                    iteration_log["response"] = part.text
-                    print(f"[Answer] {bot_response_text[:140]}")
+                    text_payload = part.text.strip()
+                    # Доп. обработка: парсим текстовый формат [TOOL: func(arg="val", ...)]
+                    # Это нужно для провайдеров без нативного function_call (например, Yandex)
+                    import re
+                    tool_match = re.search(r"\[TOOL:\s*(\w+)\((.*?)\)\]", text_payload)
+                    if tool_match:
+                        has_function_call = True
+                        function_name = tool_match.group(1)
+                        raw_args = tool_match.group(2).strip()
+                        args: Dict[str, str] = {}
+                        if raw_args:
+                            # Разбираем пары key="value" (поддерживаем русские символы и пробелы внутри значений)
+                            for m in re.finditer(r"(\w+)\s*=\s*\"([^\"]*)\"", raw_args):
+                                args[m.group(1)] = m.group(2)
+                        try:
+                            result = self._execute_function(function_name, args, user_id)
+                        except Exception as e:
+                            result = f"Ошибка при выполнении функции: {str(e)}"
+                        print(f"[Tool] {function_name} args={args} → {str(result)[:120]}")
+                        iteration_log["function_calls"].append({
+                            "name": function_name,
+                            "args": args,
+                            "result": result
+                        })
+                        iteration_log["response"] = f"Model вызвала функцию (text): {function_name}"
+
+                        # Обработка нехватки ПДн
+                        if function_name == "create_appointment" and isinstance(result, str) and result.startswith("Требуются данные клиента"):
+                            contact_stage = 'contact_info_request'
+                            stage_patterns = dialogue_patterns.get(contact_stage, {})
+                            principles = stage_patterns.get("principles", [])
+                            examples = stage_patterns.get("examples", [])
+                            dialog_context_hint = ""
+                            client = self.client_repository.get_or_create_by_telegram_id(user_id)
+                            if client.first_name:
+                                dialog_context_hint = f"КОНТЕКСТ: Клиента зовут {client.first_name}. Обращайся к нему по имени, где это уместно."
+                            contact_prompt = self._build_dynamic_system_prompt(principles, examples, dialog_history, proactive_params=None, extra_context=dialog_context_hint)
+                            final_text = await self._execute_generation_cycle(user_id, user_message, dialog_history, contact_prompt)
+                            return final_text
+
+                        # Готовим ответ функции для следующей итерации
+                        function_response_part = protos.Part(
+                            function_response=protos.FunctionResponse(
+                                name=function_name,
+                                response={"result": result}
+                            )
+                        )
+                        function_response_parts.append(function_response_part)
+                        # Не выставляем текстовый финальный ответ — отдадим шанс модели сгенерировать подтверждение
+                    else:
+                        has_text = True
+                        bot_response_text = text_payload
+                        iteration_log["response"] = text_payload
+                        print(f"[Answer] {bot_response_text[:140]}")
             
             # Сохраняем информацию об итерации
             debug_iterations.append(iteration_log)

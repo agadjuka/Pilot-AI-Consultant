@@ -238,13 +238,21 @@ class ToolService:
             # Формируем описание события для мастера
             description = f"Клиент: {client.first_name or client_name} | Телефон: {client.phone_number or '-'} | Telegram ID: {user_telegram_id}"
 
-            event_id = self.google_calendar_service.create_event(
-                master_name=master_name,
-                service_name=service_name,
-                start_time_iso=start_time_iso,
-                end_time_iso=end_time_iso,
-                description=description
-            )
+            try:
+                event_id = self.google_calendar_service.create_event(
+                    master_name=master_name,
+                    service_name=service_name,
+                    start_time_iso=start_time_iso,
+                    end_time_iso=end_time_iso,
+                    description=description
+                )
+            except Exception as calendar_error:
+                # Фолбэк: если интеграция с календарем недоступна (например, dev-среда),
+                # создаем локальный event_id и продолжаем сохранение записи в БД
+                # Это позволяет не блокировать продажи из-за внешнего сервиса
+                from uuid import uuid4
+                event_id = f"LOCAL-{uuid4()}"
+                print(f"[WARN] Calendar unavailable, fallback to local event_id: {event_id}. Error: {calendar_error}")
             
             # Сохраняем запись в нашу БД
             appointment_data = {
