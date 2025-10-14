@@ -156,3 +156,7 @@ debug_logs/
 # ChromaDB local storage
 /chroma_db_local/
 
+# Google Cloud credentials
+gcp-credentials.json.json
+*.json.json
+
