@@ -351,23 +351,31 @@ class LLMService:
             if message.get("role") == "system":
                 system_text = message.get("text", "")
                 
-                # Добавляем инструкции по function calling
+                # Добавляем инструкции по function calling (актуальные имена и параметры)
                 function_calling_instructions = """
 
 ВАЖНО: Если вам нужно вызвать инструмент (функцию), отвечайте ТОЛЬКО в следующем формате:
 [TOOL: function_name(argument1="value1", argument2="value2")]
 
 Доступные инструменты:
-- search_services(query="текст поиска") - поиск услуг салона
-- search_masters(query="текст поиска") - поиск мастеров
-- get_free_slots(date="YYYY-MM-DD") - получение свободных слотов на дату
-- create_appointment(service_id=123, master_id=456, date="YYYY-MM-DD", time="HH:MM") - создание записи
+- get_all_services() — вернуть список услуг
+- get_masters_for_service(service_name="Женская стрижка") — мастера для услуги
+- get_available_slots(service_name="Маникюр", date="2025-10-15") — свободные окна
+- create_appointment(master_name="Анна", service_name="Маникюр", date="2025-10-15", time="10:00", client_name="Мария") — создать запись
+- get_my_appointments() — мои предстоящие записи
+- cancel_appointment(appointment_details="маникюр завтра") — отменить запись
+- call_manager(reason="клиент просит менеджера") — позвать менеджера
+
+Правила вызова инструментов:
+1) Когда пользователь подтверждает запись (например, отвечает «да», «запишите», «подходит»), НЕМЕДЛЕННО вызывайте create_appointment с известными параметрами мастера/услуги/даты/времени. Имя клиента укажите, если оно явно известно из диалога; иначе можно оставить пустую строку — система сама проверит наличие данных в БД.
+2) Если после вызова create_appointment окажется, что не хватает имени или телефона, система автоматически переведет диалог в стадию запроса контактов. Вам ничего дополнительно делать не нужно.
+3) Не подтверждайте запись текстом без вызова create_appointment.
 
 Примеры:
-- Для поиска услуг маникюра: [TOOL: search_services(query="маникюр")]
-- Для записи на маникюр: [TOOL: create_appointment(service_id=1, master_id=2, date="2024-01-15", time="14:00")]
+- Проверка слотов: [TOOL: get_available_slots(service_name="Маникюр", date="2025-10-15")]
+- Создание записи: [TOOL: create_appointment(master_name="Анна", service_name="Маникюр", date="2025-10-15", time="10:00", client_name="Мария")]
 
-НИКОГДА не отвечайте обычным текстом, если нужно вызвать инструмент!
+НИКОГДА не отвечайте обычным текстом, если по логике нужно вызвать инструмент!
 """
                 
                 enhanced_history.append({
