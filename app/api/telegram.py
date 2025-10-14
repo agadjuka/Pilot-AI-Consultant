@@ -47,8 +47,11 @@ async def process_telegram_update(update: Update):
             # В случае ошибки отправляем пользователю дружелюбное сообщение
             error_message = "Извините, произошла ошибка при обработке вашего сообщения. Пожалуйста, попробуйте еще раз."
             await telegram_service.send_message(chat_id, error_message)
-            # Логируем ошибку для отладки
+            # Логируем ошибку для отладки с более подробной информацией
             print(f"Error processing message: {e}")
+            print(f"Error type: {type(e).__name__}")
+            import traceback
+            print(f"Traceback: {traceback.format_exc()}")
         finally:
             # Всегда закрываем сессию БД
             db.close()

@@ -91,23 +91,52 @@ class GeminiService:
         """
         return self._model.start_chat(history=history)
     
-    async def send_message_to_chat(self, chat, message):
+    async def send_message_to_chat(self, chat, message, user_id: int = None):
         """
         Отправляет сообщение в чат и получает ответ.
         
         Args:
             chat: Объект чата
             message: Сообщение для отправки (строка или список Parts)
+            user_id: ID пользователя для логирования
             
         Returns:
             Объект Content с ответом модели
         """
+        # Логируем отправляемый запрос
+        if user_id is not None:
+            request_text = ""
+            if isinstance(message, str):
+                request_text = message
+            elif isinstance(message, list):
+                request_text = f"Function Response Parts ({len(message)} parts)"
+            else:
+                request_text = str(message)
+            
+            print(f"   🔄 Отправка запроса к Gemini: {request_text[:100]}...")
+        
         # Используем asyncio для выполнения синхронного вызова
         loop = asyncio.get_event_loop()
-        response = await loop.run_in_executor(
-            None,
-            lambda: chat.send_message(message)
-        )
+        try:
+            response = await loop.run_in_executor(
+                None,
+                lambda: chat.send_message(message)
+            )
+        except Exception as e:
+            if user_id is not None:
+                print(f"   ❌ Ошибка при отправке запроса к Gemini: {str(e)}")
+            raise
+        
+        # Логируем полученный ответ
+        if user_id is not None:
+            response_text = ""
+            for part in response.candidates[0].content.parts:
+                if hasattr(part, 'text') and part.text:
+                    response_text += part.text
+                elif hasattr(part, 'function_call') and part.function_call:
+                    response_text += f"Function Call: {part.function_call.name}"
+            
+            print(f"   ✅ Получен ответ от Gemini: {response_text[:100]}...")
         
         return response.candidates[0].content
 
@@ -125,8 +154,8 @@ class GeminiService:
         # Создаем чат с готовой историей
         chat = self.create_chat(history)
         
-        # Отправляем пустое сообщение для получения ответа
-        response_content = await self.send_message_to_chat(chat, "")
+        # Отправляем сообщение "Ответь" для получения ответа
+        response_content = await self.send_message_to_chat(chat, "Ответь")
         
         # Извлекаем текстовый ответ
         for part in response_content.parts:

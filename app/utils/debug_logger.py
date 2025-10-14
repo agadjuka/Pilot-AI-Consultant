@@ -161,9 +161,22 @@ class GeminiDebugLogger:
         content.append(user_message)
         content.append("")
         
-        # Итерации
+        # Добавляем информацию о системном промпте и истории из первой итерации
+        if iterations and iterations[0].get("iteration") == 0:
+            init_info = iterations[0].get("request", "")
+            if "СИСТЕМНЫЙ ПРОМПТ:" in init_info:
+                content.append("-" * 80)
+                content.append("ИНИЦИАЛИЗАЦИЯ ЧАТА С GEMINI:")
+                content.append("-" * 80)
+                content.append(init_info)
+                content.append("")
+        
+        # Итерации (пропускаем итерацию 0 - она уже обработана выше)
         for iteration_data in iterations:
             iteration = iteration_data.get("iteration", 0)
+            if iteration == 0:
+                continue  # Пропускаем итерацию инициализации
+                
             content.append("=" * 80)
             content.append(f"ИТЕРАЦИЯ {iteration}")
             content.append("=" * 80)
@@ -221,6 +234,88 @@ class GeminiDebugLogger:
             f.write("\n".join(content))
         
         print(f"   📝 Сохранен Function Calling цикл: {filename}")
+    
+    def log_simple_dialog(
+        self,
+        user_id: int,
+        user_message: str,
+        system_prompt: str,
+        dialog_history: List[Dict],
+        gemini_response: str
+    ) -> None:
+        """
+        Сохраняет простой диалог (без Function Calling) в один файл.
+        
+        Args:
+            user_id: ID пользователя
+            user_message: Сообщение пользователя
+            system_prompt: Системный промпт
+            dialog_history: История диалога
+            gemini_response: Ответ от Gemini
+        """
+        self._request_counter += 1
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"{self._request_counter:04d}_{timestamp}_simple_dialog.txt"
+        filepath = self.debug_dir / filename
+        
+        # Формируем содержимое файла
+        content = []
+        content.append("=" * 80)
+        content.append(f"ПРОСТОЙ ДИАЛОГ №{self._request_counter}")
+        content.append(f"Пользователь ID: {user_id}")
+        content.append(f"Время: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        content.append("=" * 80)
+        content.append("")
+        
+        # Системный промпт
+        if system_prompt:
+            content.append("-" * 80)
+            content.append("СИСТЕМНЫЙ ПРОМПТ:")
+            content.append("-" * 80)
+            content.append(system_prompt)
+            content.append("")
+        
+        # История диалога
+        if dialog_history:
+            content.append("-" * 80)
+            content.append(f"ИСТОРИЯ ДИАЛОГА ({len(dialog_history)} сообщений):")
+            content.append("-" * 80)
+            for i, msg in enumerate(dialog_history, 1):
+                role = msg.get("role", "unknown")
+                parts = msg.get("parts", [])
+                text_content = ""
+                for part in parts:
+                    if isinstance(part, dict) and "text" in part:
+                        text_content += part["text"]
+                    elif hasattr(part, 'text'):
+                        text_content += part.text
+                
+                content.append(f"\n[{i}] {role.upper()}:")
+                content.append(text_content)
+            content.append("")
+        
+        # Новое сообщение пользователя
+        content.append("-" * 80)
+        content.append("НОВОЕ СООБЩЕНИЕ ПОЛЬЗОВАТЕЛЯ:")
+        content.append("-" * 80)
+        content.append(user_message)
+        content.append("")
+        
+        # Ответ от Gemini
+        content.append("-" * 80)
+        content.append("ОТВЕТ ОТ GEMINI:")
+        content.append("-" * 80)
+        content.append(gemini_response)
+        content.append("")
+        
+        content.append("=" * 80)
+        
+        # Сохраняем в файл
+        self.debug_dir.mkdir(parents=True, exist_ok=True)
+        with open(filepath, "w", encoding="utf-8") as f:
+            f.write("\n".join(content))
+        
+        print(f"   💬 Сохранен простой диалог: {filename}")
 
 
 # Создаем единственный экземпляр логгера

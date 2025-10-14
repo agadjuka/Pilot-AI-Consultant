@@ -6,6 +6,7 @@
 from typing import List, Dict, Optional
 from app.core.dialogue_pattern_loader import dialogue_patterns
 from app.services.gemini_service import GeminiService
+from app.utils.debug_logger import gemini_debug_logger
 
 
 class ClassificationService:
@@ -23,13 +24,14 @@ class ClassificationService:
         """
         self.gemini_service = gemini_service
     
-    async def get_dialogue_stage(self, history: List[Dict], user_message: str) -> Optional[str]:
+    async def get_dialogue_stage(self, history: List[Dict], user_message: str, user_id: int = None) -> Optional[str]:
         """
         Определяет стадию диалога на основе истории и нового сообщения пользователя.
         
         Args:
             history: История диалога в формате списка сообщений
             user_message: Новое сообщение пользователя
+            user_id: ID пользователя для логирования
             
         Returns:
             Optional[str]: ID стадии диалога или None если классификация не удалась
@@ -49,7 +51,7 @@ class ClassificationService:
 История: {history}
 Новое сообщение: {user_message}"""
             
-            # Создаем историю для классификации (только системное сообщение)
+            # Создаем историю для классификации
             classification_history = [
                 {
                     "role": "user",
@@ -60,15 +62,30 @@ class ClassificationService:
             # Вызываем Gemini для классификации
             response = await self.gemini_service.generate_response(classification_history)
             
+            # Логируем классификацию
+            if user_id is not None:
+                gemini_debug_logger.log_simple_dialog(
+                    user_id=user_id,
+                    user_message=f"Классификация стадии диалога. История: {len(history)} сообщений, Новое сообщение: {user_message}",
+                    system_prompt=f"Определи стадию диалога из: {stages_list}",
+                    dialog_history=[],
+                    gemini_response=response
+                )
+            
             # Очищаем ответ от лишних пробелов и символов
             stage_id = response.strip().lower()
             
+            # Отладочная информация
+            print(f"[DEBUG] Классификация: получен ответ '{response}' -> очищенный '{stage_id}'")
+            print(f"[DEBUG] Доступные стадии: {list(dialogue_patterns.keys())}")
+            
             # Проверяем, что полученная стадия существует в паттернах
             if stage_id in dialogue_patterns:
+                print(f"   🎯 Определена стадия диалога: {stage_id}")
                 return stage_id
             
             # Если стадия не найдена или ответ пустой/некорректный - возвращаем None
-            print(f"Классификация не удалась. Получен некорректный ответ: '{response}'")
+            print(f"   ❌ Классификация не удалась. Получен некорректный ответ: '{response}'")
             return None
             
         except Exception as e:

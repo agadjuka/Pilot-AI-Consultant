@@ -85,14 +85,21 @@ class DialogService:
         )
         
         # 3. Этап 1: Классификация стадии диалога
+        print(f"[DEBUG] Начинаем классификацию для сообщения: '{text}'")
+        print(f"[DEBUG] Доступные паттерны: {list(dialogue_patterns.keys())}")
+        
         dialogue_stage = await self.classification_service.get_dialogue_stage(
             history=dialog_history,
-            user_message=text
+            user_message=text,
+            user_id=user_id
         )
         
         # 4. Этап 2: Определение стратегии обработки (План А или План Б)
+        print(f"[DEBUG] Результат классификации: '{dialogue_stage}'")
+        
         if dialogue_stage is not None:
             # План А: Валидная стадия найдена - используем паттерны диалога
+            print(f"[DEBUG] План А: Используем стадию '{dialogue_stage}'")
             stage_patterns = dialogue_patterns.get(dialogue_stage, {})
             principles = stage_patterns.get("principles", [])
             examples = stage_patterns.get("examples", [])
@@ -101,6 +108,7 @@ class DialogService:
             system_prompt = self._build_dynamic_system_prompt(principles, examples, dialog_history)
         else:
             # План Б: Fallback - используем универсальный системный промпт
+            print(f"[DEBUG] План Б: Используем fallback промпт")
             system_prompt = self._build_fallback_system_prompt()
         
         # 5. Этап 3: Генерация и выполнение инструментов
@@ -146,7 +154,7 @@ class DialogService:
             Сформированный системный промпт
         """
         # Базовая персона
-        base_persona = """Ты — AI-консультант салона красоты "Элегант". Твоя задача — помочь клиентам записаться на услуги, предоставить информацию о мастерах и услугах, ответить на вопросы о ценах и расписании.
+        base_persona = """Ты — Кэт, вежливый и услужливый администратор салона красоты "Элегант". Твоя задача — помочь клиентам записаться на услуги, предоставить информацию о мастерах и услугах, ответить на вопросы о ценах и расписании.
 
 Твой стиль общения:
 - Дружелюбный и профессиональный
@@ -226,6 +234,15 @@ class DialogService:
         # Для логирования - собираем информацию о каждой итерации
         debug_iterations = []
         
+        # Добавляем информацию о системном промпте и истории в первую итерацию
+        debug_iterations.append({
+            "iteration": 0,
+            "request": f"СИСТЕМНЫЙ ПРОМПТ:\n{system_prompt}\n\nИСТОРИЯ ДИАЛОГА:\n{self._format_dialog_history(dialog_history)}",
+            "response": "Инициализация чата с Gemini",
+            "function_calls": [],
+            "final_answer": ""
+        })
+        
         while iteration < max_iterations:
             iteration += 1
             
@@ -238,16 +255,23 @@ class DialogService:
                 "final_answer": ""
             }
             
-            # Логируем запрос
+            # Логируем запрос с детальной информацией
             if isinstance(current_message, str):
                 iteration_log["request"] = f"Текст: {current_message}"
             else:
                 iteration_log["request"] = f"Function Response (результаты {len(current_message)} функций)"
+                # Добавляем детали о результатах функций
+                for i, part in enumerate(current_message):
+                    if hasattr(part, 'function_response'):
+                        func_name = part.function_response.name
+                        func_result = part.function_response.response
+                        iteration_log["request"] += f"\n  Функция {i+1}: {func_name} -> {func_result}"
             
             # Получаем ответ от Gemini
             response_content = await self.gemini_service.send_message_to_chat(
                 chat=chat,
-                message=current_message
+                message=current_message,
+                user_id=user_id
             )
             
             # Анализируем ответ
@@ -340,12 +364,23 @@ class DialogService:
             else:
                 bot_response_text = "Извините, не удалось обработать ваш запрос. Попробуйте переформулировать вопрос."
         
-        # Логируем весь цикл Function Calling
-        gemini_debug_logger.log_function_calling_cycle(
-            user_id=user_id,
-            user_message=user_message,
-            iterations=debug_iterations
-        )
+        # Логируем диалог
+        if debug_iterations and any(iter_log.get("function_calls") for iter_log in debug_iterations):
+            # Если были вызовы функций - логируем как Function Calling цикл
+            gemini_debug_logger.log_function_calling_cycle(
+                user_id=user_id,
+                user_message=user_message,
+                iterations=debug_iterations
+            )
+        else:
+            # Если не было вызовов функций - логируем как простой диалог
+            gemini_debug_logger.log_simple_dialog(
+                user_id=user_id,
+                user_message=user_message,
+                system_prompt=system_prompt,
+                dialog_history=dialog_history,
+                gemini_response=bot_response_text or "Ошибка генерации ответа"
+            )
         
         return bot_response_text
     
@@ -372,6 +407,34 @@ class DialogService:
         full_history.extend(dialog_history)
         
         return full_history
+    
+    def _format_dialog_history(self, dialog_history: List[Dict]) -> str:
+        """
+        Форматирует историю диалога для логирования.
+        
+        Args:
+            dialog_history: История диалога
+            
+        Returns:
+            Отформатированная строка истории
+        """
+        if not dialog_history:
+            return "История диалога пуста"
+        
+        formatted_history = []
+        for i, msg in enumerate(dialog_history, 1):
+            role = msg.get("role", "unknown")
+            parts = msg.get("parts", [])
+            text_content = ""
+            for part in parts:
+                if isinstance(part, dict) and "text" in part:
+                    text_content += part["text"]
+                elif hasattr(part, 'text'):
+                    text_content += part.text
+            
+            formatted_history.append(f"[{i}] {role.upper()}: {text_content}")
+        
+        return "\n".join(formatted_history)
     
     def _execute_function(self, function_name: str, function_args: Dict) -> str:
         """
