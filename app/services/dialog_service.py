@@ -9,6 +9,7 @@ from app.repositories.master_repository import MasterRepository
 from app.repositories.appointment_repository import AppointmentRepository
 from app.repositories.client_repository import ClientRepository
 from app.services.llm_service import get_llm_service
+from app.services.appointment_service import AppointmentService
 from app.services.tool_service import ToolService
 from app.services.google_calendar_service import GoogleCalendarService
 from app.services.classification_service import ClassificationService
@@ -49,13 +50,20 @@ class DialogService:
         # Инициализируем Google Calendar Service
         self.google_calendar_service = GoogleCalendarService()
         
+        # Создаем экземпляр AppointmentService
+        self.appointment_service = AppointmentService(
+            appointment_repository=self.appointment_repository,
+            client_repository=self.client_repository,
+            master_repository=self.master_repository,
+            service_repository=self.service_repository,
+            google_calendar_service=self.google_calendar_service
+        )
+        
         # Создаем экземпляр ToolService
         self.tool_service = ToolService(
             service_repository=self.service_repository,
             master_repository=self.master_repository,
-            appointment_repository=self.appointment_repository,
-            google_calendar_service=self.google_calendar_service,
-            client_repository=self.client_repository
+            appointment_service=self.appointment_service
         )
         
         # Создаем экземпляр ToolOrchestratorService
