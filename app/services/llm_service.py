@@ -8,7 +8,7 @@ from google.oauth2 import service_account
 import requests
 import logging
 from app.core.config import settings
-from app.services.tool_definitions import salon_tools
+from app.services.tool_definitions import read_only_tools, write_tools, salon_tools
 
 # Получаем логгер для этого модуля
 logger = logging.getLogger(__name__)
@@ -43,8 +43,7 @@ class LLMService:
         # Конфигурируем Google AI SDK
         genai.configure(credentials=credentials)
         
-        # Получаем модель Gemini 2.5 Flash с инструментами
-        self._gemini_model = genai.GenerativeModel("gemini-2.5-flash", tools=[salon_tools])
+        # Модель будет создаваться динамически в create_chat с нужными инструментами
 
     def _init_yandex_client(self):
         """Инициализирует клиент YandexGPT."""
@@ -102,12 +101,13 @@ class LLMService:
         )
         return credentials
 
-    def create_chat(self, history: List[Dict]):
+    def create_chat(self, history: List[Dict], tools=None):
         """
         Создает чат с историей для последующего использования.
         
         Args:
             history: Полная история диалога в формате провайдера
+            tools: Набор инструментов для использования (по умолчанию все инструменты)
             
         Returns:
             Объект чата для взаимодействия с моделью
@@ -116,8 +116,11 @@ class LLMService:
             # Для YandexGPT возвращаем историю как есть
             return history
         else:
-            # Для Gemini создаем объект чата
-            return self._gemini_model.start_chat(history=history)
+            # Для Gemini создаем объект чата с указанными инструментами
+            if tools is None:
+                tools = salon_tools
+            model = genai.GenerativeModel("gemini-2.5-flash", tools=[tools])
+            return model.start_chat(history=history)
     
     async def send_message_to_chat(self, chat, message, user_id: int = None):
         """
@@ -320,13 +323,14 @@ class LLMService:
         
         return MockContent([MockTextPart(text)])
 
-    async def generate_response(self, history: List[Dict]) -> str:
+    async def generate_response(self, history: List[Dict], tools=None) -> str:
         """
         Генерирует ответ на основе готовой истории диалога.
         Поддерживает как Gemini, так и YandexGPT.
         
         Args:
             history: Готовая история диалога с системной инструкцией
+            tools: Набор инструментов для использования (по умолчанию все инструменты)
             
         Returns:
             Текстовый ответ модели
@@ -334,12 +338,12 @@ class LLMService:
         if self.provider == "yandex":
             return await self._generate_yandex_response(history)
         else:
-            return await self._generate_gemini_response(history)
+            return await self._generate_gemini_response(history, tools)
 
-    async def _generate_gemini_response(self, history: List[Dict]) -> str:
+    async def _generate_gemini_response(self, history: List[Dict], tools=None) -> str:
         """Генерирует ответ через Gemini."""
-        # Создаем чат с готовой историей
-        chat = self.create_chat(history)
+        # Создаем чат с готовой историей и указанными инструментами
+        chat = self.create_chat(history, tools)
         
         # Отправляем сообщение "Ответь" для получения ответа
         response_content = await self.send_message_to_chat(chat, "Ответь")

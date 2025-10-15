@@ -164,8 +164,9 @@ class DialogService:
                 }
             ]
             
-            # Первый вызов LLM для планирования
-            planning_response = await self.llm_service.generate_response(planning_history)
+            # Первый вызов LLM для планирования (только read_only_tools)
+            from app.services.tool_definitions import read_only_tools_obj
+            planning_response = await self.llm_service.generate_response(planning_history, read_only_tools_obj)
             tracer.add_event("✅ Ответ планирования получен", f"Ответ: {planning_response}")
             logger.info(f"🔍 Сырой ответ LLM: '{planning_response}'")
             
@@ -355,8 +356,9 @@ class DialogService:
                 }
             ]
             
-            # Второй вызов LLM для синтеза финального ответа
-            synthesis_response = await self.llm_service.generate_response(synthesis_history)
+            # Второй вызов LLM для синтеза финального ответа (с write_tools)
+            from app.services.tool_definitions import write_tools_obj
+            synthesis_response = await self.llm_service.generate_response(synthesis_history, write_tools_obj)
             
             tracer.add_event("✅ Ответ синтеза получен", {
                 "response": synthesis_response,

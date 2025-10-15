@@ -37,11 +37,11 @@ class PromptBuilderService:
 - `service_inquiry`: Узнай детали об услуге (цена, длительность), используя `get_all_services`.
 - `price_inquiry`: Найди цену услуги, используя `get_all_services`.
 - `availability_check`: Найди свободное время, используя `get_available_slots`. Убедись, что услуга известна из контекста.
-- `booking_confirmation`: Проверь наличие всех данных и вызови `create_appointment`.
+- `booking_confirmation`: Получи список записей клиента, используя `get_my_appointments` для проверки данных.
 - `view_booking`: Получи список записей клиента, используя `get_my_appointments`.
-- `cancellation_request`: Отмени запись, используя `cancel_appointment_by_id`.
-- `rescheduling`: Перенеси запись, используя `reschedule_appointment_by_id`.
-- `handle_issue` / `conflict_escalation`: Вызови `call_manager`.
+- `cancellation_request`: Получи список записей клиента, используя `get_my_appointments` для определения ID записи.
+- `rescheduling`: Получи список записей клиента, используя `get_my_appointments` для определения ID записи.
+- `handle_issue` / `conflict_escalation`: Получи полную историю диалога, используя `get_full_history`.
 - `fallback`: Инструменты не нужны, вежливо ответь по ситуации.
 
 # ТЕКУЩАЯ ДАТА (для преобразования "завтра", "в субботу" и т.д.)
