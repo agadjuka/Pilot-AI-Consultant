@@ -1,4 +1,5 @@
 from typing import List, Dict, Tuple
+import asyncio
 import google.generativeai as genai
 from google.generativeai import protos
 import logging
@@ -42,6 +43,7 @@ class ToolOrchestratorService:
                                user_message: str, user_id: int, tracer=None) -> Tuple[str, List[Dict]]:
         """
         Выполняет цикл обработки инструментов с LLM.
+        Поддерживает параллельное выполнение нескольких инструментов.
         
         Args:
             system_prompt: Системный промпт для LLM
@@ -74,7 +76,7 @@ class ToolOrchestratorService:
         debug_iterations.append({
             "iteration": 0,
             "request": f"СИСТЕМНЫЙ ПРОМПТ:\n{system_prompt}\n\nИСТОРИЯ ДИАЛОГА:\n{self._format_dialog_history(history)}",
-            "response": "Инициализация чата с Gemini",
+            "response": "Инициализация чата с LLM",
             "function_calls": [],
             "final_answer": ""
         })
@@ -140,89 +142,15 @@ class ToolOrchestratorService:
             # Анализируем ответ
             has_function_call = False
             has_text = False
-            function_response_parts = []
-            # Специальный контекст: если это просмотр записей — подготовим данные заранее
-            precomputed_tool_result: str | None = None
-            try:
-                # Попробуем извлечь стадию из системного промпта (последняя добавленная строка в начале истории)
-                # и если это view_booking, заранее получим список записей
-                if "view_booking" in system_prompt:
-                    precomputed_tool_result = self.tool_service.get_my_appointments(user_id)
-            except Exception:
-                precomputed_tool_result = None
+            function_calls = []
             
+            # Собираем все вызовы функций из ответа
             for part in response_content.parts:
                 # Проверяем наличие вызова функции
                 if hasattr(part, 'function_call') and part.function_call:
                     has_function_call = True
-                    function_call = part.function_call
-                    
-                    # Извлекаем имя и аргументы функции
-                    function_name = function_call.name
-                    function_args = dict(function_call.args)
-                    
-                    # Выполняем функцию через ToolService
-                    try:
-                        result = self._execute_function(function_name, function_args, user_id)
-                    except Exception as e:
-                        result = f"Ошибка при выполнении функции: {str(e)}"
-                    
-                    if tracer:
-                        tracer.add_event(f"⚙️ Выполнение инструмента: {function_name}", {
-                            "tool_name": function_name,
-                            "args": function_args,
-                            "result": result,
-                            "iteration": iteration
-                        })
-                    
-                    # Компактный лог вызова инструмента
-                    def _short(v):
-                        try:
-                            s = str(v)
-                            return (s[:120] + '…') if len(s) > 120 else s
-                        except Exception:
-                            return '—'
-                    # Логируем вызов функции
-                    iteration_log["function_calls"].append({
-                        "name": function_name,
-                        "args": function_args,
-                        "result": result
-                    })
-                    iteration_log["response"] = f"Model вызвала функцию: {function_name}"
-                    
-                    # Специальная обработка для call_manager - завершаем цикл
-                    if function_name == "call_manager":
-                        bot_response_text = result
-                        iteration_log["final_answer"] = bot_response_text
-                        break
-
-                    # Обработка ситуации, когда нужны ПДн для записи
-                    if function_name == "create_appointment" and isinstance(result, str) and result.startswith("Требуются данные клиента"):
-                        # Принудительно переключаемся на стадию contact_info_request и запускаем второй цикл
-                        contact_stage = 'contact_info_request'
-                        client = self.client_repository.get_or_create_by_telegram_id(user_id)
-                        
-                        # Формируем промпт через PromptBuilderService
-                        contact_prompt = self.prompt_builder.build_generation_prompt(
-                            stage=contact_stage,
-                            dialog_history=history,
-                            dialog_context="",
-                            client_name=client.first_name,
-                            client_phone_saved=bool(client.phone_number)
-                        )
-                        # Запускаем отдельный цикл генерации с новой инструкцией
-                        final_text, _ = await self.execute_tool_cycle(contact_prompt, history, user_message, user_id, tracer)
-                        return final_text, debug_iterations
-                    
-                    # Формируем ответ функции для отправки обратно в модель
-                    function_response_part = protos.Part(
-                        function_response=protos.FunctionResponse(
-                            name=function_name,
-                            response={"result": result}
-                        )
-                    )
-                    function_response_parts.append(function_response_part)
-                    
+                    function_calls.append(part.function_call)
+                
                 # Проверяем наличие текста
                 elif hasattr(part, 'text') and part.text:
                     text_payload = part.text.strip()
@@ -239,31 +167,80 @@ class ToolOrchestratorService:
                             # Разбираем пары key="value" (поддерживаем русские символы и пробелы внутри значений)
                             for m in re.finditer(r"(\w+)\s*=\s*\"([^\"]*)\"", raw_args):
                                 args[m.group(1)] = m.group(2)
-                        try:
-                            result = self._execute_function(function_name, args, user_id)
-                        except Exception as e:
-                            result = f"Ошибка при выполнении функции: {str(e)}"
                         
-                        # Логируем вызов функции в трейсер
+                        # Создаем mock function_call для совместимости
+                        class MockFunctionCall:
+                            def __init__(self, name, args):
+                                self.name = name
+                                self.args = args
+                        
+                        function_calls.append(MockFunctionCall(function_name, args))
+                    else:
+                        has_text = True
+                        bot_response_text = text_payload
+                        iteration_log["response"] = text_payload
+                        logger.info(f"💬 [Answer] {bot_response_text[:140]}")
+            
+            # Сохраняем информацию об итерации
+            debug_iterations.append(iteration_log)
+            
+            # Если есть вызовы функций - выполняем их параллельно
+            if has_function_call and function_calls:
+                if tracer:
+                    tracer.add_event(f"⚙️ Параллельное выполнение {len(function_calls)} инструментов", {
+                        "tools": [fc.name for fc in function_calls],
+                        "iteration": iteration
+                    })
+                
+                # Создаем список асинхронных задач для параллельного выполнения
+                tasks = []
+                for function_call in function_calls:
+                    function_name = function_call.name
+                    function_args = dict(function_call.args)
+                    
+                    # Создаем корутину для выполнения функции
+                    task = self._execute_function_async(function_name, function_args, user_id)
+                    tasks.append(task)
+                
+                # Выполняем все функции параллельно
+                try:
+                    results = await asyncio.gather(*tasks, return_exceptions=True)
+                    
+                    # Обрабатываем результаты
+                    function_response_parts = []
+                    for i, (function_call, result) in enumerate(zip(function_calls, results)):
+                        function_name = function_call.name
+                        function_args = dict(function_call.args)
+                        
+                        # Обрабатываем исключения
+                        if isinstance(result, Exception):
+                            result = f"Ошибка при выполнении функции: {str(result)}"
+                        
                         if tracer:
-                            tracer.add_event(f"⚙️ Выполнение инструмента (text): {function_name}", {
+                            tracer.add_event(f"⚙️ Результат инструмента: {function_name}", {
                                 "tool_name": function_name,
-                                "args": args,
+                                "args": function_args,
                                 "result": result,
-                                "iteration": iteration,
-                                "format": "text"
+                                "iteration": iteration
                             })
                         
                         # Логируем вызов функции
                         iteration_log["function_calls"].append({
                             "name": function_name,
-                            "args": args,
+                            "args": function_args,
                             "result": result
                         })
-                        iteration_log["response"] = f"Model вызвала функцию (text): {function_name}"
-
-                        # Обработка нехватки ПДн
+                        iteration_log["response"] = f"Model вызвала {len(function_calls)} функций параллельно"
+                        
+                        # Специальная обработка для call_manager - завершаем цикл
+                        if function_name == "call_manager":
+                            bot_response_text = result
+                            iteration_log["final_answer"] = bot_response_text
+                            break
+                        
+                        # Обработка ситуации, когда нужны ПДн для записи
                         if function_name == "create_appointment" and isinstance(result, str) and result.startswith("Требуются данные клиента"):
+                            # Принудительно переключаемся на стадию contact_info_request и запускаем второй цикл
                             contact_stage = 'contact_info_request'
                             client = self.client_repository.get_or_create_by_telegram_id(user_id)
                             
@@ -275,10 +252,11 @@ class ToolOrchestratorService:
                                 client_name=client.first_name,
                                 client_phone_saved=bool(client.phone_number)
                             )
+                            # Запускаем отдельный цикл генерации с новой инструкцией
                             final_text, _ = await self.execute_tool_cycle(contact_prompt, history, user_message, user_id, tracer)
                             return final_text, debug_iterations
-
-                        # Готовим ответ функции для следующей итерации
+                        
+                        # Формируем ответ функции для отправки обратно в модель
                         function_response_part = protos.Part(
                             function_response=protos.FunctionResponse(
                                 name=function_name,
@@ -286,22 +264,23 @@ class ToolOrchestratorService:
                             )
                         )
                         function_response_parts.append(function_response_part)
-                        # Не выставляем текстовый финальный ответ — отдадим шанс модели сгенерировать подтверждение
+                    
+                    # Если это последняя итерация и LLM не вернул текст, 
+                    # попробуем принудительно запросить итоговый ответ
+                    if iteration == max_iterations - 1:
+                        # Добавляем явный запрос на формирование ответа
+                        current_message = function_response_parts + [
+                            protos.Part(text="Пожалуйста, сформируй итоговый ответ для пользователя на основе полученной информации.")
+                        ]
                     else:
-                        # Если это стадия просмотра записей и текст не вызвал инструмент —
-                        # мягко вставим в ответ данные инструментов как контекст для LLM:
-                        if precomputed_tool_result is not None and "get_my_appointments" not in text_payload:
-                            text_payload = (
-                                f"КОНТЕКСТ_ЗАПИСЕЙ: {precomputed_tool_result}\n\n"
-                                f"СФОРМИРУЙ ОТВЕТ: {text_payload}"
-                            )
-                        has_text = True
-                        bot_response_text = text_payload
-                        iteration_log["response"] = text_payload
-                        logger.info(f"💬 [Answer] {bot_response_text[:140]}")
-            
-            # Сохраняем информацию об итерации
-            debug_iterations.append(iteration_log)
+                        current_message = function_response_parts
+                    continue
+                    
+                except Exception as e:
+                    logger.error(f"❌ Ошибка при параллельном выполнении инструментов: {str(e)}")
+                    bot_response_text = "Извините, произошла ошибка при обработке вашего запроса."
+                    iteration_log["final_answer"] = bot_response_text
+                    break
             
             # Если есть текстовый ответ - это финальный ответ
             if has_text and not has_function_call:
@@ -313,18 +292,6 @@ class ToolOrchestratorService:
                         "length": len(bot_response_text)
                     })
                 break
-            
-            # Если есть вызовы функций - подготавливаем их результаты для следующей итерации
-            if has_function_call:
-                current_message = function_response_parts
-                # Если это последняя итерация и Gemini не вернул текст, 
-                # попробуем принудительно запросить итоговый ответ
-                if iteration == max_iterations - 1:
-                    # Добавляем явный запрос на формирование ответа
-                    current_message = function_response_parts + [
-                        protos.Part(text="Пожалуйста, сформируй итоговый ответ для пользователя на основе полученной информации о свободных слотах.")
-                    ]
-                continue
             
             # Если нет ни функции, ни текста - выходим с ошибкой
             if not has_function_call and not has_text:
@@ -382,6 +349,68 @@ class ToolOrchestratorService:
             formatted_history.append(f"[{i}] {role.upper()}: {text_content}")
         
         return "\n".join(formatted_history)
+    
+    async def _execute_function_async(self, function_name: str, function_args: Dict, user_id: int = None) -> str:
+        """
+        Асинхронно выполняет функцию из ToolService.
+        
+        Args:
+            function_name: Имя функции для вызова
+            function_args: Аргументы функции
+            user_id: ID пользователя для функций, требующих его
+            
+        Returns:
+            Результат выполнения функции
+        """
+        # Проверяем, существует ли метод в ToolService
+        if not hasattr(self.tool_service, function_name):
+            return f"Ошибка: функция '{function_name}' не найдена в ToolService"
+        
+        # Получаем метод динамически
+        method = getattr(self.tool_service, function_name)
+        
+        # Вызываем метод с аргументами
+        if function_name == "get_all_services":
+            return method()
+        
+        elif function_name == "get_masters_for_service":
+            service_name = function_args.get("service_name", "")
+            return method(service_name)
+        
+        elif function_name == "get_available_slots":
+            service_name = function_args.get("service_name", "")
+            date = function_args.get("date", "")
+            return method(service_name, date)
+        
+        elif function_name == "create_appointment":
+            master_name = function_args.get("master_name", "")
+            service_name = function_args.get("service_name", "")
+            date = function_args.get("date", "")
+            time = function_args.get("time", "")
+            client_name = function_args.get("client_name", "")
+            return method(master_name, service_name, date, time, client_name, user_id)
+        
+        elif function_name == "get_my_appointments":
+            return method(user_id)
+        
+        elif function_name == "cancel_appointment_by_id":
+            appointment_id = function_args.get("appointment_id", 0)
+            return method(appointment_id)
+        
+        elif function_name == "reschedule_appointment_by_id":
+            appointment_id = function_args.get("appointment_id", 0)
+            new_date = function_args.get("new_date", "")
+            new_time = function_args.get("new_time", "")
+            return method(appointment_id, new_date, new_time)
+        
+        elif function_name == "call_manager":
+            reason = function_args.get("reason", "")
+            result = method(reason)
+            # Возвращаем только response_to_user для совместимости с существующей логикой
+            return result.get("response_to_user", "Ошибка при вызове менеджера")
+        
+        else:
+            return f"Ошибка: неизвестная функция '{function_name}'"
     
     def _execute_function(self, function_name: str, function_args: Dict, user_id: int = None) -> str:
         """

@@ -30,6 +30,9 @@ class DialogService:
     Координирует работу между хранилищем истории диалогов и AI-моделью.
     """
     
+    # Размер окна контекста - последние N сообщений
+    CONTEXT_WINDOW_SIZE = 12
+    
     def __init__(self, db_session: Session):
         """
         Инициализирует сервис диалога.
@@ -161,9 +164,9 @@ class DialogService:
             # 0. Загружаем (или создаем) клиента
             client = self.client_repository.get_or_create_by_telegram_id(user_id)
             tracer.add_event("👤 Клиент загружен", f"ID клиента: {client.id}, Имя: {client.first_name}, Телефон: {client.phone_number}")
-            # 1. Получаем историю диалога (последние 20 сообщений)
-            history_records = self.repository.get_recent_messages(user_id, limit=20)
-            tracer.add_event("📚 История диалога загружена", f"Количество сообщений: {len(history_records)}")
+            # 1. Получаем историю диалога (окно контекста - последние N сообщений)
+            history_records = self.repository.get_recent_messages(user_id, limit=self.CONTEXT_WINDOW_SIZE)
+            tracer.add_event("📚 История диалога загружена", f"Количество сообщений: {len(history_records)} (окно контекста: {self.CONTEXT_WINDOW_SIZE})")
             
             # Преобразуем историю в расширенный формат для Gemini
             dialog_history: List[Dict] = []

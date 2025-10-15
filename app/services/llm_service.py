@@ -230,7 +230,41 @@ class LLMService:
         
         text = alternatives[0].get("message", {}).get("text", "")
         
-        # Проверяем, есть ли вызов функции в ответе
+        # Проверяем, есть ли вызовы функций в ответе (новый JSON формат)
+        try:
+            # Пытаемся распарсить как JSON массив
+            import json
+            tool_calls = json.loads(text)
+            if isinstance(tool_calls, list) and len(tool_calls) > 0:
+                # Создаем объекты, имитирующие function_call от Gemini для каждого вызова
+                mock_parts = []
+                for tool_call in tool_calls:
+                    if isinstance(tool_call, dict) and "tool_name" in tool_call:
+                        function_name = tool_call["tool_name"]
+                        function_args = tool_call.get("parameters", {})
+                        
+                        class MockFunctionCall:
+                            def __init__(self, name, args):
+                                self.name = name
+                                self.args = args
+                        
+                        class MockPart:
+                            def __init__(self, function_call):
+                                self.function_call = function_call
+                        
+                        mock_parts.append(MockPart(MockFunctionCall(function_name, function_args)))
+                
+                if mock_parts:
+                    class MockContent:
+                        def __init__(self, parts):
+                            self.parts = parts
+                    
+                    return MockContent(mock_parts)
+        except (json.JSONDecodeError, ValueError, KeyError):
+            # Если не удалось распарсить как JSON, пробуем старый формат
+            pass
+        
+        # Проверяем старый формат [TOOL: ...] для обратной совместимости
         tool_call_match = re.search(r'\[TOOL:\s*(\w+)\((.*?)\)\]', text)
         if tool_call_match:
             function_name = tool_call_match.group(1)
@@ -335,26 +369,26 @@ class LLMService:
                 # Добавляем инструкции по function calling (актуальные имена и параметры)
                 function_calling_instructions = """
 
-ВАЖНО: Если вам нужно вызвать инструмент (функцию), отвечайте ТОЛЬКО в следующем формате:
-[TOOL: function_name(argument1="value1", argument2="value2")]
+ВАЖНО: Если нужно вызвать инструмент(ы), ответь ТОЛЬКО списком вызовов в формате JSON. Пример: [{"tool_name": "get_services"}, {"tool_name": "get_available_slots", "parameters": {"date": "завтра"}}]
 
 Доступные инструменты:
-- get_all_services() — вернуть список услуг
-- get_masters_for_service(service_name="Женская стрижка") — мастера для услуги
-- get_available_slots(service_name="Маникюр", date="2025-10-15") — свободные окна
-- create_appointment(master_name="Анна", service_name="Маникюр", date="2025-10-15", time="10:00", client_name="Мария") — создать запись
-- get_my_appointments() — мои предстоящие записи
-- cancel_appointment(appointment_details="маникюр завтра") — отменить запись
-- call_manager(reason="клиент просит менеджера") — позвать менеджера
+- get_all_services — вернуть список услуг
+- get_masters_for_service — мастера для услуги (service_name)
+- get_available_slots — свободные окна (service_name, date)
+- create_appointment — создать запись (master_name, service_name, date, time, client_name)
+- get_my_appointments — мои предстоящие записи
+- cancel_appointment_by_id — отменить запись (appointment_id)
+- reschedule_appointment_by_id — перенести запись (appointment_id, new_date, new_time)
+- call_manager — позвать менеджера (reason)
 
 Правила вызова инструментов:
-1) Когда пользователь подтверждает запись (например, отвечает «да», «запишите», «подходит»), НЕМЕДЛЕННО вызывайте create_appointment с известными параметрами мастера/услуги/даты/времени.
-2) Если в системном контексте указано, что имя и/или телефон клиента сохранены в БД, НЕ задавайте вопросы об этих данных — сразу создавайте запись. Если указано, что данных нет, аккуратно уточните недостающее и только затем создайте запись.
-3) Не подтверждайте запись текстом без вызова create_appointment.
+1) Ты можешь вызывать НЕСКОЛЬКО инструментов ОДНОВРЕМЕННО, если запрос клиента сложный.
+2) Когда пользователь подтверждает запись, НЕМЕДЛЕННО вызывайте create_appointment с известными параметрами.
+3) Если в системном контексте указано, что имя и/или телефон клиента сохранены в БД, НЕ задавайте вопросы об этих данных — сразу создавайте запись.
 
 Примеры:
-- Проверка слотов: [TOOL: get_available_slots(service_name="Маникюр", date="2025-10-15")]
-- Создание записи: [TOOL: create_appointment(master_name="Анна", service_name="Маникюр", date="2025-10-15", time="10:00", client_name="Мария")]
+- Один инструмент: [{"tool_name": "get_available_slots", "parameters": {"service_name": "Маникюр", "date": "2025-10-15"}}]
+- Несколько инструментов: [{"tool_name": "get_all_services"}, {"tool_name": "get_available_slots", "parameters": {"service_name": "Маникюр", "date": "завтра"}}]
 
 НИКОГДА не отвечайте обычным текстом, если по логике нужно вызвать инструмент!
 """
