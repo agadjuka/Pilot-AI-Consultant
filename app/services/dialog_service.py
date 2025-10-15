@@ -480,45 +480,84 @@ class DialogService:
         import re
         import json
         
-        # Ищем все блоки ```json ... ``` в ответе
-        json_blocks = re.findall(r'```json\s*([\s\S]*?)\s*```', raw_response)
+        # Ищем все блоки ``` ... ``` в ответе (с json или без)
+        json_blocks = re.findall(r'```(?:json)?\s*([\s\S]*?)\s*```', raw_response)
+        
+        logger.info(f"🔍 Найдено JSON-блоков: {len(json_blocks)}")
+        for i, block in enumerate(json_blocks):
+            logger.info(f"🔍 Блок {i+1}: {block[:100]}...")
         
         if not json_blocks:
             # Если блоков нет, возвращаем исходный текст
+            logger.info("❌ JSON-блоки не найдены, возвращаем исходный текст")
             return raw_response, ""
         
         # Очищаем исходный текст от всех JSON-блоков
         cleaned_text = raw_response
         for block in json_blocks:
-            # Удаляем весь блок ```json ... ``` из текста
-            cleaned_text = re.sub(r'```json\s*' + re.escape(block) + r'\s*```', '', cleaned_text, flags=re.DOTALL)
+            # Удаляем весь блок ``` ... ``` из текста
+            cleaned_text = re.sub(r'```(?:json)?\s*' + re.escape(block) + r'\s*```', '', cleaned_text, flags=re.DOTALL)
         
         # Дополнительная очистка: удаляем лишние переносы строк
         cleaned_text = re.sub(r'\n\s*\n\s*\n', '\n\n', cleaned_text).strip()
         
         # Выполняем все найденные инструменты
         tool_results = []
-        for json_block in json_blocks:
+        logger.info(f"🔧 Начинаем выполнение {len(json_blocks)} JSON-блоков")
+        
+        for i, json_block in enumerate(json_blocks):
+            logger.info(f"🔧 Обрабатываем блок {i+1}: {json_block[:100]}...")
             try:
                 # Парсим JSON
                 tool_call = json.loads(json_block.strip())
+                logger.info(f"🔧 Распарсенный JSON: {tool_call}")
                 
-                # Проверяем, что это вызов инструмента
-                if isinstance(tool_call, dict) and 'tool_name' in tool_call:
-                    tool_name = tool_call.get('tool_name')
-                    parameters = tool_call.get('parameters', {})
+                # Проверяем формат JSON
+                if isinstance(tool_call, dict):
+                    # Формат 1: {"tool_calls": [...]}
+                    if 'tool_calls' in tool_call:
+                        tool_calls_list = tool_call.get('tool_calls', [])
+                        logger.info(f"🔧 Найдено {len(tool_calls_list)} вызовов инструментов в массиве")
+                        
+                        for j, single_tool_call in enumerate(tool_calls_list):
+                            if isinstance(single_tool_call, dict) and 'tool_name' in single_tool_call:
+                                tool_name = single_tool_call.get('tool_name')
+                                parameters = single_tool_call.get('parameters', {})
+                                
+                                # Добавляем user_telegram_id к параметрам для инструментов, которые его требуют
+                                if tool_name in ['cancel_appointment_by_id', 'reschedule_appointment_by_id']:
+                                    parameters['user_telegram_id'] = user_id
+                                
+                                logger.info(f"🔧 Выполнение инструмента {j+1} из массива: {tool_name}")
+                                
+                                # Выполняем инструмент через ToolOrchestratorService
+                                tool_result = await self.tool_orchestrator.execute_single_tool(tool_name, parameters, user_id)
+                                
+                                tool_results.append(f"Результат {tool_name}: {tool_result}")
+                                logger.info(f"✅ Инструмент {j+1} выполнен: {tool_name}")
+                            else:
+                                logger.warning(f"⚠️ Элемент {j+1} массива не является вызовом инструмента: {single_tool_call}")
                     
-                    # Добавляем user_telegram_id к параметрам для инструментов, которые его требуют
-                    if tool_name in ['cancel_appointment_by_id', 'reschedule_appointment_by_id']:
-                        parameters['user_telegram_id'] = user_id
-                    
-                    logger.info(f"🔧 Выполнение инструмента из гибридного ответа: {tool_name}")
-                    
-                    # Выполняем инструмент через ToolOrchestratorService
-                    tool_result = await self.tool_orchestrator.execute_single_tool(tool_name, parameters, user_id)
-                    
-                    tool_results.append(f"Результат {tool_name}: {tool_result}")
-                    logger.info(f"✅ Инструмент выполнен: {tool_name}")
+                    # Формат 2: {"tool_name": "...", "parameters": {...}}
+                    elif 'tool_name' in tool_call:
+                        tool_name = tool_call.get('tool_name')
+                        parameters = tool_call.get('parameters', {})
+                        
+                        # Добавляем user_telegram_id к параметрам для инструментов, которые его требуют
+                        if tool_name in ['cancel_appointment_by_id', 'reschedule_appointment_by_id']:
+                            parameters['user_telegram_id'] = user_id
+                        
+                        logger.info(f"🔧 Выполнение одиночного инструмента: {tool_name}")
+                        
+                        # Выполняем инструмент через ToolOrchestratorService
+                        tool_result = await self.tool_orchestrator.execute_single_tool(tool_name, parameters, user_id)
+                        
+                        tool_results.append(f"Результат {tool_name}: {tool_result}")
+                        logger.info(f"✅ Одиночный инструмент выполнен: {tool_name}")
+                    else:
+                        logger.warning(f"⚠️ JSON не содержит tool_calls или tool_name: {tool_call}")
+                else:
+                    logger.warning(f"⚠️ JSON не является словарем: {tool_call}")
                     
             except json.JSONDecodeError as e:
                 logger.warning(f"⚠️ Не удалось распарсить JSON блок: {e}")
