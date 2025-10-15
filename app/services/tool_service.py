@@ -1,6 +1,7 @@
 from app.repositories.service_repository import ServiceRepository
 from app.repositories.master_repository import MasterRepository
 from app.services.appointment_service import AppointmentService
+from app.services.google_calendar_service import GoogleCalendarService
 from datetime import datetime, timedelta
 from difflib import SequenceMatcher
 import logging
@@ -19,7 +20,8 @@ class ToolService:
         self,
         service_repository: ServiceRepository,
         master_repository: MasterRepository,
-        appointment_service: AppointmentService
+        appointment_service: AppointmentService,
+        google_calendar_service: GoogleCalendarService
     ):
         """
         Инициализирует ToolService с необходимыми репозиториями и сервисами.
@@ -28,10 +30,12 @@ class ToolService:
             service_repository: Репозиторий для работы с услугами
             master_repository: Репозиторий для работы с мастерами
             appointment_service: Сервис для управления записями
+            google_calendar_service: Сервис для работы с Google Calendar
         """
         self.service_repository = service_repository
         self.master_repository = master_repository
         self.appointment_service = appointment_service
+        self.google_calendar_service = google_calendar_service
 
     def get_all_services(self) -> str:
         """
@@ -244,4 +248,74 @@ class ToolService:
             new_date=new_date,
             new_time=new_time
         )
+
+    def _find_service_by_fuzzy_match(self, service_name: str, all_services: list) -> object:
+        """
+        Находит услугу по нечеткому совпадению названия.
+        
+        Args:
+            service_name: Название услуги для поиска
+            all_services: Список всех услуг
+            
+        Returns:
+            Найденная услуга или None
+        """
+        service_name_lower = service_name.lower().strip()
+        
+        # Сначала пробуем точное совпадение
+        for service in all_services:
+            if service.name.lower() == service_name_lower:
+                return service
+        
+        # Затем пробуем нечеткое совпадение
+        best_match = None
+        best_ratio = 0.0
+        
+        for service in all_services:
+            # Проверяем совпадение по словам
+            service_words = service.name.lower().split()
+            search_words = service_name_lower.split()
+            
+            # Если хотя бы одно слово совпадает точно
+            for search_word in search_words:
+                for service_word in service_words:
+                    if search_word in service_word or service_word in search_word:
+                        return service
+            
+            # Проверяем общее сходство строк
+            ratio = SequenceMatcher(None, service_name_lower, service.name.lower()).ratio()
+            if ratio > best_ratio and ratio > 0.6:  # Порог схожести 60%
+                best_ratio = ratio
+                best_match = service
+        
+        return best_match
+
+    def _find_similar_services(self, service_name: str, all_services: list) -> list:
+        """
+        Находит похожие услуги для предложения альтернатив.
+        
+        Args:
+            service_name: Название услуги для поиска
+            all_services: Список всех услуг
+            
+        Returns:
+            Список названий похожих услуг
+        """
+        service_name_lower = service_name.lower().strip()
+        similar_services = []
+        
+        # Ищем услуги, содержащие ключевые слова
+        keywords = service_name_lower.split()
+        
+        for service in all_services:
+            service_lower = service.name.lower()
+            
+            # Если хотя бы одно ключевое слово есть в названии услуги
+            for keyword in keywords:
+                if keyword in service_lower and len(keyword) > 2:  # Игнорируем короткие слова
+                    similar_services.append(service.name)
+                    break
+        
+        # Убираем дубликаты и ограничиваем количество
+        return list(set(similar_services))[:3]
 

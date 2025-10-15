@@ -21,21 +21,57 @@ class PromptBuilderService:
         Загружает паттерны диалогов из конфигурации.
         """
         self.dialogue_patterns = dialogue_patterns
-        self.tools_description = self._generate_tools_description()
+        self.system_prompt_template = """
+# ЗАДАЧА
+Твоя задача — помочь клиенту салона красоты. Проанализируй его запрос и вызови один или несколько инструментов для получения информации или выполнения действия. После получения ответа от инструментов, сформулируй короткий, естественный ответ для клиента.
+
+# ПРАВИЛА
+1.  **ВСЕГДА ИСПОЛЬЗУЙ ИНСТРУМЕНТЫ.** Не отвечай на вопросы о ценах, времени, услугах или мастерах из головы. Твой ответ должен быть основан только на данных, полученных от инструментов.
+2.  **МОЖНО ВЫЗЫВАТЬ НЕСКОЛЬКО ИНСТРУМЕНТОВ СРАЗУ.** Если запрос сложный, вызови все необходимые инструменты одновременно.
+3.  **ФОРМАТ ВЫЗОВА:** Отвечай ТОЛЬКО JSON-массивом с вызовами инструментов. Никакого другого текста.
+    Пример: [{{"tool_name": "get_all_services"}}, {{"tool_name": "get_available_slots", "parameters": {{"date": "завтра"}}}}]
+    Если никакой инструмент не нужен, верни пустой массив [].
+
+# ДОСТУПНЫЕ ИНСТРУМЕНТЫ
+{tools_summary}
+
+# ИСТОРИЯ ДИАЛОГА
+{history}
+
+# ЗАПРОС КЛИЕНТА
+{user_message}
+"""
     
-    def _generate_tools_description(self) -> str:
+    def _generate_tools_summary(self) -> str:
         """
-        Генерирует текстовое описание всех доступных инструментов.
+        Генерирует краткое описание всех доступных инструментов.
         
         Returns:
-            Строка с описанием инструментов
+            Строка с кратким описанием инструментов
         """
-        tools_text = "Доступные инструменты:\n"
+        tools_summary = ""
         
         for func_decl in salon_tools.function_declarations:
-            tools_text += f"- {func_decl.name}: {func_decl.description}\n"
+            # Извлекаем параметры из схемы
+            params = []
+            if hasattr(func_decl, 'parameters') and func_decl.parameters:
+                # Преобразуем в словарь для работы
+                params_dict = func_decl.parameters
+                if hasattr(params_dict, 'properties') and params_dict.properties:
+                    params = list(params_dict.properties.keys())
+            
+            # Формируем краткое описание
+            if params:
+                params_str = ", ".join(params)
+                # Берем только первое предложение из описания
+                short_desc = func_decl.description.split('.')[0]
+                tools_summary += f"- {func_decl.name}({params_str}): {short_desc}.\n"
+            else:
+                # Берем только первое предложение из описания
+                short_desc = func_decl.description.split('.')[0]
+                tools_summary += f"- {func_decl.name}(): {short_desc}.\n"
         
-        return tools_text
+        return tools_summary.strip()
     
     def build_classification_prompt(self, stages_list: str, history: List[Dict], user_message: str) -> str:
         """
@@ -68,67 +104,55 @@ class PromptBuilderService:
     ) -> str:
         """
         Формирует основной промпт для генерации ответа на основе стадии диалога.
-        Использует новый агентский подход с универсальным системным промптом.
+        Использует новый упрощенный агентский подход.
         
         Args:
-            stage: ID стадии диалога
+            stage: ID стадии диалога (не используется в новом подходе)
             dialog_history: История диалога
-            dialog_context: Дополнительный контекст диалога
-            client_name: Имя клиента (если известно)
-            client_phone_saved: Сохранен ли телефон клиента
+            dialog_context: Дополнительный контекст диалога (не используется)
+            client_name: Имя клиента (не используется)
+            client_phone_saved: Сохранен ли телефон клиента (не используется)
             
         Returns:
             Сформированный системный промпт
         """
-        # Получаем принципы для текущей стадии
-        stage_patterns = self.dialogue_patterns.get(stage, {})
-        stage_principles = stage_patterns.get("principles", [])
+        # Получаем последнее сообщение пользователя
+        user_message = ""
+        if dialog_history:
+            last_message = dialog_history[-1]
+            if last_message.get("role") == "user":
+                # Извлекаем текст из структуры Gemini
+                if "parts" in last_message:
+                    user_message = last_message["parts"][0].get("text", "")
+                else:
+                    user_message = last_message.get("content", "")
         
-        # Формируем принципы для текущей ситуации
-        principles_text = ""
-        if stage_principles:
-            principles_text = "\n".join([f"- {principle}" for principle in stage_principles])
+        # Формируем историю диалога в текстовом виде
+        history_text = ""
+        for msg in dialog_history[:-1]:  # Исключаем последнее сообщение (текущий запрос)
+            role = msg.get("role", "")
+            if role == "user":
+                if "parts" in msg:
+                    content = msg["parts"][0].get("text", "")
+                else:
+                    content = msg.get("content", "")
+                history_text += f"Клиент: {content}\n"
+            elif role == "assistant":
+                if "parts" in msg:
+                    content = msg["parts"][0].get("text", "")
+                else:
+                    content = msg.get("content", "")
+                history_text += f"Ассистент: {content}\n"
         
-        # Формируем контекст диалога
-        dialog_context_text = ""
-        if not dialog_history:
-            dialog_context_text = "Это первое сообщение клиента. Обязательно поздоровайся в ответ."
-        if dialog_context:
-            dialog_context_text = f"{dialog_context_text} {dialog_context}".strip()
+        # Генерируем краткое описание инструментов
+        tools_summary = self._generate_tools_summary()
         
-        # Формируем контекст о клиенте
-        client_context = self._build_client_context(client_name, client_phone_saved)
-        
-        # Собираем финальный промпт по новому шаблону
-        system_prompt = f"""# РОЛЬ И ЦЕЛЬ
-Ты — Кэт, AI-администратор салона красоты. Твоя задача — максимально эффективно помочь клиенту, используя доступные тебе инструменты.
-
-# ОСНОВНЫЕ ПРИНЦИПЫ
-- Будь краткой и вежливой.
-- Никогда не выдумывай информацию. Если данных нет — используй инструмент.
-- Ты можешь вызывать НЕСКОЛЬКО инструментов ОДНОВРЕМЕННО, если запрос клиента сложный.
-
-# ТВОИ ИНСТРУМЕНТЫ (КНОПКИ)
-{self.tools_description}
-
-# КАК РАБОТАТЬ С ИНСТРУМЕНТАМИ
-- Если клиент спрашивает об услугах — используй get_all_services
-- Если клиент спрашивает о мастерах для услуги — используй get_masters_for_service
-- Если клиент спрашивает о свободном времени — используй get_available_slots
-- Если клиент хочет записаться — используй create_appointment
-- Если клиент спрашивает о своих записях — используй get_my_appointments
-- Если клиент хочет отменить запись — используй cancel_appointment_by_id
-- Если клиент хочет перенести запись — используй reschedule_appointment_by_id
-- Если ситуация конфликтная — используй call_manager
-
-# РЕКОМЕНДАЦИИ ДЛЯ ТЕКУЩЕЙ СИТУАЦИИ
-{principles_text}
-
-# КОНТЕКСТ ДИАЛОГА
-{dialog_context_text}"""
-        
-        if client_context:
-            system_prompt += f"\n\n{client_context}"
+        # Собираем промпт по новому шаблону
+        system_prompt = self.system_prompt_template.format(
+            tools_summary=tools_summary,
+            history=history_text.strip() or "История диалога пуста",
+            user_message=user_message or "Нет сообщения"
+        )
         
         return system_prompt
     
@@ -140,54 +164,25 @@ class PromptBuilderService:
     ) -> str:
         """
         Формирует универсальный промпт для fallback режима.
+        Использует тот же упрощенный подход, что и основной промпт.
         
         Args:
-            dialog_context: Дополнительный контекст диалога
-            client_name: Имя клиента (если известно)
-            client_phone_saved: Сохранен ли телефон клиента
+            dialog_context: Дополнительный контекст диалога (не используется)
+            client_name: Имя клиента (не используется)
+            client_phone_saved: Сохранен ли телефон клиента (не используется)
             
         Returns:
             Универсальный системный промпт
         """
-        # Формируем контекст диалога
-        dialog_context_text = ""
-        if dialog_context:
-            dialog_context_text = dialog_context
+        # Генерируем краткое описание инструментов
+        tools_summary = self._generate_tools_summary()
         
-        # Формируем контекст о клиенте
-        client_context = self._build_client_context(client_name, client_phone_saved)
-        
-        # Собираем финальный промпт по новому шаблону
-        system_prompt = f"""# РОЛЬ И ЦЕЛЬ
-Ты — Кэт, AI-администратор салона красоты. Твоя задача — максимально эффективно помочь клиенту, используя доступные тебе инструменты.
-
-# ОСНОВНЫЕ ПРИНЦИПЫ
-- Будь краткой и вежливой.
-- Никогда не выдумывай информацию. Если данных нет — используй инструмент.
-- Ты можешь вызывать НЕСКОЛЬКО инструментов ОДНОВРЕМЕННО, если запрос клиента сложный.
-
-# ТВОИ ИНСТРУМЕНТЫ (КНОПКИ)
-{self.tools_description}
-
-# КАК РАБОТАТЬ С ИНСТРУМЕНТАМИ
-- Если клиент спрашивает об услугах — используй get_all_services
-- Если клиент спрашивает о мастерах для услуги — используй get_masters_for_service
-- Если клиент спрашивает о свободном времени — используй get_available_slots
-- Если клиент хочет записаться — используй create_appointment
-- Если клиент спрашивает о своих записях — используй get_my_appointments
-- Если клиент хочет отменить запись — используй cancel_appointment_by_id
-- Если клиент хочет перенести запись — используй reschedule_appointment_by_id
-- Если ситуация конфликтная — используй call_manager
-
-# РЕКОМЕНДАЦИИ ДЛЯ ТЕКУЩЕЙ СИТУАЦИИ
-- Если клиент задает вопрос не по теме салона красоты, вежливо верни диалог к услугам салона.
-- Если ситуация становится конфликтной, используй инструмент 'call_manager'.
-
-# КОНТЕКСТ ДИАЛОГА
-{dialog_context_text}"""
-        
-        if client_context:
-            system_prompt += f"\n\n{client_context}"
+        # Собираем промпт по новому шаблону
+        system_prompt = self.system_prompt_template.format(
+            tools_summary=tools_summary,
+            history="История диалога пуста",
+            user_message="Нет сообщения"
+        )
         
         return system_prompt
     
@@ -221,22 +216,3 @@ class PromptBuilderService:
         
         return full_history
     
-    def _build_client_context(self, client_name: Optional[str] = None, client_phone_saved: bool = False) -> str:
-        """
-        Формирует контекст о клиенте для промпта.
-        
-        Args:
-            client_name: Имя клиента (если известно)
-            client_phone_saved: Сохранен ли телефон клиента
-            
-        Returns:
-            Строка с контекстом о клиенте
-        """
-        if client_name and client_phone_saved:
-            return f"КОНТЕКСТ: Клиента зовут {client_name}, телефон сохранён. Обращайся к нему по имени, где это уместно."
-        elif client_name:
-            return f"КОНТЕКСТ: Клиента зовут {client_name}. Обращайся к нему по имени, где это уместно."
-        elif client_phone_saved:
-            return "КОНТЕКСТ: Телефон клиента сохранён."
-        else:
-            return "КОНТЕКСТ: Данные клиента не сохранены."

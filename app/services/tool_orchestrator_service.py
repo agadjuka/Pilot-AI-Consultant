@@ -1,5 +1,7 @@
 from typing import List, Dict, Tuple
 import asyncio
+import json
+import re
 import google.generativeai as genai
 from google.generativeai import protos
 import logging
@@ -38,6 +40,44 @@ class ToolOrchestratorService:
         self.tool_service = tool_service
         self.prompt_builder = prompt_builder
         self.client_repository = client_repository
+    
+    def _serialize_message_for_tracer(self, message) -> str:
+        """
+        Преобразует сообщение в сериализуемую строку для tracer.
+        
+        Args:
+            message: Сообщение (строка или список объектов Part)
+            
+        Returns:
+            Строковое представление сообщения
+        """
+        if isinstance(message, str):
+            return message
+        elif isinstance(message, list):
+            # Обрабатываем список объектов Part
+            parts_info = []
+            for i, part in enumerate(message):
+                if hasattr(part, 'text') and part.text:
+                    parts_info.append(f"Часть {i+1}: текст '{part.text[:100]}...'")
+                elif hasattr(part, 'function_response') and part.function_response:
+                    func_name = part.function_response.name
+                    # Безопасно извлекаем response
+                    try:
+                        func_response = part.function_response.response
+                        if hasattr(func_response, '__dict__'):
+                            func_response = str(func_response)
+                        elif isinstance(func_response, dict):
+                            func_response = str(func_response)
+                        else:
+                            func_response = str(func_response)
+                    except:
+                        func_response = "не удалось извлечь"
+                    parts_info.append(f"Часть {i+1}: ответ функции '{func_name}' -> {func_response}")
+                else:
+                    parts_info.append(f"Часть {i+1}: неизвестный тип")
+            return f"Сообщение из {len(message)} частей: " + "; ".join(parts_info)
+        else:
+            return str(message)
     
     async def execute_tool_cycle(self, system_prompt: str, history: List[Dict], 
                                user_message: str, user_id: int, tracer=None) -> Tuple[str, List[Dict]]:
@@ -112,7 +152,7 @@ class ToolOrchestratorService:
             if tracer:
                 tracer.add_event(f"📤 Вызов LLM (итерация {iteration})", {
                     "history": history,
-                    "message": current_message,
+                    "message": self._serialize_message_for_tracer(current_message),
                     "iteration": iteration
                 })
             
@@ -154,9 +194,49 @@ class ToolOrchestratorService:
                 # Проверяем наличие текста
                 elif hasattr(part, 'text') and part.text:
                     text_payload = part.text.strip()
+                    
+                    # НОВАЯ ЛОГИКА: Проверяем, не является ли это JSON в Markdown-блоке
+                    cleaned_json_str = text_payload
+                    
+                    # Проверяем наличие Markdown-блока с JSON
+                    if "```json" in cleaned_json_str or "```" in cleaned_json_str:
+                        # Извлекаем содержимое из блока ```json ... ``` или ``` ... ```
+                        json_match = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", cleaned_json_str)
+                        if json_match:
+                            cleaned_json_str = json_match.group(1).strip()
+                    
+                    # Пытаемся распарсить как JSON
+                    try:
+                        tool_calls_data = json.loads(cleaned_json_str)
+                        
+                        # Проверяем, что это массив вызовов инструментов
+                        if isinstance(tool_calls_data, list):
+                            has_function_call = True
+                            
+                            # Обрабатываем каждый вызов инструмента
+                            for tool_call in tool_calls_data:
+                                if isinstance(tool_call, dict) and "tool_name" in tool_call:
+                                    function_name = tool_call["tool_name"]
+                                    function_args = tool_call.get("parameters", {})
+                                    
+                                    # Создаем mock function_call для совместимости
+                                    class MockFunctionCall:
+                                        def __init__(self, name, args):
+                                            self.name = name
+                                            self.args = args
+                                    
+                                    function_calls.append(MockFunctionCall(function_name, function_args))
+                            
+                            iteration_log["response"] = f"JSON с {len(tool_calls_data)} вызовами инструментов"
+                            logger.info(f"🔧 [JSON Tools] {len(tool_calls_data)} инструментов из JSON")
+                            continue  # Переходим к обработке function_calls
+                    
+                    except json.JSONDecodeError:
+                        # Это не JSON, продолжаем обычную обработку
+                        pass
+                    
                     # Доп. обработка: парсим текстовый формат [TOOL: func(arg="val", ...)]
                     # Это нужно для провайдеров без нативного function_call (например, Yandex)
-                    import re
                     tool_match = re.search(r"\[TOOL:\s*(\w+)\((.*?)\)\]", text_payload)
                     if tool_match:
                         has_function_call = True

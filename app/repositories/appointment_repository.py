@@ -86,3 +86,17 @@ class AppointmentRepository(BaseRepository[Appointment]):
         self.db.delete(appointment)
         self.db.commit()
         return True
+
+    def update(self, appointment_id: int, data: dict) -> Optional[Appointment]:
+        """Обновить запись по её первичному ключу."""
+        appointment = self.get_by_id(appointment_id)
+        if not appointment:
+            return None
+        
+        for key, value in data.items():
+            if hasattr(appointment, key):
+                setattr(appointment, key, value)
+        
+        self.db.commit()
+        self.db.refresh(appointment)
+        return appointment

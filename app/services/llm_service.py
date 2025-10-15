@@ -155,23 +155,40 @@ class LLMService:
         
         return response.candidates[0].content
 
-    async def _send_yandex_message(self, history: List[Dict], message: str, user_id: int = None):
+    async def _send_yandex_message(self, history: List[Dict], message, user_id: int = None):
         """Отправляет сообщение в YandexGPT."""
         # Логируем только ошибки
+        
+        # Обрабатываем message - может быть строкой или списком объектов Part
+        if isinstance(message, str):
+            message_text = message
+        elif isinstance(message, list):
+            # Извлекаем текст из объектов Part
+            message_parts = []
+            for part in message:
+                if hasattr(part, 'text') and part.text:
+                    message_parts.append(part.text)
+                elif hasattr(part, 'function_response') and part.function_response:
+                    func_name = part.function_response.name
+                    func_response = part.function_response.response
+                    message_parts.append(f"Результат функции {func_name}: {func_response}")
+            message_text = " ".join(message_parts)
+        else:
+            message_text = str(message)
         
         # Если history уже в формате YandexGPT, используем как есть
         if history and isinstance(history[0], dict) and "text" in history[0]:
             updated_history = history.copy()
             updated_history.append({
                 "role": "user",
-                "text": message
+                "text": message_text
             })
         else:
             # Преобразуем Gemini формат в YandexGPT формат
             updated_history = self._enhance_history_for_yandex(history)
             updated_history.append({
                 "role": "user",
-                "text": message
+                "text": message_text
             })
         
         # Формируем запрос к YandexGPT API
