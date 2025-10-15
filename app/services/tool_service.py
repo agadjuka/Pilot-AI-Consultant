@@ -2,6 +2,7 @@ from app.repositories.service_repository import ServiceRepository
 from app.repositories.master_repository import MasterRepository
 from app.services.appointment_service import AppointmentService
 from app.services.google_calendar_service import GoogleCalendarService
+from app.utils.date_parser import parse_date_string
 from datetime import datetime, timedelta
 from difflib import SequenceMatcher
 import logging
@@ -100,12 +101,17 @@ class ToolService:
 
         Args:
             service_name: Название услуги
-            date: Дата в формате строки (например, "2025-10-15")
+            date: Дата в любом поддерживаемом формате (например, "2025-10-15", "15.10.2025")
 
         Returns:
             Компактная строка с интервалами свободного времени или сообщение об ошибке
         """
         try:
+            # Парсим дату в стандартный формат
+            parsed_date = parse_date_string(date)
+            if parsed_date is None:
+                return f"Неверный формат даты: {date}. Ожидается формат YYYY-MM-DD."
+            
             # Находим услугу по имени с нечетким поиском
             all_services = self.service_repository.get_all()
             service = self._find_service_by_fuzzy_match(service_name, all_services)
@@ -126,7 +132,7 @@ class ToolService:
             
             # Получаем свободные интервалы из Google Calendar для запрошенной даты
             free_intervals = self.google_calendar_service.get_free_slots(
-                date,
+                parsed_date,
                 duration_minutes,
                 master_names=master_names
             )
@@ -137,7 +143,7 @@ class ToolService:
                 return ", ".join(interval_strings)
             
             # Если на запрошенную дату мест нет, ищем ближайшие доступные слоты
-            original_date = datetime.strptime(date, "%Y-%m-%d")
+            original_date = datetime.strptime(parsed_date, "%Y-%m-%d")
             
             for i in range(1, 8):  # Проверяем следующие 7 дней
                 next_date = original_date + timedelta(days=i)
@@ -153,10 +159,10 @@ class ToolService:
                 # Если нашли свободные слоты, возвращаем информацию о ближайшем окне
                 if next_free_intervals:
                     first_interval = next_free_intervals[0]
-                    return f"На {date} мест нет. Ближайшее окно: {next_date_str}, {first_interval['start']}-{first_interval['end']}"
+                    return f"На {parsed_date} мест нет. Ближайшее окно: {next_date_str}, {first_interval['start']}-{first_interval['end']}"
             
             # Если за 7 дней ничего не найдено
-            return f"На {date} и ближайшие 7 дней нет свободных окон для услуги '{service_name}' (длительность {duration_minutes} мин)."
+            return f"На {parsed_date} и ближайшие 7 дней нет свободных окон для услуги '{service_name}' (длительность {duration_minutes} мин)."
             
         except Exception as e:
             return f"Ошибка при поиске свободных слотов: {str(e)}"
@@ -168,7 +174,7 @@ class ToolService:
         Args:
             master_name: Имя мастера
             service_name: Название услуги
-            date: Дата в формате "YYYY-MM-DD"
+            date: Дата в любом поддерживаемом формате (например, "2025-10-15", "15.10.2025")
             time: Время в формате "HH:MM"
             client_name: Имя клиента
             user_telegram_id: ID пользователя в Telegram
@@ -176,10 +182,15 @@ class ToolService:
         Returns:
             Строка с подтверждением записи или сообщение об ошибке
         """
+        # Парсим дату в стандартный формат
+        parsed_date = parse_date_string(date)
+        if parsed_date is None:
+            return f"Неверный формат даты: {date}. Ожидается формат YYYY-MM-DD."
+        
         return self.appointment_service.create_appointment(
             master_name=master_name,
             service_name=service_name,
-            date=date,
+            date=parsed_date,
             time=time,
             client_name=client_name,
             user_telegram_id=user_telegram_id
@@ -238,16 +249,21 @@ class ToolService:
         
         Args:
             appointment_id: ID записи для переноса
-            new_date: Новая дата в формате "YYYY-MM-DD"
+            new_date: Новая дата в любом поддерживаемом формате (например, "2025-10-15", "15.10.2025")
             new_time: Новое время в формате "HH:MM"
             user_telegram_id: ID пользователя в Telegram
         
         Returns:
             Подтверждение переноса или сообщение об ошибке
         """
+        # Парсим дату в стандартный формат
+        parsed_date = parse_date_string(new_date)
+        if parsed_date is None:
+            return f"Неверный формат даты: {new_date}. Ожидается формат YYYY-MM-DD."
+        
         return self.appointment_service.reschedule_appointment_by_id(
             appointment_id=appointment_id,
-            new_date=new_date,
+            new_date=parsed_date,
             new_time=new_time,
             user_telegram_id=user_telegram_id
         )
