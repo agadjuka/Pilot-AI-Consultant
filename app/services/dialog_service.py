@@ -73,6 +73,15 @@ class DialogService:
             google_calendar_service=self.google_calendar_service
         )
         
+        # Создаем экземпляр ToolOrchestratorService для выполнения одиночных инструментов
+        from app.services.tool_orchestrator_service import ToolOrchestratorService
+        self.tool_orchestrator = ToolOrchestratorService(
+            llm_service=self.llm_service,
+            tool_service=self.tool_service,
+            prompt_builder=self.prompt_builder,
+            client_repository=self.client_repository
+        )
+        
         # Кратковременная память о контексте сессий для каждого пользователя
         # Формат: {user_id: {"appointments_in_focus": [{"id": int, "details": str}, ...], ...}}
         self.session_contexts = {}
@@ -366,82 +375,45 @@ class DialogService:
             })
             logger.info("✅ Ответ синтеза получен")
             
-            # Проверяем, вернулся ли JSON с вызовом исполнительного инструмента
-            write_tool_call = None
-            try:
-                # Удаляем markdown блоки если они есть
-                cleaned_response = synthesis_response.strip()
-                if cleaned_response.startswith('```') and cleaned_response.endswith('```'):
-                    cleaned_response = cleaned_response[3:-3].strip()
-                elif cleaned_response.startswith('```json'):
-                    cleaned_response = cleaned_response[7:-3].strip()
-                
-                parsed_response = json.loads(cleaned_response)
-                
-                # Проверяем, является ли это вызовом инструмента
-                if isinstance(parsed_response, dict) and 'tool_name' in parsed_response:
-                    write_tool_call = parsed_response
-                    tracer.add_event("🔧 Обнаружен вызов исполнительного инструмента", {
-                        "tool_name": write_tool_call.get('tool_name'),
-                        "parameters": write_tool_call.get('parameters', {})
-                    })
-                    logger.info(f"🔧 Обнаружен вызов исполнительного инструмента: {write_tool_call.get('tool_name')}")
-                
-            except json.JSONDecodeError:
-                # Это обычный текстовый ответ, не JSON
-                tracer.add_event("📝 Получен текстовый ответ", "JSON не обнаружен")
-                logger.info("📝 Получен текстовый ответ")
+            # Используем парсер гибридных ответов для обработки ответа синтеза
+            tracer.add_event("🔍 Парсинг гибридного ответа", f"Длина ответа: {len(synthesis_response)}")
+            logger.info("🔍 Парсинг гибридного ответа синтеза")
             
-            # Если есть вызов исполнительного инструмента - выполняем его
-            if write_tool_call:
-                tool_name = write_tool_call.get('tool_name')
-                parameters = write_tool_call.get('parameters', {})
+            # Парсим гибридный ответ (JSON + текст)
+            cleaned_text, tool_execution_results = await self._parse_hybrid_response(synthesis_response, user_id)
+            
+            if tool_execution_results:
+                # Если были выполнены инструменты, логируем это
+                tracer.add_event("⚙️ Инструменты выполнены из гибридного ответа", {
+                    "results": tool_execution_results,
+                    "cleaned_text_length": len(cleaned_text)
+                })
+                logger.info("⚙️ Инструменты выполнены из гибридного ответа")
                 
-                # Добавляем user_telegram_id к параметрам для инструментов, которые его требуют
-                if tool_name in ['cancel_appointment_by_id', 'reschedule_appointment_by_id']:
-                    parameters['user_telegram_id'] = user_id
+                # Если есть результат выполнения инструментов, делаем финальный вызов для сообщения об успехе
+                final_prompt = f"Инструменты выполнены успешно. Результаты: {tool_execution_results}. Сформулируй краткое сообщение пользователю об успешном выполнении действия."
                 
-                tracer.add_event(f"⚙️ Выполнение исполнительного инструмента", f"Инструмент: {tool_name}, Параметры: {parameters}")
-                logger.info(f"⚙️ Выполнение исполнительного инструмента: {tool_name}")
+                final_history = [
+                    {
+                        "role": "user",
+                        "parts": [{"text": final_prompt}]
+                    }
+                ]
                 
-                try:
-                    # Вызываем инструмент через ToolService
-                    tool_result = await self.tool_service.execute_tool(tool_name, parameters, user_id)
-                    tracer.add_event(f"✅ Исполнительный инструмент выполнен", f"Инструмент: {tool_name}, Результат: {tool_result}")
-                    logger.info(f"✅ Исполнительный инструмент выполнен: {tool_name}")
-                    
-                    # Делаем финальный вызов для сообщения об успехе
-                    final_prompt = f"Инструмент {tool_name} выполнен успешно. Результат: {tool_result}. Сформулируй краткое сообщение пользователю об успешном выполнении действия."
-                    
-                    final_history = [
-                        {
-                            "role": "user",
-                            "parts": [{"text": final_prompt}]
-                        }
-                    ]
-                    
-                    bot_response_text = await self.llm_service.generate_response(final_history)
-                    tracer.add_event("✅ Финальный ответ получен", {
-                        "response": bot_response_text,
-                        "length": len(bot_response_text)
-                    })
-                    logger.info("✅ Финальный ответ сгенерирован")
-                    
-                except Exception as e:
-                    error_msg = f"Ошибка выполнения исполнительного инструмента {tool_name}: {str(e)}"
-                    tracer.add_event(f"❌ Ошибка исполнительного инструмента", f"Инструмент: {tool_name}, Ошибка: {str(e)}")
-                    logger.error(f"❌ Ошибка выполнения исполнительного инструмента {tool_name}: {e}")
-                    
-                    # В случае ошибки формируем ответ об ошибке
-                    bot_response_text = f"Извините, произошла ошибка при выполнении операции. Попробуйте позже или обратитесь к менеджеру."
-            else:
-                # Это обычный текстовый ответ
-                bot_response_text = synthesis_response
-                tracer.add_event("📝 Использован текстовый ответ", {
+                bot_response_text = await self.llm_service.generate_response(final_history)
+                tracer.add_event("✅ Финальный ответ получен после выполнения инструментов", {
                     "response": bot_response_text,
                     "length": len(bot_response_text)
                 })
-                logger.info("📝 Использован текстовый ответ")
+                logger.info("✅ Финальный ответ сгенерирован после выполнения инструментов")
+            else:
+                # Это обычный текстовый ответ (возможно, очищенный от JSON-блоков)
+                bot_response_text = cleaned_text
+                tracer.add_event("📝 Использован очищенный текстовый ответ", {
+                    "response": bot_response_text,
+                    "length": len(bot_response_text)
+                })
+                logger.info("📝 Использован очищенный текстовый ответ")
             
             # Сохраняем финальный ответ бота в БД
             self.repository.add_message(
@@ -469,6 +441,72 @@ class DialogService:
             # Сохраняем трассировку в любом случае
             tracer.save_trace()
     
+    async def _parse_hybrid_response(self, raw_response: str, user_id: int) -> tuple[str, str]:
+        """
+        Парсит гибридный ответ LLM (JSON + текст) и выполняет инструменты.
+        
+        Args:
+            raw_response: Сырой ответ от LLM
+            user_id: ID пользователя для выполнения инструментов
+            
+        Returns:
+            Кортеж (очищенный_текст_для_пользователя, результат_выполнения_инструментов)
+        """
+        import re
+        import json
+        
+        # Ищем все блоки ```json ... ``` в ответе
+        json_blocks = re.findall(r'```json\s*([\s\S]*?)\s*```', raw_response)
+        
+        if not json_blocks:
+            # Если блоков нет, возвращаем исходный текст
+            return raw_response, ""
+        
+        # Очищаем исходный текст от всех JSON-блоков
+        cleaned_text = raw_response
+        for block in json_blocks:
+            # Удаляем весь блок ```json ... ``` из текста
+            cleaned_text = re.sub(r'```json\s*' + re.escape(block) + r'\s*```', '', cleaned_text, flags=re.DOTALL)
+        
+        # Дополнительная очистка: удаляем лишние переносы строк
+        cleaned_text = re.sub(r'\n\s*\n\s*\n', '\n\n', cleaned_text).strip()
+        
+        # Выполняем все найденные инструменты
+        tool_results = []
+        for json_block in json_blocks:
+            try:
+                # Парсим JSON
+                tool_call = json.loads(json_block.strip())
+                
+                # Проверяем, что это вызов инструмента
+                if isinstance(tool_call, dict) and 'tool_name' in tool_call:
+                    tool_name = tool_call.get('tool_name')
+                    parameters = tool_call.get('parameters', {})
+                    
+                    # Добавляем user_telegram_id к параметрам для инструментов, которые его требуют
+                    if tool_name in ['cancel_appointment_by_id', 'reschedule_appointment_by_id']:
+                        parameters['user_telegram_id'] = user_id
+                    
+                    logger.info(f"🔧 Выполнение инструмента из гибридного ответа: {tool_name}")
+                    
+                    # Выполняем инструмент через ToolOrchestratorService
+                    tool_result = await self.tool_orchestrator.execute_single_tool(tool_name, parameters, user_id)
+                    
+                    tool_results.append(f"Результат {tool_name}: {tool_result}")
+                    logger.info(f"✅ Инструмент выполнен: {tool_name}")
+                    
+            except json.JSONDecodeError as e:
+                logger.warning(f"⚠️ Не удалось распарсить JSON блок: {e}")
+                continue
+            except Exception as e:
+                logger.error(f"❌ Ошибка выполнения инструмента: {e}")
+                tool_results.append(f"Ошибка выполнения инструмента: {str(e)}")
+        
+        # Объединяем результаты инструментов
+        combined_results = "\n".join(tool_results) if tool_results else ""
+        
+        return cleaned_text, combined_results
+
     def clear_history(self, user_id: int) -> int:
         """
         Очищает всю историю диалога для пользователя.

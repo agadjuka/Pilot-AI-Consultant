@@ -420,6 +420,32 @@ class ToolOrchestratorService:
         
         return bot_response_text, debug_iterations
     
+    async def execute_single_tool(self, tool_name: str, parameters: Dict, user_id: int) -> str:
+        """
+        Выполняет одиночный вызов инструмента.
+        Упрощенная версия для случаев, когда нужно выполнить только один инструмент.
+        
+        Args:
+            tool_name: Имя инструмента для выполнения
+            parameters: Параметры инструмента
+            user_id: ID пользователя
+            
+        Returns:
+            Результат выполнения инструмента
+        """
+        try:
+            logger.info(f"🔧 Выполнение одиночного инструмента: {tool_name}")
+            
+            # Выполняем инструмент через ToolService
+            result = await self._execute_function_async(tool_name, parameters, user_id)
+            
+            logger.info(f"✅ Одиночный инструмент выполнен: {tool_name}")
+            return result
+            
+        except Exception as e:
+            error_msg = f"Ошибка выполнения инструмента {tool_name}: {str(e)}"
+            logger.error(f"❌ Ошибка выполнения одиночного инструмента {tool_name}: {e}")
+            return error_msg
     
     def _format_dialog_history(self, dialog_history: List[Dict]) -> str:
         """
