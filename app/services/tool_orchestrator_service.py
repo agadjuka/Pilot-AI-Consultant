@@ -520,13 +520,13 @@ class ToolOrchestratorService:
         
         elif function_name == "cancel_appointment_by_id":
             appointment_id = function_args.get("appointment_id", 0)
-            return method(appointment_id)
+            return method(appointment_id, user_id)
         
         elif function_name == "reschedule_appointment_by_id":
             appointment_id = function_args.get("appointment_id", 0)
             new_date = function_args.get("new_date", "")
             new_time = function_args.get("new_time", "")
-            return method(appointment_id, new_date, new_time)
+            return method(appointment_id, new_date, new_time, user_id)
         
         elif function_name == "call_manager":
             reason = function_args.get("reason", "")
@@ -585,13 +585,13 @@ class ToolOrchestratorService:
         
         elif function_name == "cancel_appointment_by_id":
             appointment_id = function_args.get("appointment_id", 0)
-            return method(appointment_id)
+            return method(appointment_id, user_id)
         
         elif function_name == "reschedule_appointment_by_id":
             appointment_id = function_args.get("appointment_id", 0)
             new_date = function_args.get("new_date", "")
             new_time = function_args.get("new_time", "")
-            return method(appointment_id, new_date, new_time)
+            return method(appointment_id, new_date, new_time, user_id)
         
         elif function_name == "call_manager":
             reason = function_args.get("reason", "")
