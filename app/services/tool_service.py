@@ -219,19 +219,20 @@ class ToolService:
         """
         return self.appointment_service.get_my_appointments(user_telegram_id=user_telegram_id)
 
-    def cancel_appointment_by_id(self, appointment_id: int) -> str:
+    def cancel_appointment_by_id(self, appointment_id: int, user_telegram_id: int) -> str:
         """
         Отменяет запись по её ID.
         
         Args:
             appointment_id: ID записи для отмены
+            user_telegram_id: ID пользователя в Telegram
         
         Returns:
             Подтверждение отмены или сообщение об ошибке
         """
-        return self.appointment_service.cancel_appointment_by_id(appointment_id=appointment_id)
+        return self.appointment_service.cancel_appointment_by_id(appointment_id=appointment_id, user_telegram_id=user_telegram_id)
 
-    def reschedule_appointment_by_id(self, appointment_id: int, new_date: str, new_time: str) -> str:
+    def reschedule_appointment_by_id(self, appointment_id: int, new_date: str, new_time: str, user_telegram_id: int) -> str:
         """
         Переносит запись на новую дату и время по её ID.
         
@@ -239,6 +240,7 @@ class ToolService:
             appointment_id: ID записи для переноса
             new_date: Новая дата в формате "YYYY-MM-DD"
             new_time: Новое время в формате "HH:MM"
+            user_telegram_id: ID пользователя в Telegram
         
         Returns:
             Подтверждение переноса или сообщение об ошибке
@@ -246,7 +248,8 @@ class ToolService:
         return self.appointment_service.reschedule_appointment_by_id(
             appointment_id=appointment_id,
             new_date=new_date,
-            new_time=new_time
+            new_time=new_time,
+            user_telegram_id=user_telegram_id
         )
 
     async def execute_tool(self, tool_name: str, parameters: dict, user_id: int) -> str:
@@ -303,7 +306,7 @@ class ToolService:
                 appointment_id = parameters.get("appointment_id")
                 if appointment_id is None:
                     return "Ошибка: не указан ID записи для отмены"
-                return self.cancel_appointment_by_id(appointment_id)
+                return self.cancel_appointment_by_id(appointment_id, user_id)
             
             elif tool_name == "reschedule_appointment_by_id":
                 appointment_id = parameters.get("appointment_id")
@@ -311,7 +314,7 @@ class ToolService:
                 new_time = parameters.get("new_time", "")
                 if appointment_id is None:
                     return "Ошибка: не указан ID записи для переноса"
-                return self.reschedule_appointment_by_id(appointment_id, new_date, new_time)
+                return self.reschedule_appointment_by_id(appointment_id, new_date, new_time, user_id)
             
             elif tool_name == "get_full_history":
                 return self.get_full_history()

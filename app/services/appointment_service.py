@@ -63,9 +63,9 @@ class AppointmentService:
             if not client.first_name or not client.phone_number:
                 return "Требуются данные клиента. Перейди в стадию 'contact_info_request'."
             
-            # Находим услугу в БД для получения длительности с нечетким поиском
+            # Находим услугу в БД для получения длительности с простым поиском
             all_services = self.service_repository.get_all()
-            service = self._find_service_by_fuzzy_match(service_name, all_services)
+            service = next((s for s in all_services if service_name.lower() in s.name.lower()), None)
             
             if not service:
                 # Если не найдено, показываем похожие услуги
@@ -76,7 +76,7 @@ class AppointmentService:
             
             # Находим мастера в БД
             all_masters = self.master_repository.get_all()
-            master = self._find_master_by_fuzzy_match(master_name, all_masters)
+            master = next((m for m in all_masters if master_name.lower() in m.name.lower()), None)
             
             if not master:
                 # Если не найдено, показываем похожих мастеров
@@ -191,22 +191,22 @@ class AppointmentService:
         except Exception as e:
             return []
 
-    def cancel_appointment_by_id(self, appointment_id: int) -> str:
+    def cancel_appointment_by_id(self, appointment_id: int, user_telegram_id: int) -> str:
         """
         Отменяет запись по её ID.
         
         Args:
             appointment_id: ID записи для отмены
+            user_telegram_id: ID пользователя в Telegram для проверки прав доступа
         
         Returns:
             Подтверждение отмены или сообщение об ошибке
         """
         try:
-            # Находим запись по ID
+            # Проверяем права доступа
             appointment = self.appointment_repository.get_by_id(appointment_id)
-            
-            if not appointment:
-                return "Запись не найдена или уже удалена."
+            if not appointment or appointment.user_telegram_id != user_telegram_id:
+                return "Запись не найдена или у вас нет прав для её отмены."
             
             # Получаем информацию о записи
             master_name = appointment.master.name
@@ -231,7 +231,7 @@ class AppointmentService:
         except Exception as e:
             return f"Ошибка при отмене записи: {str(e)}"
 
-    def reschedule_appointment_by_id(self, appointment_id: int, new_date: str, new_time: str) -> str:
+    def reschedule_appointment_by_id(self, appointment_id: int, new_date: str, new_time: str, user_telegram_id: int) -> str:
         """
         Переносит запись на новую дату и время по её ID.
         
@@ -239,16 +239,16 @@ class AppointmentService:
             appointment_id: ID записи для переноса
             new_date: Новая дата в формате "YYYY-MM-DD"
             new_time: Новое время в формате "HH:MM"
+            user_telegram_id: ID пользователя в Telegram для проверки прав доступа
         
         Returns:
             Подтверждение переноса или сообщение об ошибке
         """
         try:
-            # Находим запись по ID
+            # Проверяем права доступа
             appointment = self.appointment_repository.get_by_id(appointment_id)
-            
-            if not appointment:
-                return "Запись не найдена или уже удалена."
+            if not appointment or appointment.user_telegram_id != user_telegram_id:
+                return "Запись не найдена или у вас нет прав для её переноса."
             
             # Получаем информацию о записи
             master_name = appointment.master.name

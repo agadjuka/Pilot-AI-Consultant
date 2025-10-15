@@ -152,9 +152,16 @@ cancel_appointment_by_id_declaration = FunctionDeclaration(
                     "ID записи для отмены. "
                     "Этот ID должен быть определен на основе ранее показанного списка записей клиента."
                 )
+            },
+            "user_telegram_id": {
+                "type": "integer",
+                "description": (
+                    "ID пользователя в Telegram для проверки прав доступа. "
+                    "Этот параметр добавляется автоматически системой."
+                )
             }
         },
-        "required": ["appointment_id"]
+        "required": ["appointment_id", "user_telegram_id"]
     }
 )
 
@@ -187,9 +194,16 @@ reschedule_appointment_by_id_declaration = FunctionDeclaration(
                     "Новое время записи в формате HH:MM (например, '14:30', '10:00'). "
                     "Время должно быть в 24-часовом формате."
                 )
+            },
+            "user_telegram_id": {
+                "type": "integer",
+                "description": (
+                    "ID пользователя в Telegram для проверки прав доступа. "
+                    "Этот параметр добавляется автоматически системой."
+                )
             }
         },
-        "required": ["appointment_id", "new_date", "new_time"]
+        "required": ["appointment_id", "new_date", "new_time", "user_telegram_id"]
     }
 )
 
