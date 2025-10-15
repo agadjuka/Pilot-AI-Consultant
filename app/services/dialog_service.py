@@ -77,56 +77,6 @@ class DialogService:
         # Формат: {user_id: {"appointments_in_focus": [{"id": int, "details": str}, ...], ...}}
         self.session_contexts = {}
     
-    def _determine_stage(self, user_message: str, tool_calls: List[Dict]) -> str:
-        """
-        Простое определение стадии диалога на основе ключевых слов и выполненных инструментов.
-        
-        Args:
-            user_message: Сообщение пользователя
-            tool_calls: Список выполненных инструментов
-            
-        Returns:
-            ID стадии диалога
-        """
-        message_lower = user_message.lower()
-        
-        # Приветствие
-        if any(word in message_lower for word in ['привет', 'здравствуйте', 'добрый', 'доброе']):
-            return 'greeting'
-        
-        # Проверка доступности времени
-        if any(tool['tool_name'] == 'get_available_slots' for tool in tool_calls):
-            return 'availability_check'
-        
-        # Запись на услугу
-        if any(word in message_lower for word in ['записаться', 'запись', 'хочу', 'можно', 'возможно']):
-            if any(tool['tool_name'] == 'create_appointment' for tool in tool_calls):
-                return 'appointment_booking'
-            else:
-                return 'appointment_inquiry'
-        
-        # Отмена записи
-        if any(word in message_lower for word in ['отменить', 'отмена', 'отменить запись']):
-            return 'appointment_cancellation'
-        
-        # Информация об услугах
-        if any(tool['tool_name'] == 'get_services' for tool in tool_calls):
-            return 'service_inquiry'
-        
-        # Информация о мастерах
-        if any(tool['tool_name'] == 'get_masters' for tool in tool_calls):
-            return 'master_inquiry'
-        
-        # Благодарность
-        if any(word in message_lower for word in ['спасибо', 'благодарю', 'спасибо большое']):
-            return 'gratitude'
-        
-        # Конфликтная ситуация
-        if any(word in message_lower for word in ['жалоба', 'жалуюсь', 'недоволен', 'плохо', 'ужасно', 'кошмар']):
-            return 'conflict_escalation'
-        
-        # Fallback для неопределенных случаев
-        return 'fallback'
 
     async def process_user_message(self, user_id: int, text: str) -> str:
         """
@@ -180,10 +130,14 @@ class DialogService:
             tracer.add_event("🔍 Этап 1: Планирование", "Начинаем первый вызов LLM")
             logger.info("🔍 Этап 1: Планирование")
             
+            # Инициализируем скрытый контекст
+            hidden_context = ""
+            
             # Формируем промпт для планирования
             planning_prompt = self.prompt_builder.build_planning_prompt(
                 history=dialog_history,
-                user_message=text
+                user_message=text,
+                hidden_context=hidden_context
             )
             
             tracer.add_event("📝 Промпт планирования сформирован", {
@@ -225,7 +179,7 @@ class DialogService:
                 elif isinstance(parsed_response, list):
                     # Старый формат: [{"tool_name": "...", "parameters": {...}}]
                     tool_calls = parsed_response
-                    stage = self._determine_stage(text, tool_calls)
+                    stage = 'fallback'  # Для старого формата используем fallback
                 
                 tracer.add_event("📊 Результат парсинга", {
                     "stage": stage,
@@ -283,6 +237,11 @@ class DialogService:
                             # Получаем структурированные данные напрямую из AppointmentService
                             appointments_data = self.appointment_service.get_my_appointments(user_id)
                             session_context['appointments_in_focus'] = appointments_data
+                            logger.info(f"🔍 Записи сохранены в память: {appointments_data}")
+                            tracer.add_event("🔍 Записи сохранены в память", {
+                                "appointments_count": len(appointments_data),
+                                "appointments": appointments_data
+                            })
                         
                         tracer.add_event(f"✅ Инструмент выполнен", f"Инструмент: {tool_name}, Результат: {result}")
                         
@@ -295,10 +254,29 @@ class DialogService:
                 tracer.add_event("ℹ️ Инструменты не требуются", "Пустой список инструментов")
                 logger.info("ℹ️ Инструменты не требуются")
             
-            # Стадия уже определена в парсинге, дополнительная обработка не нужна
+            # Логика скрытого контекста: формируем контекст на основе стадии, определенной LLM
+            if stage in ['cancellation_request', 'rescheduling']:
+                # Если нет записей в памяти, получаем их
+                if 'appointments_in_focus' not in session_context:
+                    appointments_data = self.appointment_service.get_my_appointments(user_id)
+                    session_context['appointments_in_focus'] = appointments_data
+                    logger.info(f"🔍 Записи получены и сохранены в память: {appointments_data}")
+                    tracer.add_event("🔍 Записи получены и сохранены в память", {
+                        "appointments_count": len(appointments_data),
+                        "appointments": appointments_data
+                    })
+                
+                appointments_data = session_context.get('appointments_in_focus', [])
+                if appointments_data:
+                    hidden_context = "# СКРЫТЫЙ КОНТЕКСТ ЗАПИСЕЙ (ИСПОЛЬЗУЙ ДЛЯ ИЗВЛЕЧЕНИЯ ID):\n" + json.dumps(appointments_data, ensure_ascii=False)
+                    tracer.add_event("🔍 Скрытый контекст сформирован", {
+                        "stage": stage,
+                        "appointments_count": len(appointments_data),
+                        "context": hidden_context
+                    })
             
             # Логика очистки памяти: очищаем память о записях, если сменили тему
-            if stage not in ['cancellation_request', 'rescheduling', 'view_booking']:
+            if stage not in ['appointment_cancellation', 'rescheduling', 'view_booking', 'cancellation_request']:
                 if 'appointments_in_focus' in session_context:
                     del session_context['appointments_in_focus']  # Очищаем, если сменили тему
             
@@ -333,19 +311,12 @@ class DialogService:
             tracer.add_event("🎨 Этап 2: Синтез ответа", "Начинаем второй вызов LLM")
             logger.info("🎨 Этап 2: Синтез финального ответа")
             
-            # Проверяем, есть ли в "памяти" записи и релевантна ли стадия
-            if stage in ['cancellation_request', 'rescheduling'] and 'appointments_in_focus' in session_context:
-                appointments_context = session_context['appointments_in_focus']
-                # Формируем строку контекста для LLM
-                context_str = "КОНТЕКСТ ЗАПИСЕЙ (ДЛЯ ТЕБЯ, НЕ ДЛЯ КЛИЕНТА): " + json.dumps(appointments_context, ensure_ascii=False)
-                
-                # Добавляем этот контекст к результатам инструментов
-                tool_results += "\n" + context_str
-                
-                tracer.add_event("🔍 Скрытый контекст добавлен", {
+            # Добавляем скрытый контекст к результатам инструментов для этапа синтеза
+            if hidden_context:
+                tool_results += "\n" + hidden_context
+                tracer.add_event("🔍 Скрытый контекст добавлен к результатам", {
                     "stage": stage,
-                    "appointments_count": len(appointments_context),
-                    "context": context_str
+                    "context": hidden_context
                 })
             
             # Формируем промпт для синтеза

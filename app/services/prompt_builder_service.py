@@ -50,6 +50,8 @@ class PromptBuilderService:
 # ИНСТРУМЕНТЫ (Что ты можешь сделать)
 {tools_summary}
 
+{hidden_context}
+
 # ИСТОРИЯ ДИАЛОГА
 {history}
 
@@ -232,7 +234,8 @@ class PromptBuilderService:
     def build_planning_prompt(
         self, 
         history: List[Dict], 
-        user_message: str
+        user_message: str,
+        hidden_context: str = ""
     ) -> str:
         """
         Формирует промпт для Этапа 1: Планирование.
@@ -240,6 +243,7 @@ class PromptBuilderService:
         Args:
             history: История диалога
             user_message: Новое сообщение пользователя
+            hidden_context: Скрытый контекст с записями (для отмены/переноса)
             
         Returns:
             Промпт для планирования
@@ -261,6 +265,7 @@ class PromptBuilderService:
             stage_list=stage_list,
             tools_summary=tools_summary,
             current_datetime=current_datetime,
+            hidden_context=hidden_context,
             history=history_text,
             user_message=user_message
         )
