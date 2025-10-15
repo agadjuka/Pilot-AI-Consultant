@@ -28,7 +28,7 @@ class DialogService:
     """
     Оркестратор диалоговой логики.
     Координирует работу между хранилищем истории диалогов и AI-моделью.
-    Реализует двухэтапную архитектуру: Планирование (read_only_tools) -> Синтез (write_tools).
+    Реализует трехэтапную архитектуру: Классификация -> Планирование (read_only_tools) -> Синтез (write_tools).
     """
     
     # Размер окна контекста - последние N сообщений
@@ -87,12 +87,145 @@ class DialogService:
         self.session_contexts = {}
     
 
+    def parse_stage(self, stage_str: str) -> str:
+        """
+        Парсит ответ LLM на этапе классификации и извлекает стадию.
+        
+        Args:
+            stage_str: Строка ответа от LLM
+            
+        Returns:
+            ID стадии диалога
+        """
+        # Очищаем ответ от лишних символов и переносов строк
+        cleaned_response = stage_str.strip()
+        
+        # Ищем стадию в первой строке ответа
+        first_line = cleaned_response.split('\n')[0].strip().lower()
+        
+        # Проверяем, есть ли стадия в списке доступных
+        if first_line in self.prompt_builder.dialogue_patterns:
+            logger.info(f"✅ Стадия успешно определена: '{first_line}'")
+            return first_line
+        
+        # Дополнительная проверка: ищем стадию в любом месте ответа
+        for stage in self.prompt_builder.dialogue_patterns.keys():
+            if stage in cleaned_response.lower():
+                logger.info(f"✅ Стадия найдена в тексте: '{stage}'")
+                return stage
+        
+        # Fallback на случай неверного ответа
+        logger.warning(f"⚠️ Неизвестная стадия в ответе '{cleaned_response}', используем fallback")
+        logger.warning(f"⚠️ Первая строка: '{first_line}'")
+        return 'fallback'
+    
+    def parse_tool_calls(self, planning_response_json: str) -> List[Dict]:
+        """
+        Парсит JSON-ответ от LLM на этапе планирования и извлекает вызовы инструментов.
+        
+        Args:
+            planning_response_json: JSON-строка с вызовами инструментов
+            
+        Returns:
+            Список вызовов инструментов
+        """
+        try:
+            # Удаляем markdown блоки если они есть
+            cleaned_response = planning_response_json.strip()
+            if cleaned_response.startswith('```') and cleaned_response.endswith('```'):
+                cleaned_response = cleaned_response[3:-3].strip()
+            elif cleaned_response.startswith('```json'):
+                cleaned_response = cleaned_response[7:-3].strip()
+            
+            parsed_response = json.loads(cleaned_response)
+            
+            # Проверяем формат ответа
+            if isinstance(parsed_response, dict) and 'tool_calls' in parsed_response:
+                return parsed_response.get('tool_calls', [])
+            elif isinstance(parsed_response, list):
+                # Старый формат: [{"tool_name": "...", "parameters": {...}}]
+                return parsed_response
+            
+            logger.warning(f"⚠️ Неожиданный формат ответа планирования: {parsed_response}")
+            return []
+            
+        except json.JSONDecodeError as e:
+            logger.error(f"❌ Ошибка парсинга JSON ответа планирования: {e}")
+            logger.error(f"❌ Сырой ответ: '{planning_response_json}'")
+            return []
+    
+    def parse_hybrid_response(self, hybrid_response: str) -> tuple[str, List[Dict]]:
+        """
+        Парсит гибридный ответ LLM (JSON + текст) и извлекает вызовы инструментов.
+        
+        Args:
+            hybrid_response: Сырой ответ от LLM
+            
+        Returns:
+            Кортеж (очищенный_текст_для_пользователя, список_вызовов_инструментов)
+        """
+        import re
+        
+        # Ищем все блоки ``` ... ``` в ответе (с json или без)
+        json_blocks = re.findall(r'```(?:json)?\s*([\s\S]*?)\s*```', hybrid_response)
+        
+        logger.info(f"🔍 Найдено JSON-блоков: {len(json_blocks)}")
+        
+        if not json_blocks:
+            # Если блоков нет, возвращаем исходный текст
+            logger.info("❌ JSON-блоки не найдены, возвращаем исходный текст")
+            return hybrid_response, []
+        
+        # Очищаем исходный текст от всех JSON-блоков
+        cleaned_text = hybrid_response
+        for block in json_blocks:
+            # Удаляем весь блок ``` ... ``` из текста
+            cleaned_text = re.sub(r'```(?:json)?\s*' + re.escape(block) + r'\s*```', '', cleaned_text, flags=re.DOTALL)
+        
+        # Дополнительная очистка: удаляем лишние переносы строк
+        cleaned_text = re.sub(r'\n\s*\n\s*\n', '\n\n', cleaned_text).strip()
+        
+        # Парсим все найденные JSON-блоки
+        tool_calls = []
+        for i, json_block in enumerate(json_blocks):
+            logger.info(f"🔧 Обрабатываем блок {i+1}: {json_block[:100]}...")
+            try:
+                # Парсим JSON
+                tool_call = json.loads(json_block.strip())
+                logger.info(f"🔧 Распарсенный JSON: {tool_call}")
+                
+                # Проверяем формат JSON
+                if isinstance(tool_call, dict):
+                    # Формат 1: {"tool_calls": [...]}
+                    if 'tool_calls' in tool_call:
+                        tool_calls_list = tool_call.get('tool_calls', [])
+                        logger.info(f"🔧 Найдено {len(tool_calls_list)} вызовов инструментов в массиве")
+                        tool_calls.extend(tool_calls_list)
+                    
+                    # Формат 2: {"tool_name": "...", "parameters": {...}}
+                    elif 'tool_name' in tool_call:
+                        logger.info(f"🔧 Найден одиночный инструмент: {tool_call.get('tool_name')}")
+                        tool_calls.append(tool_call)
+                    else:
+                        logger.warning(f"⚠️ JSON не содержит tool_calls или tool_name: {tool_call}")
+                else:
+                    logger.warning(f"⚠️ JSON не является словарем: {tool_call}")
+                    
+            except json.JSONDecodeError as e:
+                logger.warning(f"⚠️ Не удалось распарсить JSON блок: {e}")
+                continue
+            except Exception as e:
+                logger.error(f"❌ Ошибка обработки JSON блока: {e}")
+                continue
+        
+        return cleaned_text, tool_calls
+
     async def process_user_message(self, user_id: int, text: str) -> str:
         """
-        Обрабатывает сообщение пользователя с использованием двухэтапной архитектуры:
-        1. Этап 1: Планирование инструментов (только read_only_tools)
-        2. Этап 2: Синтез финального ответа (может вернуть текст или JSON с write_tools)
-        3. Если вернулся JSON - выполняем исполнительный инструмент и делаем финальный вызов
+        Обрабатывает сообщение пользователя с использованием трехэтапной архитектуры:
+        1. Этап 1: Классификация стадии диалога
+        2. Этап 2: Планирование инструментов (только read_only_tools)
+        3. Этап 3: Синтез финального ответа (может вернуть текст или JSON с write_tools)
         
         Args:
             user_id: ID пользователя Telegram
@@ -136,196 +269,38 @@ class DialogService:
             )
             tracer.add_event("💾 Сообщение сохранено в БД", f"Роль: user, Текст: {text}")
             
-            # ЭТАП 1: Планирование
-            tracer.add_event("🔍 Этап 1: Планирование", "Начинаем первый вызов LLM")
-            logger.info("🔍 Этап 1: Планирование")
+            # --- ЭТАП 1: КЛАССИФИКАЦИЯ ---
+            tracer.add_event("🔍 Этап 1: Классификация", "Определяем стадию диалога")
+            logger.info("🔍 Этап 1: Классификация стадии диалога")
             
-            # Формируем скрытый контекст ДО планирования
-            hidden_context = ""
-            
-            # Проверяем, есть ли записи в памяти для формирования скрытого контекста
-            if 'appointments_in_focus' in session_context:
-                appointments_data = session_context.get('appointments_in_focus', [])
-                if appointments_data:
-                    hidden_context = "# СКРЫТЫЙ КОНТЕКСТ ЗАПИСЕЙ (ИСПОЛЬЗУЙ ДЛЯ ИЗВЛЕЧЕНИЯ ID):\n" + json.dumps(appointments_data, ensure_ascii=False)
-                    tracer.add_event("🔍 Скрытый контекст сформирован ДО планирования", {
-                        "appointments_count": len(appointments_data),
-                        "context": hidden_context
-                    })
-            
-            # Формируем промпт для планирования
-            planning_prompt = self.prompt_builder.build_planning_prompt(
+            # Формируем промпт для классификации
+            classification_prompt = self.prompt_builder.build_classification_prompt(
                 history=dialog_history,
-                user_message=text,
-                hidden_context=hidden_context
+                user_message=text
             )
             
-            tracer.add_event("📝 Промпт планирования сформирован", {
-                "prompt": planning_prompt,
-                "length": len(planning_prompt)
+            tracer.add_event("📝 Промпт классификации сформирован", {
+                "prompt": classification_prompt,
+                "length": len(classification_prompt)
             })
             
             # Создаем историю для первого вызова LLM
-            planning_history = [
+            classification_history = [
                 {
                     "role": "user",
-                    "parts": [{"text": planning_prompt}]
+                    "parts": [{"text": classification_prompt}]
                 }
             ]
             
-            # Первый вызов LLM для планирования (только read_only_tools)
-            from app.services.tool_definitions import read_only_tools_obj
-            planning_response = await self.llm_service.generate_response(planning_history, read_only_tools_obj)
-            tracer.add_event("✅ Ответ планирования получен", f"Ответ: {planning_response}")
-            logger.info(f"🔍 Сырой ответ LLM: '{planning_response}'")
+            # Первый вызов LLM для классификации (без инструментов)
+            stage_str = await self.llm_service.generate_response(classification_history)
+            tracer.add_event("✅ Ответ классификации получен", f"Ответ: {stage_str}")
+            logger.info(f"🔍 Сырой ответ классификации: '{stage_str}'")
             
-            # Парсим JSON-ответ с инструментами
-            tool_calls = []
-            stage = 'fallback'  # Стадия по умолчанию
-            try:
-                # Удаляем markdown блоки если они есть
-                cleaned_response = planning_response.strip()
-                if cleaned_response.startswith('```') and cleaned_response.endswith('```'):
-                    cleaned_response = cleaned_response[3:-3].strip()
-                elif cleaned_response.startswith('```json'):
-                    cleaned_response = cleaned_response[7:-3].strip()
-                
-                parsed_response = json.loads(cleaned_response)
-                
-                # Проверяем формат ответа
-                if isinstance(parsed_response, dict):
-                    # Новый формат: {"stage": "...", "tool_calls": [...]}
-                    stage = parsed_response.get('stage', 'fallback')
-                    tool_calls = parsed_response.get('tool_calls', [])
-                elif isinstance(parsed_response, list):
-                    # Старый формат: [{"tool_name": "...", "parameters": {...}}]
-                    tool_calls = parsed_response
-                    stage = 'fallback'  # Для старого формата используем fallback
-                
-                tracer.add_event("📊 Результат парсинга", {
-                    "stage": stage,
-                    "tool_calls": tool_calls,
-                    "tool_calls_count": len(tool_calls),
-                    "tool_calls_types": [type(tc).__name__ for tc in tool_calls] if tool_calls else []
-                })
-                logger.info(f"🎯 Определена стадия: '{stage}', запланировано инструментов: {len(tool_calls)}")
-                logger.info(f"🔍 Типы элементов tool_calls: {[type(tc).__name__ for tc in tool_calls] if tool_calls else 'пусто'}")
-                
-            except json.JSONDecodeError as e:
-                logger.error(f"❌ Ошибка парсинга JSON ответа планирования: {e}")
-                logger.error(f"❌ Сырой ответ: '{planning_response}'")
-                tracer.add_event("❌ Ошибка парсинга JSON", f"Ошибка: {str(e)}")
-                # Fallback: пустой список инструментов
-                tool_calls = []
-                stage = 'fallback'
-            
-            # Выполнение инструментов (если они запланированы)
-            tool_results = ""
-            if tool_calls:
-                tracer.add_event("⚙️ Выполнение инструментов", f"Количество инструментов: {len(tool_calls)}")
-                logger.info(f"⚙️ Выполнение {len(tool_calls)} инструментов")
-                
-                # Выполняем каждый инструмент
-                for tool_call in tool_calls:
-                    # Проверяем формат tool_call
-                    if isinstance(tool_call, str):
-                        logger.warning(f"⚠️ Получена строка вместо объекта инструмента: '{tool_call}'")
-                        tracer.add_event("⚠️ Неверный формат инструмента", f"Получена строка: {tool_call}")
-                        continue
-                    
-                    if not isinstance(tool_call, dict):
-                        logger.warning(f"⚠️ Неверный тип инструмента: {type(tool_call)}, значение: {tool_call}")
-                        tracer.add_event("⚠️ Неверный тип инструмента", f"Тип: {type(tool_call)}, Значение: {tool_call}")
-                        continue
-                    
-                    tool_name = tool_call.get('tool_name')
-                    parameters = tool_call.get('parameters', {})
-                    
-                    if not tool_name:
-                        logger.warning(f"⚠️ Отсутствует tool_name в инструменте: {tool_call}")
-                        tracer.add_event("⚠️ Отсутствует tool_name", f"Инструмент: {tool_call}")
-                        continue
-                    
-                    tracer.add_event(f"🔧 Выполнение инструмента", f"Инструмент: {tool_name}, Параметры: {parameters}")
-                    
-                    try:
-                        # Вызываем инструмент через ToolService
-                        result = await self.tool_service.execute_tool(tool_name, parameters, user_id)
-                        tool_results += f"Результат {tool_name}: {result}\n"
-                        
-                        # Специальная трассировка для операций с записями
-                        if tool_name == 'create_appointment':
-                            tracer.add_event("📝 Создание записи", {
-                                "operation": "CREATE_APPOINTMENT",
-                                "parameters": parameters,
-                                "result": result,
-                                "success": not result.startswith("Ошибка") and not result.startswith("Требуются данные")
-                            })
-                        elif tool_name == 'cancel_appointment_by_id':
-                            tracer.add_event("🗑️ Отмена записи", {
-                                "operation": "CANCEL_APPOINTMENT",
-                                "appointment_id": parameters.get("appointment_id"),
-                                "result": result,
-                                "success": not result.startswith("Ошибка") and not result.startswith("Запись не найдена")
-                            })
-                        elif tool_name == 'reschedule_appointment_by_id':
-                            tracer.add_event("📅 Перенос записи", {
-                                "operation": "RESCHEDULE_APPOINTMENT",
-                                "appointment_id": parameters.get("appointment_id"),
-                                "new_date": parameters.get("new_date"),
-                                "new_time": parameters.get("new_time"),
-                                "result": result,
-                                "success": not result.startswith("Ошибка") and not result.startswith("Запись не найдена")
-                            })
-                        
-                        # Сохраняем результат в память, если это get_my_appointments
-                        if tool_name == 'get_my_appointments':
-                            # Получаем структурированные данные напрямую из AppointmentService
-                            appointments_data = self.appointment_service.get_my_appointments(user_id)
-                            session_context['appointments_in_focus'] = appointments_data
-                            logger.info(f"🔍 Записи сохранены в память: {appointments_data}")
-                            tracer.add_event("🔍 Записи сохранены в память", {
-                                "appointments_count": len(appointments_data),
-                                "appointments": appointments_data
-                            })
-                        
-                        tracer.add_event(f"✅ Инструмент выполнен", f"Инструмент: {tool_name}, Результат: {result}")
-                        
-                    except Exception as e:
-                        error_msg = f"Ошибка выполнения {tool_name}: {str(e)}"
-                        tool_results += error_msg + "\n"
-                        tracer.add_event(f"❌ Ошибка инструмента", f"Инструмент: {tool_name}, Ошибка: {str(e)}")
-                        logger.error(f"❌ Ошибка выполнения инструмента {tool_name}: {e}")
-            else:
-                tracer.add_event("ℹ️ Инструменты не требуются", "Пустой список инструментов")
-                logger.info("ℹ️ Инструменты не требуются")
-            
-            # Логика скрытого контекста: получаем записи если их нет в памяти для стадий отмены/переноса
-            if stage in ['cancellation_request', 'rescheduling']:
-                # Если нет записей в памяти, получаем их
-                if 'appointments_in_focus' not in session_context:
-                    appointments_data = self.appointment_service.get_my_appointments(user_id)
-                    session_context['appointments_in_focus'] = appointments_data
-                    logger.info(f"🔍 Записи получены и сохранены в память: {appointments_data}")
-                    tracer.add_event("🔍 Записи получены и сохранены в память", {
-                        "appointments_count": len(appointments_data),
-                        "appointments": appointments_data
-                    })
-                
-                # Обновляем скрытый контекст с актуальными данными
-                appointments_data = session_context.get('appointments_in_focus', [])
-                if appointments_data:
-                    hidden_context = "# СКРЫТЫЙ КОНТЕКСТ ЗАПИСЕЙ (ИСПОЛЬЗУЙ ДЛЯ ИЗВЛЕЧЕНИЯ ID):\n" + json.dumps(appointments_data, ensure_ascii=False)
-                    tracer.add_event("🔍 Скрытый контекст обновлен", {
-                        "stage": stage,
-                        "appointments_count": len(appointments_data),
-                        "context": hidden_context
-                    })
-            
-            # Логика очистки памяти: очищаем память о записях, если сменили тему
-            if stage not in ['appointment_cancellation', 'rescheduling', 'view_booking', 'cancellation_request']:
-                if 'appointments_in_focus' in session_context:
-                    del session_context['appointments_in_focus']  # Очищаем, если сменили тему
+            # Парсим стадию
+            stage = self.parse_stage(stage_str)
+            tracer.add_event("📊 Стадия определена", f"Стадия: {stage}")
+            logger.info(f"🎯 Определена стадия: '{stage}'")
             
             # Быстрый путь для конфликтных ситуаций
             if stage == 'conflict_escalation':
@@ -354,24 +329,106 @@ class DialogService:
                 # Возвращаем ответ пользователю и завершаем обработку
                 return manager_response['response_to_user']
             
-            # ЭТАП 2: Синтез финального ответа
-            tracer.add_event("🎨 Этап 2: Синтез ответа", "Начинаем второй вызов LLM")
-            logger.info("🎨 Этап 2: Синтез финального ответа")
+            # --- ЭТАП 2: ПЛАНИРОВАНИЕ ---
+            tracer.add_event("🔍 Этап 2: Планирование", "Планируем инструменты для сбора данных")
+            logger.info("🔍 Этап 2: Планирование инструментов")
             
-            # Добавляем скрытый контекст к результатам инструментов для этапа синтеза
-            if hidden_context:
-                tool_results += "\n" + hidden_context
-                tracer.add_event("🔍 Скрытый контекст добавлен к результатам", {
-                    "stage": stage,
-                    "context": hidden_context
-                })
+            # Формируем промпт для планирования
+            planning_prompt = self.prompt_builder.build_planning_prompt(
+                stage_name=stage,
+                history=dialog_history,
+                user_message=text
+            )
+            
+            tracer.add_event("📝 Промпт планирования сформирован", {
+                "prompt": planning_prompt,
+                "length": len(planning_prompt),
+                "stage": stage
+            })
+            
+            # Создаем историю для второго вызова LLM
+            planning_history = [
+                {
+                    "role": "user",
+                    "parts": [{"text": planning_prompt}]
+                }
+            ]
+            
+            # Второй вызов LLM для планирования (только read_only_tools)
+            from app.services.tool_definitions import read_only_tools_obj
+            planning_response = await self.llm_service.generate_response(planning_history, read_only_tools_obj)
+            tracer.add_event("✅ Ответ планирования получен", f"Ответ: {planning_response}")
+            logger.info(f"🔍 Сырой ответ планирования: '{planning_response}'")
+            
+            # Парсим вызовы инструментов
+            planned_tool_calls = self.parse_tool_calls(planning_response)
+            tracer.add_event("📊 Инструменты запланированы", {
+                "tool_calls": planned_tool_calls,
+                "tool_calls_count": len(planned_tool_calls)
+            })
+            logger.info(f"🎯 Запланировано инструментов: {len(planned_tool_calls)}")
+            
+            # --- ВЫПОЛНЕНИЕ ИНСТРУМЕНТОВ ---
+            tool_results = ""
+            if planned_tool_calls:
+                tracer.add_event("⚙️ Выполнение инструментов", f"Количество инструментов: {len(planned_tool_calls)}")
+                logger.info(f"⚙️ Выполнение {len(planned_tool_calls)} инструментов")
+                
+                # Выполняем каждый инструмент
+                for tool_call in planned_tool_calls:
+                    # Проверяем формат tool_call
+                    if not isinstance(tool_call, dict):
+                        logger.warning(f"⚠️ Неверный тип инструмента: {type(tool_call)}, значение: {tool_call}")
+                        tracer.add_event("⚠️ Неверный тип инструмента", f"Тип: {type(tool_call)}, Значение: {tool_call}")
+                        continue
+                    
+                    tool_name = tool_call.get('tool_name')
+                    parameters = tool_call.get('parameters', {})
+                    
+                    if not tool_name:
+                        logger.warning(f"⚠️ Отсутствует tool_name в инструменте: {tool_call}")
+                        tracer.add_event("⚠️ Отсутствует tool_name", f"Инструмент: {tool_call}")
+                        continue
+                    
+                    tracer.add_event(f"🔧 Выполнение инструмента", f"Инструмент: {tool_name}, Параметры: {parameters}")
+                    
+                    try:
+                        # Вызываем инструмент через ToolService
+                        result = await self.tool_service.execute_tool(tool_name, parameters, user_id)
+                        tool_results += f"Результат {tool_name}: {result}\n"
+                        
+                        # Специальная трассировка для операций с записями
+                        if tool_name == 'get_my_appointments':
+                            # Получаем структурированные данные напрямую из AppointmentService
+                            appointments_data = self.appointment_service.get_my_appointments(user_id)
+                            session_context['appointments_in_focus'] = appointments_data
+                            logger.info(f"🔍 Записи сохранены в память: {appointments_data}")
+                            tracer.add_event("🔍 Записи сохранены в память", {
+                                "appointments_count": len(appointments_data),
+                                "appointments": appointments_data
+                            })
+                        
+                        tracer.add_event(f"✅ Инструмент выполнен", f"Инструмент: {tool_name}, Результат: {result}")
+                        
+                    except Exception as e:
+                        error_msg = f"Ошибка выполнения {tool_name}: {str(e)}"
+                        tool_results += error_msg + "\n"
+                        tracer.add_event(f"❌ Ошибка инструмента", f"Инструмент: {tool_name}, Ошибка: {str(e)}")
+                        logger.error(f"❌ Ошибка выполнения инструмента {tool_name}: {e}")
+            else:
+                tracer.add_event("ℹ️ Инструменты не требуются", "Пустой список инструментов")
+                logger.info("ℹ️ Инструменты не требуются")
+            
+            # --- ЭТАП 3: СИНТЕЗ И ДЕЙСТВИЕ ---
+            tracer.add_event("🎨 Этап 3: Синтез", "Генерируем финальный ответ")
+            logger.info("🎨 Этап 3: Синтез финального ответа")
             
             # Формируем промпт для синтеза
             synthesis_prompt = self.prompt_builder.build_synthesis_prompt(
+                stage_name=stage,
                 history=dialog_history,
                 user_message=text,
                 tool_results=tool_results,
-                stage=stage,
                 client_name=client.first_name,
                 client_phone_saved=bool(client.phone_number)
             )
@@ -382,7 +439,7 @@ class DialogService:
                 "stage": stage
             })
             
-            # Создаем историю для второго вызова LLM
+            # Создаем историю для третьего вызова LLM
             synthesis_history = [
                 {
                     "role": "user",
@@ -390,7 +447,7 @@ class DialogService:
                 }
             ]
             
-            # Второй вызов LLM для синтеза финального ответа (с write_tools)
+            # Третий вызов LLM для синтеза финального ответа (с write_tools)
             from app.services.tool_definitions import write_tools_obj
             synthesis_response = await self.llm_service.generate_response(synthesis_history, write_tools_obj)
             
@@ -400,37 +457,66 @@ class DialogService:
             })
             logger.info("✅ Ответ синтеза получен")
             
-            # Используем парсер гибридных ответов для обработки ответа синтеза
+            # Парсим гибридный ответ (JSON + текст)
             tracer.add_event("🔍 Парсинг гибридного ответа", f"Длина ответа: {len(synthesis_response)}")
             logger.info("🔍 Парсинг гибридного ответа синтеза")
             
-            # Парсим гибридный ответ (JSON + текст)
-            cleaned_text, tool_execution_results = await self._parse_hybrid_response(synthesis_response, user_id)
+            cleaned_text, executive_tool_calls = self.parse_hybrid_response(synthesis_response)
             
-            if tool_execution_results:
+            # --- ФИНАЛИЗАЦИЯ ---
+            if executive_tool_calls:
                 # Если были выполнены инструменты, логируем это
                 tracer.add_event("⚙️ Инструменты выполнены из гибридного ответа", {
-                    "results": tool_execution_results,
+                    "tool_calls": executive_tool_calls,
                     "cleaned_text_length": len(cleaned_text)
                 })
                 logger.info("⚙️ Инструменты выполнены из гибридного ответа")
                 
+                # Выполняем исполнительные инструменты
+                execution_results = []
+                for tool_call in executive_tool_calls:
+                    tool_name = tool_call.get('tool_name')
+                    parameters = tool_call.get('parameters', {})
+                    
+                    # Добавляем user_telegram_id к параметрам для инструментов, которые его требуют
+                    if tool_name in ['cancel_appointment_by_id', 'reschedule_appointment_by_id']:
+                        parameters['user_telegram_id'] = user_id
+                    
+                    try:
+                        # Выполняем инструмент через ToolOrchestratorService
+                        tool_result = await self.tool_orchestrator.execute_single_tool(tool_name, parameters, user_id)
+                        execution_results.append(f"Результат {tool_name}: {tool_result}")
+                        logger.info(f"✅ Исполнительный инструмент выполнен: {tool_name}")
+                    except Exception as e:
+                        error_msg = f"Ошибка выполнения {tool_name}: {str(e)}"
+                        execution_results.append(error_msg)
+                        logger.error(f"❌ Ошибка выполнения исполнительного инструмента {tool_name}: {e}")
+                
                 # Если есть результат выполнения инструментов, делаем финальный вызов для сообщения об успехе
-                final_prompt = f"Инструменты выполнены успешно. Результаты: {tool_execution_results}. Сформулируй краткое сообщение пользователю об успешном выполнении действия."
-                
-                final_history = [
-                    {
-                        "role": "user",
-                        "parts": [{"text": final_prompt}]
-                    }
-                ]
-                
-                bot_response_text = await self.llm_service.generate_response(final_history)
-                tracer.add_event("✅ Финальный ответ получен после выполнения инструментов", {
-                    "response": bot_response_text,
-                    "length": len(bot_response_text)
-                })
-                logger.info("✅ Финальный ответ сгенерирован после выполнения инструментов")
+                if execution_results:
+                    final_prompt = f"Инструменты выполнены успешно. Результаты: {'; '.join(execution_results)}. Сформулируй краткое сообщение пользователю об успешном выполнении действия."
+                    
+                    final_history = [
+                        {
+                            "role": "user",
+                            "parts": [{"text": final_prompt}]
+                        }
+                    ]
+                    
+                    bot_response_text = await self.llm_service.generate_response(final_history)
+                    tracer.add_event("✅ Финальный ответ получен после выполнения инструментов", {
+                        "response": bot_response_text,
+                        "length": len(bot_response_text)
+                    })
+                    logger.info("✅ Финальный ответ сгенерирован после выполнения инструментов")
+                else:
+                    # Используем очищенный текст, если нет результатов выполнения
+                    bot_response_text = cleaned_text
+                    tracer.add_event("📝 Использован очищенный текстовый ответ", {
+                        "response": bot_response_text,
+                        "length": len(bot_response_text)
+                    })
+                    logger.info("📝 Использован очищенный текстовый ответ")
             else:
                 # Это обычный текстовый ответ (возможно, очищенный от JSON-блоков)
                 bot_response_text = cleaned_text
@@ -466,110 +552,6 @@ class DialogService:
             # Сохраняем трассировку в любом случае
             tracer.save_trace()
     
-    async def _parse_hybrid_response(self, raw_response: str, user_id: int) -> tuple[str, str]:
-        """
-        Парсит гибридный ответ LLM (JSON + текст) и выполняет инструменты.
-        
-        Args:
-            raw_response: Сырой ответ от LLM
-            user_id: ID пользователя для выполнения инструментов
-            
-        Returns:
-            Кортеж (очищенный_текст_для_пользователя, результат_выполнения_инструментов)
-        """
-        import re
-        import json
-        
-        # Ищем все блоки ``` ... ``` в ответе (с json или без)
-        json_blocks = re.findall(r'```(?:json)?\s*([\s\S]*?)\s*```', raw_response)
-        
-        logger.info(f"🔍 Найдено JSON-блоков: {len(json_blocks)}")
-        for i, block in enumerate(json_blocks):
-            logger.info(f"🔍 Блок {i+1}: {block[:100]}...")
-        
-        if not json_blocks:
-            # Если блоков нет, возвращаем исходный текст
-            logger.info("❌ JSON-блоки не найдены, возвращаем исходный текст")
-            return raw_response, ""
-        
-        # Очищаем исходный текст от всех JSON-блоков
-        cleaned_text = raw_response
-        for block in json_blocks:
-            # Удаляем весь блок ``` ... ``` из текста
-            cleaned_text = re.sub(r'```(?:json)?\s*' + re.escape(block) + r'\s*```', '', cleaned_text, flags=re.DOTALL)
-        
-        # Дополнительная очистка: удаляем лишние переносы строк
-        cleaned_text = re.sub(r'\n\s*\n\s*\n', '\n\n', cleaned_text).strip()
-        
-        # Выполняем все найденные инструменты
-        tool_results = []
-        logger.info(f"🔧 Начинаем выполнение {len(json_blocks)} JSON-блоков")
-        
-        for i, json_block in enumerate(json_blocks):
-            logger.info(f"🔧 Обрабатываем блок {i+1}: {json_block[:100]}...")
-            try:
-                # Парсим JSON
-                tool_call = json.loads(json_block.strip())
-                logger.info(f"🔧 Распарсенный JSON: {tool_call}")
-                
-                # Проверяем формат JSON
-                if isinstance(tool_call, dict):
-                    # Формат 1: {"tool_calls": [...]}
-                    if 'tool_calls' in tool_call:
-                        tool_calls_list = tool_call.get('tool_calls', [])
-                        logger.info(f"🔧 Найдено {len(tool_calls_list)} вызовов инструментов в массиве")
-                        
-                        for j, single_tool_call in enumerate(tool_calls_list):
-                            if isinstance(single_tool_call, dict) and 'tool_name' in single_tool_call:
-                                tool_name = single_tool_call.get('tool_name')
-                                parameters = single_tool_call.get('parameters', {})
-                                
-                                # Добавляем user_telegram_id к параметрам для инструментов, которые его требуют
-                                if tool_name in ['cancel_appointment_by_id', 'reschedule_appointment_by_id']:
-                                    parameters['user_telegram_id'] = user_id
-                                
-                                logger.info(f"🔧 Выполнение инструмента {j+1} из массива: {tool_name}")
-                                
-                                # Выполняем инструмент через ToolOrchestratorService
-                                tool_result = await self.tool_orchestrator.execute_single_tool(tool_name, parameters, user_id)
-                                
-                                tool_results.append(f"Результат {tool_name}: {tool_result}")
-                                logger.info(f"✅ Инструмент {j+1} выполнен: {tool_name}")
-                            else:
-                                logger.warning(f"⚠️ Элемент {j+1} массива не является вызовом инструмента: {single_tool_call}")
-                    
-                    # Формат 2: {"tool_name": "...", "parameters": {...}}
-                    elif 'tool_name' in tool_call:
-                        tool_name = tool_call.get('tool_name')
-                        parameters = tool_call.get('parameters', {})
-                        
-                        # Добавляем user_telegram_id к параметрам для инструментов, которые его требуют
-                        if tool_name in ['cancel_appointment_by_id', 'reschedule_appointment_by_id']:
-                            parameters['user_telegram_id'] = user_id
-                        
-                        logger.info(f"🔧 Выполнение одиночного инструмента: {tool_name}")
-                        
-                        # Выполняем инструмент через ToolOrchestratorService
-                        tool_result = await self.tool_orchestrator.execute_single_tool(tool_name, parameters, user_id)
-                        
-                        tool_results.append(f"Результат {tool_name}: {tool_result}")
-                        logger.info(f"✅ Одиночный инструмент выполнен: {tool_name}")
-                    else:
-                        logger.warning(f"⚠️ JSON не содержит tool_calls или tool_name: {tool_call}")
-                else:
-                    logger.warning(f"⚠️ JSON не является словарем: {tool_call}")
-                    
-            except json.JSONDecodeError as e:
-                logger.warning(f"⚠️ Не удалось распарсить JSON блок: {e}")
-                continue
-            except Exception as e:
-                logger.error(f"❌ Ошибка выполнения инструмента: {e}")
-                tool_results.append(f"Ошибка выполнения инструмента: {str(e)}")
-        
-        # Объединяем результаты инструментов
-        combined_results = "\n".join(tool_results) if tool_results else ""
-        
-        return cleaned_text, combined_results
 
     def clear_history(self, user_id: int) -> int:
         """
