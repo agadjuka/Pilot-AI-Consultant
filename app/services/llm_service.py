@@ -323,7 +323,7 @@ class LLMService:
         
         return MockContent([MockTextPart(text)])
 
-    async def generate_response(self, history: List[Dict], tools=None) -> str:
+    async def generate_response(self, history: List[Dict], tools=None, tracer=None) -> str:
         """
         Генерирует ответ на основе готовой истории диалога.
         Поддерживает как Gemini, так и YandexGPT.
@@ -331,17 +331,27 @@ class LLMService:
         Args:
             history: Готовая история диалога с системной инструкцией
             tools: Набор инструментов для использования (по умолчанию все инструменты)
+            tracer: Объект DialogueTracer для логирования промптов и ответов
             
         Returns:
             Текстовый ответ модели
         """
         if self.provider == "yandex":
-            return await self._generate_yandex_response(history)
+            return await self._generate_yandex_response(history, tracer)
         else:
-            return await self._generate_gemini_response(history, tools)
+            return await self._generate_gemini_response(history, tools, tracer)
 
-    async def _generate_gemini_response(self, history: List[Dict], tools=None) -> str:
+    async def _generate_gemini_response(self, history: List[Dict], tools=None, tracer=None) -> str:
         """Генерирует ответ через Gemini."""
+        # Логируем промпт, если есть tracer
+        if tracer:
+            tracer.add_event("🤖 Вызов Gemini", {
+                "provider": "Google Gemini",
+                "history_length": len(history),
+                "tools_enabled": tools is not None,
+                "prompt": history[-1]["parts"][0]["text"] if history and "parts" in history[-1] else "Системный промпт"
+            })
+        
         # Создаем чат с готовой историей и указанными инструментами
         chat = self.create_chat(history, tools)
         
@@ -349,26 +359,52 @@ class LLMService:
         response_content = await self.send_message_to_chat(chat, "Ответь")
         
         # Извлекаем текстовый ответ
+        response_text = ""
         for part in response_content.parts:
             if hasattr(part, 'text') and part.text:
-                return part.text
+                response_text += part.text
         
-        return "Извините, не удалось сгенерировать ответ."
+        # Логируем ответ, если есть tracer
+        if tracer:
+            tracer.add_event("🤖 Ответ Gemini получен", {
+                "provider": "Google Gemini",
+                "response_length": len(response_text),
+                "response": response_text[:500] + "..." if len(response_text) > 500 else response_text
+            })
+        
+        return response_text if response_text else "Извините, не удалось сгенерировать ответ."
 
-    async def _generate_yandex_response(self, history: List[Dict]) -> str:
+    async def _generate_yandex_response(self, history: List[Dict], tracer=None) -> str:
         """Генерирует ответ через YandexGPT."""
         # Добавляем инструкцию для function calling в системный промпт
         enhanced_history = self._enhance_history_for_yandex(history)
+        
+        # Логируем промпт, если есть tracer
+        if tracer:
+            tracer.add_event("🤖 Вызов YandexGPT", {
+                "provider": "YandexGPT",
+                "history_length": len(enhanced_history),
+                "enhanced_history": enhanced_history
+            })
         
         # Отправляем сообщение "Ответь" для получения ответа
         response_content = await self.send_message_to_chat(enhanced_history, "Ответь")
         
         # Извлекаем текстовый ответ
+        response_text = ""
         for part in response_content.parts:
             if hasattr(part, 'text') and part.text:
-                return part.text
+                response_text += part.text
         
-        return "Извините, не удалось сгенерировать ответ."
+        # Логируем ответ, если есть tracer
+        if tracer:
+            tracer.add_event("🤖 Ответ YandexGPT получен", {
+                "provider": "YandexGPT",
+                "response_length": len(response_text),
+                "response": response_text[:500] + "..." if len(response_text) > 500 else response_text
+            })
+        
+        return response_text if response_text else "Извините, не удалось сгенерировать ответ."
 
     def _enhance_history_for_yandex(self, history: List[Dict]) -> List[Dict]:
         """

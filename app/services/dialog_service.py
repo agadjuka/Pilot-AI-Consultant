@@ -295,7 +295,7 @@ class DialogService:
             ]
             
             # Первый вызов LLM для классификации (без инструментов)
-            stage_str = await self.llm_service.generate_response(classification_history)
+            stage_str = await self.llm_service.generate_response(classification_history, tracer=tracer)
             tracer.add_event("✅ Ответ классификации получен", f"Ответ: {stage_str}")
             logger.info(f"🔍 Сырой ответ классификации: '{stage_str}'")
             
@@ -371,7 +371,7 @@ class DialogService:
                 
                 # Вызов LLM с полным набором инструментов
                 from app.services.tool_definitions import salon_tools
-                main_response = await self.llm_service.generate_response(main_history, salon_tools)
+                main_response = await self.llm_service.generate_response(main_history, salon_tools, tracer=tracer)
                 
                 tracer.add_event(f"✅ Ответ мышления {iteration + 1} получен", {
                     "response_length": len(main_response),
@@ -478,7 +478,7 @@ class DialogService:
                     }
                 ]
                 
-                bot_response_text = await self.llm_service.generate_response(fallback_history)
+                bot_response_text = await self.llm_service.generate_response(fallback_history, tracer=tracer)
                 tracer.add_event("✅ Fallback ответ получен", {
                     "response": bot_response_text,
                     "length": len(bot_response_text)
