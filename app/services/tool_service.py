@@ -283,6 +283,8 @@ class ToolService:
         Raises:
             ValueError: Если инструмент не найден
         """
+        logger.info(f"🔧 [TOOL EXECUTION] Начало выполнения инструмента: tool_name='{tool_name}', parameters={parameters}, user_id={user_id}")
+        
         try:
             if tool_name == "get_all_services":
                 return self.get_all_services()
@@ -302,7 +304,10 @@ class ToolService:
                 date = parameters.get("date", "")
                 time = parameters.get("time", "")
                 client_name = parameters.get("client_name", "")
-                return self.create_appointment(master_name, service_name, date, time, client_name, user_id)
+                logger.info(f"📝 [TOOL EXECUTION] Выполнение создания записи: master='{master_name}', service='{service_name}', date='{date}', time='{time}', client='{client_name}'")
+                result = self.create_appointment(master_name, service_name, date, time, client_name, user_id)
+                logger.info(f"✅ [TOOL EXECUTION] Результат создания записи: {result}")
+                return result
             
             elif tool_name == "call_manager":
                 reason = parameters.get("reason", "")
@@ -310,27 +315,38 @@ class ToolService:
                 return result.get("response_to_user", "Менеджер уведомлен")
             
             elif tool_name == "get_my_appointments":
+                logger.info(f"📋 [TOOL EXECUTION] Выполнение получения записей пользователя: user_id={user_id}")
                 appointments = self.get_my_appointments(user_id)
                 if not appointments:
+                    logger.info(f"📭 [TOOL EXECUTION] У пользователя нет предстоящих записей: user_id={user_id}")
                     return "У вас нет предстоящих записей."
                 result = "Ваши предстоящие записи:\n"
                 for appointment in appointments:
                     result += f"- {appointment['details']}\n"
+                logger.info(f"✅ [TOOL EXECUTION] Найдено записей: {len(appointments)} для user_id={user_id}")
                 return result
             
             elif tool_name == "cancel_appointment_by_id":
                 appointment_id = parameters.get("appointment_id")
                 if appointment_id is None:
+                    logger.warning(f"❌ [TOOL EXECUTION] Отсутствует appointment_id для отмены записи")
                     return "Ошибка: не указан ID записи для отмены"
-                return self.cancel_appointment_by_id(appointment_id, user_id)
+                logger.info(f"🗑️ [TOOL EXECUTION] Выполнение отмены записи: appointment_id={appointment_id}")
+                result = self.cancel_appointment_by_id(appointment_id, user_id)
+                logger.info(f"✅ [TOOL EXECUTION] Результат отмены записи: {result}")
+                return result
             
             elif tool_name == "reschedule_appointment_by_id":
                 appointment_id = parameters.get("appointment_id")
                 new_date = parameters.get("new_date", "")
                 new_time = parameters.get("new_time", "")
                 if appointment_id is None:
+                    logger.warning(f"❌ [TOOL EXECUTION] Отсутствует appointment_id для переноса записи")
                     return "Ошибка: не указан ID записи для переноса"
-                return self.reschedule_appointment_by_id(appointment_id, new_date, new_time, user_id)
+                logger.info(f"📅 [TOOL EXECUTION] Выполнение переноса записи: appointment_id={appointment_id}, new_date='{new_date}', new_time='{new_time}'")
+                result = self.reschedule_appointment_by_id(appointment_id, new_date, new_time, user_id)
+                logger.info(f"✅ [TOOL EXECUTION] Результат переноса записи: {result}")
+                return result
             
             elif tool_name == "get_full_history":
                 return self.get_full_history()
@@ -339,7 +355,7 @@ class ToolService:
                 raise ValueError(f"Неизвестный инструмент: {tool_name}")
                 
         except Exception as e:
-            logger.error(f"Ошибка выполнения инструмента {tool_name}: {e}")
+            logger.error(f"❌ [TOOL EXECUTION] Критическая ошибка выполнения инструмента {tool_name}: {e}")
             return f"Ошибка выполнения {tool_name}: {str(e)}"
 
     def get_full_history(self) -> str:

@@ -253,6 +253,31 @@ class DialogService:
                         result = await self.tool_service.execute_tool(tool_name, parameters, user_id)
                         tool_results += f"Результат {tool_name}: {result}\n"
                         
+                        # Специальная трассировка для операций с записями
+                        if tool_name == 'create_appointment':
+                            tracer.add_event("📝 Создание записи", {
+                                "operation": "CREATE_APPOINTMENT",
+                                "parameters": parameters,
+                                "result": result,
+                                "success": not result.startswith("Ошибка") and not result.startswith("Требуются данные")
+                            })
+                        elif tool_name == 'cancel_appointment_by_id':
+                            tracer.add_event("🗑️ Отмена записи", {
+                                "operation": "CANCEL_APPOINTMENT",
+                                "appointment_id": parameters.get("appointment_id"),
+                                "result": result,
+                                "success": not result.startswith("Ошибка") and not result.startswith("Запись не найдена")
+                            })
+                        elif tool_name == 'reschedule_appointment_by_id':
+                            tracer.add_event("📅 Перенос записи", {
+                                "operation": "RESCHEDULE_APPOINTMENT",
+                                "appointment_id": parameters.get("appointment_id"),
+                                "new_date": parameters.get("new_date"),
+                                "new_time": parameters.get("new_time"),
+                                "result": result,
+                                "success": not result.startswith("Ошибка") and not result.startswith("Запись не найдена")
+                            })
+                        
                         # Сохраняем результат в память, если это get_my_appointments
                         if tool_name == 'get_my_appointments':
                             # Получаем структурированные данные напрямую из AppointmentService

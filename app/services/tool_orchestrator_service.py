@@ -293,6 +293,8 @@ class ToolOrchestratorService:
                     function_name = function_call.name
                     function_args = dict(function_call.args)
                     
+                    logger.info(f"🔧 [ORCHESTRATOR] Подготовка к выполнению инструмента: {function_name} с параметрами: {function_args}")
+                    
                     # Создаем корутину для выполнения функции
                     task = self._execute_function_async(function_name, function_args, user_id)
                     tasks.append(task)
