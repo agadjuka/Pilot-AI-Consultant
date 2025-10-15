@@ -37,7 +37,7 @@ class PromptBuilderService:
 - `service_inquiry`: Цель: предоставить информацию о запрошенной услуге. Используй `get_all_services`, чтобы найти ее цену и длительность. Вежливо узнай в какое время и день клиент хотел бы прийти, не ищи слоты пока не получишь ответ от клиента.
 - `price_inquiry`: Цель: ответить на вопрос о цене. Используй `get_all_services`. НЕ ищи свободное время.
 - `availability_check`: Цель: найти свободное время. Используй `get_available_slots`. Убедись, что услуга и дата известны из контекста или нового сообщения.
-- `booking_confirmation`: Цель: подтвердить и создать запись. Используй `create_appointment`. Вызывай, только если ВСЕ данные (услуга, дата, время) явно согласованы.
+- `booking_confirmation`: Цель: подтвердить готовность к созданию записи. Проверь, что ВСЕ данные (услуга, дата, время) явно согласованы. Если да - переходи к этапу синтеза для создания записи.
 - `view_booking`: Цель: показать записи клиента. Используй `get_my_appointments`.
 - `cancellation_request`: Цель: начать процесс отмены. Сначала используй `get_my_appointments`, чтобы понять, что отменять.
 - `rescheduling`: Цель: начать процесс переноса. Сначала используй `get_my_appointments`.
@@ -98,6 +98,11 @@ class PromptBuilderService:
 
 # СЦЕНАРИЙ ДЕЙСТВИЙ (для стадии: {stage_name})
 {stage_principles}
+
+---
+# ВОЗМОЖНЫЕ ДЕЙСТВИЯ
+Если сценарий требует совершить действие, ты можешь использовать один из следующих инструментов.
+{write_tools_summary}
 
 # ФОРМАТ ВЫПОЛНЕНИЯ ДЕЙСТВИЯ
 Если в конце СЦЕНАРИЯ тебе нужно выполнить действие (вызвать инструмент), НАЧНИ свой ответ со **строго** отформатированного JSON-блока с этим действием. После блока напиши текст для клиента.
@@ -311,6 +316,9 @@ class PromptBuilderService:
         
         client_context = ", ".join(client_context_parts) if client_context_parts else "Данные клиента не известны"
         
+        # Генерируем краткое описание write_tools (исполнительных инструментов)
+        write_tools_summary = self._generate_tools_summary(write_tools)
+        
         # Собираем промпт по шаблону
         prompt = self.synthesis_template.format(
             history=history_text,
@@ -318,7 +326,8 @@ class PromptBuilderService:
             tool_results=tool_results,
             client_context=client_context,
             stage_name=stage,
-            stage_principles=stage_principles
+            stage_principles=stage_principles,
+            write_tools_summary=write_tools_summary
         )
         
         return prompt
