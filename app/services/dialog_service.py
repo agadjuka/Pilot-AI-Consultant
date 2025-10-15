@@ -73,9 +73,9 @@ class DialogService:
             google_calendar_service=self.google_calendar_service
         )
         
-        # Кратковременная память о показанных записях для каждого пользователя
-        # Формат: {user_id: [{"id": int, "details": str}, ...]}
-        self.last_shown_appointments = {}
+        # Кратковременная память о контексте сессий для каждого пользователя
+        # Формат: {user_id: {"appointments_in_focus": [{"id": int, "details": str}, ...], ...}}
+        self.session_contexts = {}
     
     def _determine_stage(self, user_message: str, tool_calls: List[Dict]) -> str:
         """
@@ -143,6 +143,9 @@ class DialogService:
         """
         # Логируем начало обработки диалога
         log_dialog_start(logger, user_id, text)
+        
+        # Получаем или создаем контекст для текущего пользователя
+        session_context = self.session_contexts.setdefault(user_id, {})
         
         # Создаем трейсер для этого диалога
         tracer = DialogueTracer(user_id=user_id, user_message=text)
@@ -275,6 +278,12 @@ class DialogService:
                         result = await self.tool_service.execute_tool(tool_name, parameters, user_id)
                         tool_results += f"Результат {tool_name}: {result}\n"
                         
+                        # Сохраняем результат в память, если это get_my_appointments
+                        if tool_name == 'get_my_appointments':
+                            # Получаем структурированные данные напрямую из AppointmentService
+                            appointments_data = self.appointment_service.get_my_appointments(user_id)
+                            session_context['appointments_in_focus'] = appointments_data
+                        
                         tracer.add_event(f"✅ Инструмент выполнен", f"Инструмент: {tool_name}, Результат: {result}")
                         
                     except Exception as e:
@@ -287,6 +296,11 @@ class DialogService:
                 logger.info("ℹ️ Инструменты не требуются")
             
             # Стадия уже определена в парсинге, дополнительная обработка не нужна
+            
+            # Логика очистки памяти: очищаем память о записях, если сменили тему
+            if stage not in ['cancellation_request', 'rescheduling', 'view_booking']:
+                if 'appointments_in_focus' in session_context:
+                    del session_context['appointments_in_focus']  # Очищаем, если сменили тему
             
             # Быстрый путь для конфликтных ситуаций
             if stage == 'conflict_escalation':
