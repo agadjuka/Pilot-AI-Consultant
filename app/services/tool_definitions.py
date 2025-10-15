@@ -244,6 +244,20 @@ call_manager_declaration = FunctionDeclaration(
 )
 
 
+# Определение инструмента для получения полной истории диалога
+get_full_history_declaration = FunctionDeclaration(
+    name="get_full_history",
+    description=(
+        "Используй этот инструмент, если тебе кажется, что в текущей истории диалога не хватает контекста для ответа на вопрос клиента."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {},
+        "required": []
+    }
+)
+
+
 # Создаем Tool объект, содержащий все наши функции
 salon_tools = Tool(
     function_declarations=[
@@ -254,7 +268,8 @@ salon_tools = Tool(
         get_my_appointments_declaration,
         cancel_appointment_by_id_declaration,
         reschedule_appointment_by_id_declaration,
-        call_manager_declaration
+        call_manager_declaration,
+        get_full_history_declaration
     ]
 )
 

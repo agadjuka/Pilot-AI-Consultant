@@ -249,6 +249,15 @@ class ToolService:
             new_time=new_time
         )
 
+    def get_full_history(self) -> str:
+        """
+        Получает полную историю диалога для анализа контекста.
+        
+        Returns:
+            Строка с информацией о запросе истории диалога
+        """
+        return "Запрошена полная история. (в будущем здесь будет логика)"
+
     def _find_service_by_fuzzy_match(self, service_name: str, all_services: list) -> object:
         """
         Находит услугу по нечеткому совпадению названия.

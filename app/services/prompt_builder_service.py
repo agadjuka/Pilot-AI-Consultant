@@ -22,24 +22,31 @@ class PromptBuilderService:
         """
         self.dialogue_patterns = dialogue_patterns
         self.system_prompt_template = """
-# ЗАДАЧА
-Твоя задача — помочь клиенту салона красоты. Проанализируй его запрос и вызови один или несколько инструментов для получения информации или выполнения действия. После получения ответа от инструментов, сформулируй короткий, естественный ответ для клиента.
+# РОЛЬ
+Ты — Кэт, дружелюбный и профессиональный AI-администратор салона красоты.
 
-# ПРАВИЛА
-1.  **ВСЕГДА ИСПОЛЬЗУЙ ИНСТРУМЕНТЫ.** Не отвечай на вопросы о ценах, времени, услугах или мастерах из головы. Твой ответ должен быть основан только на данных, полученных от инструментов.
-2.  **МОЖНО ВЫЗЫВАТЬ НЕСКОЛЬКО ИНСТРУМЕНТОВ СРАЗУ.** Если запрос сложный, вызови все необходимые инструменты одновременно.
-3.  **ФОРМАТ ВЫЗОВА:** Отвечай ТОЛЬКО JSON-массивом с вызовами инструментов. Никакого другого текста.
-    Пример: [{{"tool_name": "get_all_services"}}, {{"tool_name": "get_available_slots", "parameters": {{"date": "завтра"}}}}]
-    Если никакой инструмент не нужен, верни пустой массив [].
+# СТИЛЬ ОБЩЕНИЯ
+- Всегда общайся на "вы".
+- Отвечай кратко и по-человечески, как в мессенджере.
+- Используй эмодзи сдержанно: при приветствии и после успешной записи.
+- Если для ответа не нужна внешняя информация (например, на "привет" или "спасибо"), просто вежливо ответь, поддерживая диалог.
+
+# РАБОТА С ИНФОРМАЦИЕЙ
+- Твоя главная задача — предоставлять точную информацию.
+- **Никогда не выдумывай** цены, услуги, имена мастеров или свободное время.
+- Если для ответа на вопрос клиента тебе нужна информация, которой у тебя нет, **ты ДОЛЖЕН использовать один или несколько инструментов**.
+
+# ПРАВИЛА ИСПОЛЬЗОВАНИЯ ИНСТРУМЕНТОВ
+- Если ты решил использовать инструмент(ы), твой ответ должен быть ТОЛЬКО JSON-массивом с вызовами. Никакого другого текста.
+- Ты можешь вызывать несколько инструментов одновременно.
+- Формат: `[{{"tool_name": "...", "parameters": {{"...": "..."}}}}]`
+- Если после анализа запроса ты понимаешь, что никакой инструмент не нужен, просто ответь текстом в соответствии со своим стилем общения.
 
 # ДОСТУПНЫЕ ИНСТРУМЕНТЫ
 {tools_summary}
 
-# ИСТОРИЯ ДИАЛОГА
-{history}
-
-# ЗАПРОС КЛИЕНТА
-{user_message}
+# РЕКОМЕНДАЦИИ ДЛЯ ТЕКУЩЕЙ СИТУАЦИИ
+{stage_principles}
 """
     
     def _generate_tools_summary(self) -> str:
@@ -73,6 +80,43 @@ class PromptBuilderService:
         
         return tools_summary.strip()
     
+    def _get_stage_principles(self, stage: str, client_name: Optional[str] = None, client_phone_saved: bool = False) -> str:
+        """
+        Получает принципы для текущей стадии диалога.
+        
+        Args:
+            stage: ID стадии диалога
+            client_name: Имя клиента
+            client_phone_saved: Сохранен ли телефон клиента
+            
+        Returns:
+            Строка с принципами для текущей стадии
+        """
+        # Базовые принципы для всех стадий
+        base_principles = "Будь вежливым, профессиональным и полезным. Всегда предоставляй точную информацию."
+        
+        # Специфичные принципы для разных стадий
+        stage_specific = {
+            "greeting": "Поприветствуй клиента дружелюбно и предложи помощь. Используй эмодзи приветствия.",
+            "service_inquiry": "Предоставь полную информацию об услугах. Если клиент спрашивает о конкретной услуге, покажи её детали.",
+            "master_inquiry": "Покажи мастеров для выбранной услуги. Если услуга не выбрана, сначала уточни предпочтения.",
+            "time_inquiry": "Покажи доступное время для записи. Если времени нет, предложи альтернативные даты.",
+            "appointment_creation": "Создай запись с указанными параметрами. Если данных недостаточно, уточни их.",
+            "appointment_management": "Помоги с управлением записями - покажи, отмени или перенеси.",
+            "conflict_escalation": "Сохраняй спокойствие, извинись и передай ситуацию менеджеру."
+        }
+        
+        # Добавляем информацию о клиенте, если она есть
+        client_info = ""
+        if client_name:
+            client_info += f" Имя клиента: {client_name}."
+        if client_phone_saved:
+            client_info += " Телефон клиента сохранен в базе данных."
+        
+        # Возвращаем принципы для текущей стадии
+        stage_principle = stage_specific.get(stage, base_principles)
+        return f"{stage_principle}{client_info}"
+    
     def build_classification_prompt(self, stages_list: str, history: List[Dict], user_message: str) -> str:
         """
         Формирует промпт для классификации стадии диалога.
@@ -104,54 +148,28 @@ class PromptBuilderService:
     ) -> str:
         """
         Формирует основной промпт для генерации ответа на основе стадии диалога.
-        Использует новый упрощенный агентский подход.
+        Использует новый гибридный подход.
         
         Args:
-            stage: ID стадии диалога (не используется в новом подходе)
+            stage: ID стадии диалога
             dialog_history: История диалога
-            dialog_context: Дополнительный контекст диалога (не используется)
-            client_name: Имя клиента (не используется)
-            client_phone_saved: Сохранен ли телефон клиента (не используется)
+            dialog_context: Дополнительный контекст диалога
+            client_name: Имя клиента
+            client_phone_saved: Сохранен ли телефон клиента
             
         Returns:
             Сформированный системный промпт
         """
-        # Получаем последнее сообщение пользователя
-        user_message = ""
-        if dialog_history:
-            last_message = dialog_history[-1]
-            if last_message.get("role") == "user":
-                # Извлекаем текст из структуры Gemini
-                if "parts" in last_message:
-                    user_message = last_message["parts"][0].get("text", "")
-                else:
-                    user_message = last_message.get("content", "")
-        
-        # Формируем историю диалога в текстовом виде
-        history_text = ""
-        for msg in dialog_history[:-1]:  # Исключаем последнее сообщение (текущий запрос)
-            role = msg.get("role", "")
-            if role == "user":
-                if "parts" in msg:
-                    content = msg["parts"][0].get("text", "")
-                else:
-                    content = msg.get("content", "")
-                history_text += f"Клиент: {content}\n"
-            elif role == "assistant":
-                if "parts" in msg:
-                    content = msg["parts"][0].get("text", "")
-                else:
-                    content = msg.get("content", "")
-                history_text += f"Ассистент: {content}\n"
-        
         # Генерируем краткое описание инструментов
         tools_summary = self._generate_tools_summary()
+        
+        # Получаем принципы для текущей стадии
+        stage_principles = self._get_stage_principles(stage, client_name, client_phone_saved)
         
         # Собираем промпт по новому шаблону
         system_prompt = self.system_prompt_template.format(
             tools_summary=tools_summary,
-            history=history_text.strip() or "История диалога пуста",
-            user_message=user_message or "Нет сообщения"
+            stage_principles=stage_principles
         )
         
         return system_prompt
@@ -164,12 +182,12 @@ class PromptBuilderService:
     ) -> str:
         """
         Формирует универсальный промпт для fallback режима.
-        Использует тот же упрощенный подход, что и основной промпт.
+        Использует новый гибридный подход.
         
         Args:
-            dialog_context: Дополнительный контекст диалога (не используется)
-            client_name: Имя клиента (не используется)
-            client_phone_saved: Сохранен ли телефон клиента (не используется)
+            dialog_context: Дополнительный контекст диалога
+            client_name: Имя клиента
+            client_phone_saved: Сохранен ли телефон клиента
             
         Returns:
             Универсальный системный промпт
@@ -177,11 +195,13 @@ class PromptBuilderService:
         # Генерируем краткое описание инструментов
         tools_summary = self._generate_tools_summary()
         
+        # Получаем базовые принципы для fallback режима
+        stage_principles = self._get_stage_principles("greeting", client_name, client_phone_saved)
+        
         # Собираем промпт по новому шаблону
         system_prompt = self.system_prompt_template.format(
             tools_summary=tools_summary,
-            history="История диалога пуста",
-            user_message="Нет сообщения"
+            stage_principles=stage_principles
         )
         
         return system_prompt

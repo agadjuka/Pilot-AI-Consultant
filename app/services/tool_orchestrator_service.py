@@ -508,6 +508,9 @@ class ToolOrchestratorService:
             # Возвращаем только response_to_user для совместимости с существующей логикой
             return result.get("response_to_user", "Ошибка при вызове менеджера")
         
+        elif function_name == "get_full_history":
+            return method()
+        
         else:
             return f"Ошибка: неизвестная функция '{function_name}'"
     
@@ -569,6 +572,9 @@ class ToolOrchestratorService:
             result = method(reason)
             # Возвращаем только response_to_user для совместимости с существующей логикой
             return result.get("response_to_user", "Ошибка при вызове менеджера")
+        
+        elif function_name == "get_full_history":
+            return method()
         
         else:
             return f"Ошибка: неизвестная функция '{function_name}'"
