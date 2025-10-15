@@ -142,10 +142,7 @@ get_my_appointments_declaration = FunctionDeclaration(
 # Определение инструмента для отмены записи по ID
 cancel_appointment_by_id_declaration = FunctionDeclaration(
     name="cancel_appointment_by_id",
-    description=(
-        "Отменяет запись по её ID. "
-        "ID записи должен быть определен на основе ранее показанного списка записей."
-    ),
+    description="Отменяет запись по её уникальному числовому ID.",
     parameters={
         "type": "object",
         "properties": {
@@ -165,10 +162,7 @@ cancel_appointment_by_id_declaration = FunctionDeclaration(
 # Определение инструмента для переноса записи по ID
 reschedule_appointment_by_id_declaration = FunctionDeclaration(
     name="reschedule_appointment_by_id",
-    description=(
-        "Переносит запись на новую дату и время по её ID. "
-        "ID записи должен быть определен на основе ранее показанного списка записей."
-    ),
+    description="Переносит запись на новую дату и время по её уникальному числовому ID.",
     parameters={
         "type": "object",
         "properties": {

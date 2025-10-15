@@ -333,6 +333,21 @@ class DialogService:
             tracer.add_event("🎨 Этап 2: Синтез ответа", "Начинаем второй вызов LLM")
             logger.info("🎨 Этап 2: Синтез финального ответа")
             
+            # Проверяем, есть ли в "памяти" записи и релевантна ли стадия
+            if stage in ['cancellation_request', 'rescheduling'] and 'appointments_in_focus' in session_context:
+                appointments_context = session_context['appointments_in_focus']
+                # Формируем строку контекста для LLM
+                context_str = "КОНТЕКСТ ЗАПИСЕЙ (ДЛЯ ТЕБЯ, НЕ ДЛЯ КЛИЕНТА): " + json.dumps(appointments_context, ensure_ascii=False)
+                
+                # Добавляем этот контекст к результатам инструментов
+                tool_results += "\n" + context_str
+                
+                tracer.add_event("🔍 Скрытый контекст добавлен", {
+                    "stage": stage,
+                    "appointments_count": len(appointments_context),
+                    "context": context_str
+                })
+            
             # Формируем промпт для синтеза
             synthesis_prompt = self.prompt_builder.build_synthesis_prompt(
                 history=dialog_history,
