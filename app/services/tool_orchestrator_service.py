@@ -3,7 +3,6 @@ import asyncio
 import json
 import re
 import google.generativeai as genai
-from google.generativeai import protos
 import logging
 from app.services.llm_service import LLMService
 from app.services.tool_service import ToolService
@@ -195,8 +194,8 @@ class ToolOrchestratorService:
                 elif hasattr(part, 'text') and part.text:
                     text_payload = part.text.strip()
                     
-                    # НОВАЯ ЛОГИКА: Проверяем, не является ли это JSON в Markdown-блоке
-                    cleaned_json_str = text_payload
+                    # УЛУЧШЕННАЯ ЛОГИКА: Надежный парсер JSON с очисткой
+                    cleaned_json_str = text_payload.strip()
                     
                     # Проверяем наличие Markdown-блока с JSON
                     if "```json" in cleaned_json_str or "```" in cleaned_json_str:
@@ -205,12 +204,17 @@ class ToolOrchestratorService:
                         if json_match:
                             cleaned_json_str = json_match.group(1).strip()
                     
+                    # Дополнительная очистка: удаляем возможные префиксы/суффиксы
+                    cleaned_json_str = cleaned_json_str.strip()
+                    if cleaned_json_str.startswith('json'):
+                        cleaned_json_str = cleaned_json_str[4:].strip()
+                    
                     # Пытаемся распарсить как JSON
                     try:
                         tool_calls_data = json.loads(cleaned_json_str)
                         
-                        # Проверяем, что это массив вызовов инструментов
-                        if isinstance(tool_calls_data, list):
+                        # Проверяем, что это непустой массив вызовов инструментов
+                        if isinstance(tool_calls_data, list) and len(tool_calls_data) > 0:
                             has_function_call = True
                             
                             # Обрабатываем каждый вызов инструмента
@@ -230,10 +234,21 @@ class ToolOrchestratorService:
                             iteration_log["response"] = f"JSON с {len(tool_calls_data)} вызовами инструментов"
                             logger.info(f"🔧 [JSON Tools] {len(tool_calls_data)} инструментов из JSON")
                             continue  # Переходим к обработке function_calls
+                        else:
+                            # Пустой список или не список - считаем финальным ответом
+                            has_text = True
+                            bot_response_text = text_payload
+                            iteration_log["response"] = text_payload
+                            logger.info(f"💬 [Answer] {bot_response_text[:140]}")
+                            break
                     
-                    except json.JSONDecodeError:
-                        # Это не JSON, продолжаем обычную обработку
-                        pass
+                    except json.JSONDecodeError as e:
+                        # Это не JSON, считаем финальным текстовым ответом
+                        has_text = True
+                        bot_response_text = text_payload
+                        iteration_log["response"] = text_payload
+                        logger.info(f"💬 [Answer] {bot_response_text[:140]}")
+                        break
                     
                     # Доп. обработка: парсим текстовый формат [TOOL: func(arg="val", ...)]
                     # Это нужно для провайдеров без нативного function_call (например, Yandex)
@@ -286,8 +301,9 @@ class ToolOrchestratorService:
                 try:
                     results = await asyncio.gather(*tasks, return_exceptions=True)
                     
-                    # Обрабатываем результаты
-                    function_response_parts = []
+                    # Формируем текстовое сообщение с результатами для LLM
+                    tool_results_message = []
+                    
                     for i, (function_call, result) in enumerate(zip(function_calls, results)):
                         function_name = function_call.name
                         function_args = dict(function_call.args)
@@ -336,24 +352,27 @@ class ToolOrchestratorService:
                             final_text, _ = await self.execute_tool_cycle(contact_prompt, history, user_message, user_id, tracer)
                             return final_text, debug_iterations
                         
-                        # Формируем ответ функции для отправки обратно в модель
-                        function_response_part = protos.Part(
-                            function_response=protos.FunctionResponse(
-                                name=function_name,
-                                response={"result": result}
-                            )
-                        )
-                        function_response_parts.append(function_response_part)
+                        # Формируем строковое представление результата для LLM
+                        result_str = str(result) if result is not None else "Результат не получен"
+                        tool_result_text = f"Результат вызова инструмента '{function_name}':\n{result_str}"
+                        tool_results_message.append(tool_result_text)
                     
-                    # Если это последняя итерация и LLM не вернул текст, 
-                    # попробуем принудительно запросить итоговый ответ
-                    if iteration == max_iterations - 1:
-                        # Добавляем явный запрос на формирование ответа
-                        current_message = function_response_parts + [
-                            protos.Part(text="Пожалуйста, сформируй итоговый ответ для пользователя на основе полученной информации.")
-                        ]
-                    else:
-                        current_message = function_response_parts
+                    # Объединяем все результаты в одно сообщение
+                    combined_results = "\n\n".join(tool_results_message)
+                    
+                    # Добавляем инструкцию для LLM
+                    final_instruction = "\n\nТы получил результаты от инструментов. Теперь, основываясь на этих данных, сформулируй финальный, вежливый и краткий ответ для клиента."
+                    
+                    # Формируем финальное сообщение для LLM
+                    current_message = combined_results + final_instruction
+                    
+                    if tracer:
+                        tracer.add_event(f"📤 Передача результатов в LLM", {
+                            "results_count": len(tool_results_message),
+                            "message_length": len(current_message),
+                            "iteration": iteration
+                        })
+                    
                     continue
                     
                 except Exception as e:

@@ -71,7 +71,8 @@ class DialogService:
         self.tool_service = ToolService(
             service_repository=self.service_repository,
             master_repository=self.master_repository,
-            appointment_service=self.appointment_service
+            appointment_service=self.appointment_service,
+            google_calendar_service=self.google_calendar_service
         )
         
         # Создаем экземпляр ToolOrchestratorService
