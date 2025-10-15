@@ -246,18 +246,31 @@ get_full_history_declaration = FunctionDeclaration(
 )
 
 
-# Создаем Tool объект, содержащий все наши функции
+# Разделяем инструменты на два набора согласно двухэтапной архитектуре
+
+# Инструменты для получения информации (разведывательные) - доступны на этапе планирования
+read_only_tools = [
+    get_all_services_declaration,
+    get_masters_for_service_declaration,
+    get_available_slots_declaration,
+    get_my_appointments_declaration,
+    get_full_history_declaration
+]
+
+# Инструменты для изменения данных (исполнительные) - доступны только на этапе синтеза
+write_tools = [
+    create_appointment_declaration,
+    cancel_appointment_by_id_declaration,
+    reschedule_appointment_by_id_declaration,
+    call_manager_declaration
+]
+
+# Создаем Tool объекты для каждого набора
+read_only_tools_obj = Tool(function_declarations=read_only_tools)
+write_tools_obj = Tool(function_declarations=write_tools)
+
+# Общий Tool объект для обратной совместимости (содержит все инструменты)
 salon_tools = Tool(
-    function_declarations=[
-        get_all_services_declaration,
-        get_masters_for_service_declaration,
-        get_available_slots_declaration,
-        create_appointment_declaration,
-        get_my_appointments_declaration,
-        cancel_appointment_by_id_declaration,
-        reschedule_appointment_by_id_declaration,
-        call_manager_declaration,
-        get_full_history_declaration
-    ]
+    function_declarations=read_only_tools + write_tools
 )
 

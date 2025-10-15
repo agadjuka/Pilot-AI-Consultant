@@ -7,7 +7,7 @@
 from typing import List, Dict, Optional
 from datetime import datetime
 from app.core.dialogue_pattern_loader import dialogue_patterns
-from app.services.tool_definitions import salon_tools
+from app.services.tool_definitions import read_only_tools, write_tools
 
 
 class PromptBuilderService:
@@ -101,6 +101,10 @@ class PromptBuilderService:
 # ДАННЫЕ, КОТОРЫЕ ТЫ ЗАПРОСИЛ(А) У СИСТЕМЫ
 {tool_results}
 
+# ДОСТУПНЫЕ ДЕЙСТВИЯ (исполнительные инструменты)
+Теперь, когда у тебя есть данные, ты можешь выполнить одно из следующих действий. Если действие необходимо, верни JSON с вызовом инструмента. Если нет — просто сформулируй ответ.
+{write_tools_summary}
+
 # РЕКОМЕНДАЦИИ ПО СТИЛЮ (для текущей ситуации)
 {stage_principles}
 
@@ -167,16 +171,19 @@ class PromptBuilderService:
         
         return "\n".join(formatted_history)
     
-    def _generate_tools_summary(self) -> str:
+    def _generate_tools_summary(self, tools_list: List) -> str:
         """
-        Генерирует краткое описание всех доступных инструментов.
+        Генерирует краткое описание указанного набора инструментов.
         
+        Args:
+            tools_list: Список FunctionDeclaration объектов
+            
         Returns:
             Отформатированная строка с описанием инструментов
         """
         tools_summary = ""
         
-        for func_decl in salon_tools.function_declarations:
+        for func_decl in tools_list:
             # Извлекаем параметры из схемы
             params = []
             if hasattr(func_decl, 'parameters') and func_decl.parameters:
@@ -239,6 +246,7 @@ class PromptBuilderService:
     ) -> str:
         """
         Формирует промпт для Этапа 1: Планирование.
+        Использует только read_only_tools (разведывательные инструменты).
         
         Args:
             history: История диалога
@@ -248,8 +256,8 @@ class PromptBuilderService:
         Returns:
             Промпт для планирования
         """
-        # Генерируем краткое описание инструментов
-        tools_summary = self._generate_tools_summary()
+        # Генерируем краткое описание только read-only инструментов
+        tools_summary = self._generate_tools_summary(read_only_tools)
         
         # Генерируем текущую дату и время
         current_datetime = self._generate_current_datetime()
@@ -283,6 +291,7 @@ class PromptBuilderService:
     ) -> str:
         """
         Формирует промпт для Этапа 2: Синтез финального ответа.
+        Использует write_tools (исполнительные инструменты) для возможных действий.
         
         Args:
             history: История диалога
@@ -302,11 +311,15 @@ class PromptBuilderService:
         # Форматируем историю диалога
         history_text = self._format_dialog_history(history)
         
+        # Генерируем описание write_tools для возможных действий
+        write_tools_summary = self._generate_tools_summary(write_tools)
+        
         # Собираем промпт по шаблону
         prompt = self.synthesis_template.format(
             history=history_text,
             user_message=user_message,
             tool_results=tool_results,
+            write_tools_summary=write_tools_summary,
             stage_principles=stage_principles
         )
         
