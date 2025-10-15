@@ -4,6 +4,8 @@ import google.generativeai as genai
 from google.generativeai import protos
 from datetime import datetime, timedelta
 import logging
+import json
+import re
 from app.repositories.dialog_history_repository import DialogHistoryRepository
 from app.repositories.service_repository import ServiceRepository
 from app.repositories.master_repository import MasterRepository
@@ -26,6 +28,7 @@ class DialogService:
     """
     Оркестратор диалоговой логики.
     Координирует работу между хранилищем истории диалогов и AI-моделью.
+    Реализует двухтактную архитектуру: Планирование -> Синтез.
     """
     
     # Размер окна контекста - последние N сообщений
@@ -74,11 +77,61 @@ class DialogService:
         # Формат: {user_id: [{"id": int, "details": str}, ...]}
         self.last_shown_appointments = {}
     
+    def _determine_stage(self, user_message: str, tool_calls: List[Dict]) -> str:
+        """
+        Простое определение стадии диалога на основе ключевых слов и выполненных инструментов.
+        
+        Args:
+            user_message: Сообщение пользователя
+            tool_calls: Список выполненных инструментов
+            
+        Returns:
+            ID стадии диалога
+        """
+        message_lower = user_message.lower()
+        
+        # Приветствие
+        if any(word in message_lower for word in ['привет', 'здравствуйте', 'добрый', 'доброе']):
+            return 'greeting'
+        
+        # Проверка доступности времени
+        if any(tool['tool_name'] == 'get_available_slots' for tool in tool_calls):
+            return 'availability_check'
+        
+        # Запись на услугу
+        if any(word in message_lower for word in ['записаться', 'запись', 'хочу', 'можно', 'возможно']):
+            if any(tool['tool_name'] == 'create_appointment' for tool in tool_calls):
+                return 'appointment_booking'
+            else:
+                return 'appointment_inquiry'
+        
+        # Отмена записи
+        if any(word in message_lower for word in ['отменить', 'отмена', 'отменить запись']):
+            return 'appointment_cancellation'
+        
+        # Информация об услугах
+        if any(tool['tool_name'] == 'get_services' for tool in tool_calls):
+            return 'service_inquiry'
+        
+        # Информация о мастерах
+        if any(tool['tool_name'] == 'get_masters' for tool in tool_calls):
+            return 'master_inquiry'
+        
+        # Благодарность
+        if any(word in message_lower for word in ['спасибо', 'благодарю', 'спасибо большое']):
+            return 'gratitude'
+        
+        # Конфликтная ситуация
+        if any(word in message_lower for word in ['жалоба', 'жалуюсь', 'недоволен', 'плохо', 'ужасно', 'кошмар']):
+            return 'conflict_escalation'
+        
+        # Fallback для неопределенных случаев
+        return 'fallback'
 
     async def process_user_message(self, user_id: int, text: str) -> str:
         """
-        Обрабатывает сообщение пользователя с использованием двухэтапной архитектуры:
-        1. Этап 1: Классификация стадии и планирование инструментов
+        Обрабатывает сообщение пользователя с использованием двухтактной архитектуры:
+        1. Этап 1: Планирование инструментов
         2. Этап 2: Синтез финального ответа
         
         Args:
@@ -120,91 +173,58 @@ class DialogService:
             )
             tracer.add_event("💾 Сообщение сохранено в БД", f"Роль: user, Текст: {text}")
             
-            # ЭТАП 1: Классификация и Планирование
-            tracer.add_event("🔍 Этап 1: Классификация и планирование", "Начинаем первый вызов LLM")
-            logger.info("🔍 Этап 1: Классификация и планирование")
+            # ЭТАП 1: Планирование
+            tracer.add_event("🔍 Этап 1: Планирование", "Начинаем первый вызов LLM")
+            logger.info("🔍 Этап 1: Планирование")
             
-            # Формируем промпт для классификации и планирования
-            classification_prompt = self.prompt_builder.build_classification_and_planning_prompt(
+            # Формируем промпт для планирования
+            planning_prompt = self.prompt_builder.build_planning_prompt(
                 history=dialog_history,
                 user_message=text
             )
             
-            tracer.add_event("📝 Промпт классификации сформирован", {
-                "prompt": classification_prompt,
-                "length": len(classification_prompt)
+            tracer.add_event("📝 Промпт планирования сформирован", {
+                "prompt": planning_prompt,
+                "length": len(planning_prompt)
             })
             
             # Создаем историю для первого вызова LLM
-            classification_history = [
+            planning_history = [
                 {
                     "role": "user",
-                    "parts": [{"text": classification_prompt}]
+                    "parts": [{"text": planning_prompt}]
                 }
             ]
             
-            # Первый вызов LLM для классификации и планирования
-            classification_response = await self.llm_service.generate_response(classification_history)
-            tracer.add_event("✅ Ответ классификации получен", f"Ответ: {classification_response}")
-            logger.info(f"🔍 Сырой ответ LLM: '{classification_response}'")
+            # Первый вызов LLM для планирования
+            planning_response = await self.llm_service.generate_response(planning_history)
+            tracer.add_event("✅ Ответ планирования получен", f"Ответ: {planning_response}")
+            logger.info(f"🔍 Сырой ответ LLM: '{planning_response}'")
             
-            # Парсим JSON-ответ
+            # Парсим JSON-ответ с инструментами
+            tool_calls = []
             try:
-                import json
-                import re
-                
                 # Удаляем markdown блоки если они есть
-                cleaned_response = classification_response.strip()
+                cleaned_response = planning_response.strip()
                 if cleaned_response.startswith('```') and cleaned_response.endswith('```'):
                     cleaned_response = cleaned_response[3:-3].strip()
                 elif cleaned_response.startswith('```json'):
                     cleaned_response = cleaned_response[7:-3].strip()
                 
-                parsed_response = json.loads(cleaned_response)
-                stage = parsed_response.get('stage')
-                tool_calls = parsed_response.get('tool_calls', [])
+                tool_calls = json.loads(cleaned_response)
                 
                 tracer.add_event("📊 Результат парсинга", {
-                    "stage": stage,
                     "tool_calls": tool_calls,
                     "tool_calls_count": len(tool_calls)
                 })
-                logger.info(f"🎯 Определена стадия: '{stage}', запланировано инструментов: {len(tool_calls)}")
+                logger.info(f"🎯 Запланировано инструментов: {len(tool_calls)}")
                 
             except json.JSONDecodeError as e:
-                logger.error(f"❌ Ошибка парсинга JSON ответа классификации: {e}")
-                logger.error(f"❌ Сырой ответ: '{classification_response}'")
+                logger.error(f"❌ Ошибка парсинга JSON ответа планирования: {e}")
+                logger.error(f"❌ Сырой ответ: '{planning_response}'")
                 tracer.add_event("❌ Ошибка парсинга JSON", f"Ошибка: {str(e)}")
-                # Fallback: используем стадию fallback
-                stage = 'fallback'
+                # Fallback: пустой список инструментов
                 tool_calls = []
-            
-            # Быстрый путь для конфликтных ситуаций
-            if stage == 'conflict_escalation':
-                logger.warning(f"⚠️ КОНФЛИКТНАЯ СТАДИЯ: Немедленная эскалация на менеджера")
-                
-                tracer.add_event("⚠️ Конфликтная ситуация", "Эскалация на менеджера")
-                
-                # Вызываем менеджера с текстом сообщения пользователя как причиной
-                manager_response = self.tool_service.call_manager(text)
-                
-                tracer.add_event("👨‍💼 Вызов менеджера", f"Ответ: {manager_response['response_to_user']}")
-                logger.info(f"👨‍💼 Действие: эскалация на менеджера")
-                
-                # Сохраняем ответ бота в БД
-                self.repository.add_message(
-                    user_id=user_id,
-                    role="model",
-                    message_text=manager_response['response_to_user']
-                )
-                
-                tracer.add_event("💾 Ответ менеджера сохранен", f"Текст: {manager_response['response_to_user']}")
-                
-                # Логируем завершение обработки
-                log_dialog_end(logger, manager_response['response_to_user'])
-                
-                # Возвращаем ответ пользователю и завершаем обработку
-                return manager_response['response_to_user']
             
             # Выполнение инструментов (если они запланированы)
             tool_results = ""
@@ -235,14 +255,48 @@ class DialogService:
                 tracer.add_event("ℹ️ Инструменты не требуются", "Пустой список инструментов")
                 logger.info("ℹ️ Инструменты не требуются")
             
+            # Определяем стадию диалога
+            stage = self._determine_stage(text, tool_calls)
+            tracer.add_event("🎯 Стадия определена", f"Стадия: {stage}")
+            logger.info(f"🎯 Определена стадия: '{stage}'")
+            
+            # Быстрый путь для конфликтных ситуаций
+            if stage == 'conflict_escalation':
+                logger.warning(f"⚠️ КОНФЛИКТНАЯ СТАДИЯ: Немедленная эскалация на менеджера")
+                
+                tracer.add_event("⚠️ Конфликтная ситуация", "Эскалация на менеджера")
+                
+                # Вызываем менеджера с текстом сообщения пользователя как причиной
+                manager_response = self.tool_service.call_manager(text)
+                
+                tracer.add_event("👨‍💼 Вызов менеджера", f"Ответ: {manager_response['response_to_user']}")
+                logger.info(f"👨‍💼 Действие: эскалация на менеджера")
+                
+                # Сохраняем ответ бота в БД
+                self.repository.add_message(
+                    user_id=user_id,
+                    role="model",
+                    message_text=manager_response['response_to_user']
+                )
+                
+                tracer.add_event("💾 Ответ менеджера сохранен", f"Текст: {manager_response['response_to_user']}")
+                
+                # Логируем завершение обработки
+                log_dialog_end(logger, manager_response['response_to_user'])
+                
+                # Возвращаем ответ пользователю и завершаем обработку
+                return manager_response['response_to_user']
+            
             # ЭТАП 2: Синтез финального ответа
             tracer.add_event("🎨 Этап 2: Синтез ответа", "Начинаем второй вызов LLM")
             logger.info("🎨 Этап 2: Синтез финального ответа")
             
             # Формируем промпт для синтеза
             synthesis_prompt = self.prompt_builder.build_synthesis_prompt(
-                stage=stage,
+                history=dialog_history,
+                user_message=text,
                 tool_results=tool_results,
+                stage=stage,
                 client_name=client.first_name,
                 client_phone_saved=bool(client.phone_number)
             )
@@ -307,14 +361,3 @@ class DialogService:
             Количество удаленных записей
         """
         return self.repository.clear_user_history(user_id)
-    
-    
-    
-    
-    
-    
-
-
-
-
-

@@ -1,7 +1,7 @@
 """
 Сервис для построения промптов.
 Отвечает за формирование всех типов промптов для диалоговой системы.
-Реализует двухэтапную архитектуру: Классификация+Планирование -> Синтез.
+Реализует двухтактную архитектуру: Планирование -> Синтез.
 """
 
 from typing import List, Dict, Optional
@@ -14,7 +14,7 @@ class PromptBuilderService:
     """
     Сервис для построения промптов различных типов.
     Централизует всю логику формирования текстовых инструкций для LLM.
-    Реализует двухэтапную архитектуру обработки диалогов.
+    Реализует двухтактную архитектуру обработки диалогов.
     """
     
     def __init__(self):
@@ -24,63 +24,107 @@ class PromptBuilderService:
         """
         self.dialogue_patterns = dialogue_patterns
         
-        # Шаблон для Этапа 1: Классификация и Планирование
-        self.classification_and_planning_template = """
+        # Шаблон для Этапа 1: Планирование
+        self.planning_template = """
 # ЗАДАЧА
-Тебе даны история диалога и новое сообщение клиента. Выполни ДВЕ задачи:
-1. **Классифицируй** сообщение, присвоив ему ОДНУ из следующих стадий: {stage_list}.
-2. **Спланируй** действия, выбрав один или несколько инструментов из списка ниже, которые необходимы для ответа.
+Ты — умный планировщик для AI-ассистента салона красоты. Твоя задача — проанализировать запрос клиента и историю диалога, чтобы решить, какие инструменты нужно вызвать для сбора ВСЕЙ необходимой информации для полного ответа.
 
 # ПРАВИЛА
-- Если для ответа на запрос нужна информация (цена, время, услуги), ты ДОЛЖЕН выбрать инструменты.
-- Если информация не нужна (на "привет"), верни пустой список инструментов.
+- Если для ответа нужна информация (цена, свободное время, список услуг и т.д.), ты ДОЛЖЕН выбрать один или несколько инструментов.
+- Если информация не нужна (например, на простое "спасибо"), верни пустой список инструментов.
+- Думай на шаг вперед. Если клиент хочет записаться, ему, вероятно, понадобится и информация об услуге, и свободное время.
 
-# ИНСТРУМЕНТЫ
+# ИНСТРУМЕНТЫ (твой API)
 {tools_summary}
 
-# ИСТОРИЯ
+# ТЕКУЩАЯ ДАТА
+{current_datetime}
+
+# ИСТОРИЯ ДИАЛОГА
 {history}
 
-# НОВОЕ СООБЩЕНИЕ
+# НОВОЕ СООБЩЕНИЕ КЛИЕНТА
 {user_message}
 
 # ФОРМАТ ОТВЕТА
-Ответь ТОЛЬКО в формате JSON, содержащем два ключа: 'stage' и 'tool_calls'.
-Пример: {{"stage": "availability_check", "tool_calls": [{{"tool_name": "get_available_slots", "parameters": {{"date": "завтра"}}}}]}}
-
-ВАЖНО: Твой ответ должен быть ТОЛЬКО валидным JSON без дополнительного текста!
+Ответь ТОЛЬКО JSON-массивом с вызовами инструментов. Никакого другого текста.
+Пример: `[{{"tool_name": "get_available_slots", "parameters": {{"service_name": "маникюр"}}}}]`
 """
 
-        # Шаблон для Этапа 2: Синтез финального ответа
+        # Шаблон для Этапа 2: Синтез ответа
         self.synthesis_template = """
 # РОЛЬ И СТИЛЬ
-Ты — Кэт, дружелюбный и профессиональный AI-администратор салона красоты.
+Ты — Кэт, дружелюбный и профессиональный AI-администратор салона красоты. Общайся на "вы", кратко, по-человечески. Используй эмодзи сдержанно.
 
-# СТИЛЬ ОБЩЕНИЯ
-- Всегда общайся на "вы".
-- Отвечай кратко и по-человечески, как в мессенджере.
-- Используй эмодзи сдержанно: при приветствии и после успешной записи.
-- Если для ответа не нужна внешняя информация (например, на "спасибо"), просто вежливо ответь.
+# ИСТОРИЯ ДИАЛОГА
+{history}
 
-# РЕКОМЕНДАЦИИ ДЛЯ ТЕКУЩЕЙ СИТУАЦИИ (СТАДИЯ: {stage_name})
-## Принципы:
-{stage_principles}
-## Примеры:
-{stage_examples}
+# ЗАПРОС КЛИЕНТА
+{user_message}
 
-# ПОЛУЧЕННЫЕ ДАННЫЕ ОТ ИНСТРУМЕНТОВ
+# ДАННЫЕ, КОТОРЫЕ ТЫ ЗАПРОСИЛ(А) У СИСТЕМЫ
 {tool_results}
 
+# РЕКОМЕНДАЦИИ ПО СТИЛЮ (для текущей ситуации)
+{stage_principles}
+
 # ТВОЯ ЗАДАЧА
-Основываясь на своей роли, рекомендациях и полученных данных, сформулируй финальный, вежливый и краткий ответ для клиента.
+Основываясь на своей роли, полученных данных и рекомендациях по стилю, сформулируй финальный, вежливый и исчерпывающий ответ для клиента.
 """
+    
+    def _generate_current_datetime(self) -> str:
+        """
+        Генерирует строку с текущей датой и временем для контекста LLM.
+        
+        Returns:
+            Строка с текущей датой и временем в читаемом формате
+        """
+        now = datetime.now()
+        
+        # Русские названия дней недели
+        weekdays = {
+            0: "Понедельник",
+            1: "Вторник", 
+            2: "Среда",
+            3: "Четверг",
+            4: "Пятница",
+            5: "Суббота",
+            6: "Воскресенье"
+        }
+        
+        weekday = weekdays[now.weekday()]
+        date_str = now.strftime("%d.%m.%Y")
+        time_str = now.strftime("%H:%M")
+        
+        return f"Сегодня: {weekday}, {date_str}, время: {time_str}"
+    
+    def _format_dialog_history(self, history: List[Dict]) -> str:
+        """
+        Форматирует историю диалога в читаемую строку для LLM.
+        
+        Args:
+            history: Список сообщений диалога
+            
+        Returns:
+            Отформатированная строка с историей диалога
+        """
+        if not history:
+            return "История диалога пуста"
+        
+        formatted_history = []
+        for msg in history:
+            role = "Пользователь" if msg["role"] == "user" else "Ассистент"
+            content = msg["parts"][0]["text"]
+            formatted_history.append(f"{role}: {content}")
+        
+        return "\n".join(formatted_history)
     
     def _generate_tools_summary(self) -> str:
         """
         Генерирует краткое описание всех доступных инструментов.
         
         Returns:
-            Строка с кратким описанием инструментов
+            Отформатированная строка с описанием инструментов
         """
         tools_summary = ""
         
@@ -139,60 +183,35 @@ class PromptBuilderService:
         
         return result
     
-    def _format_examples(self, examples: List[Dict]) -> str:
-        """
-        Форматирует примеры стадии в читаемую строку.
-        
-        Args:
-            examples: Список примеров из dialogue_patterns.json
-            
-        Returns:
-            Отформатированная строка с примерами
-        """
-        if not examples:
-            return "Примеры не предоставлены."
-        
-        formatted_examples = []
-        for i, example in enumerate(examples, 1):
-            user_msg = example.get('user', '')
-            assistant_msg = example.get('assistant', '')
-            formatted_examples.append(f"{i}. Пользователь: \"{user_msg}\"\n   Ответ: \"{assistant_msg}\"")
-        
-        return "\n\n".join(formatted_examples)
-    
-    def build_classification_and_planning_prompt(
+    def build_planning_prompt(
         self, 
         history: List[Dict], 
         user_message: str
     ) -> str:
         """
-        Формирует промпт для Этапа 1: Классификация и Планирование.
+        Формирует промпт для Этапа 1: Планирование.
         
         Args:
             history: История диалога
             user_message: Новое сообщение пользователя
             
         Returns:
-            Промпт для классификации и планирования
+            Промпт для планирования
         """
-        # Получаем список доступных стадий
-        stages_list = ", ".join(list(self.dialogue_patterns.keys()))
-        
         # Генерируем краткое описание инструментов
         tools_summary = self._generate_tools_summary()
         
-        # Форматируем историю для промпта
-        history_text = ""
-        for msg in history:
-            role = "Пользователь" if msg["role"] == "user" else "Ассистент"
-            content = msg["parts"][0]["text"]
-            history_text += f"{role}: {content}\n"
+        # Генерируем текущую дату и время
+        current_datetime = self._generate_current_datetime()
+        
+        # Форматируем историю диалога
+        history_text = self._format_dialog_history(history)
         
         # Собираем промпт по шаблону
-        prompt = self.classification_and_planning_template.format(
-            stage_list=stages_list,
+        prompt = self.planning_template.format(
             tools_summary=tools_summary,
-            history=history_text.strip(),
+            current_datetime=current_datetime,
+            history=history_text,
             user_message=user_message
         )
         
@@ -200,8 +219,10 @@ class PromptBuilderService:
     
     def build_synthesis_prompt(
         self, 
-        stage: str, 
+        history: List[Dict],
+        user_message: str,
         tool_results: str,
+        stage: str,
         client_name: Optional[str] = None,
         client_phone_saved: bool = False
     ) -> str:
@@ -209,8 +230,10 @@ class PromptBuilderService:
         Формирует промпт для Этапа 2: Синтез финального ответа.
         
         Args:
-            stage: ID стадии диалога
+            history: История диалога
+            user_message: Новое сообщение пользователя
             tool_results: Результаты выполнения инструментов
+            stage: ID стадии диалога
             client_name: Имя клиента
             client_phone_saved: Сохранен ли телефон клиента
             
@@ -219,17 +242,17 @@ class PromptBuilderService:
         """
         # Получаем данные стадии из dialogue_patterns.json
         stage_data = self.dialogue_patterns.get(stage, {})
-        stage_name = stage_data.get('description', stage)
         stage_principles = self._format_principles(stage_data.get('principles', []), client_name, client_phone_saved)
-        stage_examples = self._format_examples(stage_data.get('examples', []))
+        
+        # Форматируем историю диалога
+        history_text = self._format_dialog_history(history)
         
         # Собираем промпт по шаблону
         prompt = self.synthesis_template.format(
-            stage_name=stage_name,
-            stage_principles=stage_principles,
-            stage_examples=stage_examples,
-            tool_results=tool_results
+            history=history_text,
+            user_message=user_message,
+            tool_results=tool_results,
+            stage_principles=stage_principles
         )
         
         return prompt
-    
