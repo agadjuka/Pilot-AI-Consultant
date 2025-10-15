@@ -130,8 +130,18 @@ class DialogService:
             tracer.add_event("🔍 Этап 1: Планирование", "Начинаем первый вызов LLM")
             logger.info("🔍 Этап 1: Планирование")
             
-            # Инициализируем скрытый контекст
+            # Формируем скрытый контекст ДО планирования
             hidden_context = ""
+            
+            # Проверяем, есть ли записи в памяти для формирования скрытого контекста
+            if 'appointments_in_focus' in session_context:
+                appointments_data = session_context.get('appointments_in_focus', [])
+                if appointments_data:
+                    hidden_context = "# СКРЫТЫЙ КОНТЕКСТ ЗАПИСЕЙ (ИСПОЛЬЗУЙ ДЛЯ ИЗВЛЕЧЕНИЯ ID):\n" + json.dumps(appointments_data, ensure_ascii=False)
+                    tracer.add_event("🔍 Скрытый контекст сформирован ДО планирования", {
+                        "appointments_count": len(appointments_data),
+                        "context": hidden_context
+                    })
             
             # Формируем промпт для планирования
             planning_prompt = self.prompt_builder.build_planning_prompt(
@@ -254,7 +264,7 @@ class DialogService:
                 tracer.add_event("ℹ️ Инструменты не требуются", "Пустой список инструментов")
                 logger.info("ℹ️ Инструменты не требуются")
             
-            # Логика скрытого контекста: формируем контекст на основе стадии, определенной LLM
+            # Логика скрытого контекста: получаем записи если их нет в памяти для стадий отмены/переноса
             if stage in ['cancellation_request', 'rescheduling']:
                 # Если нет записей в памяти, получаем их
                 if 'appointments_in_focus' not in session_context:
@@ -266,10 +276,11 @@ class DialogService:
                         "appointments": appointments_data
                     })
                 
+                # Обновляем скрытый контекст с актуальными данными
                 appointments_data = session_context.get('appointments_in_focus', [])
                 if appointments_data:
                     hidden_context = "# СКРЫТЫЙ КОНТЕКСТ ЗАПИСЕЙ (ИСПОЛЬЗУЙ ДЛЯ ИЗВЛЕЧЕНИЯ ID):\n" + json.dumps(appointments_data, ensure_ascii=False)
-                    tracer.add_event("🔍 Скрытый контекст сформирован", {
+                    tracer.add_event("🔍 Скрытый контекст обновлен", {
                         "stage": stage,
                         "appointments_count": len(appointments_data),
                         "context": hidden_context
