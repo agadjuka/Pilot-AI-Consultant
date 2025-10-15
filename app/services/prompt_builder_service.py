@@ -29,24 +29,25 @@ class PromptBuilderService:
 - Всегда общайся на "вы".
 - Отвечай кратко и по-человечески, как в мессенджере.
 - Используй эмодзи сдержанно: при приветствии и после успешной записи.
-- Если для ответа не нужна внешняя информация (например, на "привет" или "спасибо"), просто вежливо ответь, поддерживая диалог.
+- Если для ответа не нужна внешняя информация (например, на "спасибо"), просто вежливо ответь.
 
-# РАБОТА С ИНФОРМАЦИЕЙ
-- Твоя главная задача — предоставлять точную информацию.
-- **Никогда не выдумывай** цены, услуги, имена мастеров или свободное время.
-- Если для ответа на вопрос клиента тебе нужна информация, которой у тебя нет, **ты ДОЛЖЕН использовать один или несколько инструментов**.
-
-# ПРАВИЛА ИСПОЛЬЗОВАНИЯ ИНСТРУМЕНТОВ
-- Если ты решил использовать инструмент(ы), твой ответ должен быть ТОЛЬКО JSON-массивом с вызовами. Никакого другого текста.
-- Ты можешь вызывать несколько инструментов одновременно.
-- Формат: `[{{"tool_name": "...", "parameters": {{"...": "..."}}}}]`
-- Если после анализа запроса ты понимаешь, что никакой инструмент не нужен, просто ответь текстом в соответствии со своим стилем общения.
+# РАБОТА С ИНФОРМАЦИЕЙ И ИНСТРУМЕНТАМИ
+- Твоя главная задача — предоставлять точную информацию. **Никогда не выдумывай** цены, время или услуги.
+- Если для ответа нужна информация, **ты ДОЛЖЕН использовать один или несколько инструментов**.
+- **Правила вызова:** Если ты решил использовать инструмент(ы), твой ответ должен быть ТОЛЬКО JSON-массивом с вызовами. В противном случае — отвечай обычным текстом.
+- Формат вызова: `[{{"tool_name": "...", "parameters": {{"...": "..."}}}}]`
 
 # ДОСТУПНЫЕ ИНСТРУМЕНТЫ
 {tools_summary}
 
-# РЕКОМЕНДАЦИИ ДЛЯ ТЕКУЩЕЙ СИТУАЦИИ
+# РЕКОМЕНДАЦИИ И ПРИМЕРЫ ДЛЯ ТЕКУЩЕЙ СИТУАЦИИ (СТАДИЯ: {stage_name})
+## Принципы:
 {stage_principles}
+## Примеры:
+{stage_examples}
+
+# КОНТЕКСТ ДИАЛОГА
+{dialog_context}
 """
     
     def _generate_tools_summary(self) -> str:
@@ -80,31 +81,20 @@ class PromptBuilderService:
         
         return tools_summary.strip()
     
-    def _get_stage_principles(self, stage: str, client_name: Optional[str] = None, client_phone_saved: bool = False) -> str:
+    def _format_principles(self, principles: List[str], client_name: Optional[str] = None, client_phone_saved: bool = False) -> str:
         """
-        Получает принципы для текущей стадии диалога.
+        Форматирует принципы стадии в читаемую строку.
         
         Args:
-            stage: ID стадии диалога
+            principles: Список принципов из dialogue_patterns.json
             client_name: Имя клиента
             client_phone_saved: Сохранен ли телефон клиента
             
         Returns:
-            Строка с принципами для текущей стадии
+            Отформатированная строка с принципами
         """
-        # Базовые принципы для всех стадий
-        base_principles = "Будь вежливым, профессиональным и полезным. Всегда предоставляй точную информацию."
-        
-        # Специфичные принципы для разных стадий
-        stage_specific = {
-            "greeting": "Поприветствуй клиента дружелюбно и предложи помощь. Используй эмодзи приветствия.",
-            "service_inquiry": "Предоставь полную информацию об услугах. Если клиент спрашивает о конкретной услуге, покажи её детали.",
-            "master_inquiry": "Покажи мастеров для выбранной услуги. Если услуга не выбрана, сначала уточни предпочтения.",
-            "time_inquiry": "Покажи доступное время для записи. Если времени нет, предложи альтернативные даты.",
-            "appointment_creation": "Создай запись с указанными параметрами. Если данных недостаточно, уточни их.",
-            "appointment_management": "Помоги с управлением записями - покажи, отмени или перенеси.",
-            "conflict_escalation": "Сохраняй спокойствие, извинись и передай ситуацию менеджеру."
-        }
+        if not principles:
+            return "Будь вежливым, профессиональным и полезным. Всегда предоставляй точную информацию."
         
         # Добавляем информацию о клиенте, если она есть
         client_info = ""
@@ -113,9 +103,38 @@ class PromptBuilderService:
         if client_phone_saved:
             client_info += " Телефон клиента сохранен в базе данных."
         
-        # Возвращаем принципы для текущей стадии
-        stage_principle = stage_specific.get(stage, base_principles)
-        return f"{stage_principle}{client_info}"
+        # Форматируем принципы в список
+        formatted_principles = []
+        for principle in principles:
+            formatted_principles.append(f"- {principle}")
+        
+        result = "\n".join(formatted_principles)
+        if client_info:
+            result += f"\n\nДополнительная информация:{client_info}"
+        
+        return result
+    
+    def _format_examples(self, examples: List[Dict]) -> str:
+        """
+        Форматирует примеры стадии в читаемую строку.
+        
+        Args:
+            examples: Список примеров из dialogue_patterns.json
+            
+        Returns:
+            Отформатированная строка с примерами
+        """
+        if not examples:
+            return "Примеры не предоставлены."
+        
+        formatted_examples = []
+        for i, example in enumerate(examples, 1):
+            user_msg = example.get('user', '')
+            assistant_msg = example.get('assistant', '')
+            formatted_examples.append(f"{i}. Пользователь: \"{user_msg}\"\n   Ответ: \"{assistant_msg}\"")
+        
+        return "\n\n".join(formatted_examples)
+    
     
     def build_classification_prompt(self, stages_list: str, history: List[Dict], user_message: str) -> str:
         """
@@ -148,7 +167,7 @@ class PromptBuilderService:
     ) -> str:
         """
         Формирует основной промпт для генерации ответа на основе стадии диалога.
-        Использует новый гибридный подход.
+        Использует новый гибридный подход с принципами и примерами из dialogue_patterns.json.
         
         Args:
             stage: ID стадии диалога
@@ -163,13 +182,19 @@ class PromptBuilderService:
         # Генерируем краткое описание инструментов
         tools_summary = self._generate_tools_summary()
         
-        # Получаем принципы для текущей стадии
-        stage_principles = self._get_stage_principles(stage, client_name, client_phone_saved)
+        # Получаем данные стадии из dialogue_patterns.json
+        stage_data = self.dialogue_patterns.get(stage, {})
+        stage_name = stage_data.get('description', stage)
+        stage_principles = self._format_principles(stage_data.get('principles', []), client_name, client_phone_saved)
+        stage_examples = self._format_examples(stage_data.get('examples', []))
         
         # Собираем промпт по новому шаблону
         system_prompt = self.system_prompt_template.format(
             tools_summary=tools_summary,
-            stage_principles=stage_principles
+            stage_name=stage_name,
+            stage_principles=stage_principles,
+            stage_examples=stage_examples,
+            dialog_context=dialog_context
         )
         
         return system_prompt
@@ -195,13 +220,19 @@ class PromptBuilderService:
         # Генерируем краткое описание инструментов
         tools_summary = self._generate_tools_summary()
         
-        # Получаем базовые принципы для fallback режима
-        stage_principles = self._get_stage_principles("greeting", client_name, client_phone_saved)
+        # Получаем данные стадии fallback из dialogue_patterns.json
+        stage_data = self.dialogue_patterns.get('fallback', {})
+        stage_name = stage_data.get('description', 'fallback')
+        stage_principles = self._format_principles(stage_data.get('principles', []), client_name, client_phone_saved)
+        stage_examples = self._format_examples(stage_data.get('examples', []))
         
         # Собираем промпт по новому шаблону
         system_prompt = self.system_prompt_template.format(
             tools_summary=tools_summary,
-            stage_principles=stage_principles
+            stage_name=stage_name,
+            stage_principles=stage_principles,
+            stage_examples=stage_examples,
+            dialog_context=dialog_context
         )
         
         return system_prompt
