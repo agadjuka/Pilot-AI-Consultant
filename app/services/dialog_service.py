@@ -203,6 +203,7 @@ class DialogService:
             
             # Парсим JSON-ответ с инструментами
             tool_calls = []
+            stage = 'fallback'  # Стадия по умолчанию
             try:
                 # Удаляем markdown блоки если они есть
                 cleaned_response = planning_response.strip()
@@ -211,13 +212,26 @@ class DialogService:
                 elif cleaned_response.startswith('```json'):
                     cleaned_response = cleaned_response[7:-3].strip()
                 
-                tool_calls = json.loads(cleaned_response)
+                parsed_response = json.loads(cleaned_response)
+                
+                # Проверяем формат ответа
+                if isinstance(parsed_response, dict):
+                    # Новый формат: {"stage": "...", "tool_calls": [...]}
+                    stage = parsed_response.get('stage', 'fallback')
+                    tool_calls = parsed_response.get('tool_calls', [])
+                elif isinstance(parsed_response, list):
+                    # Старый формат: [{"tool_name": "...", "parameters": {...}}]
+                    tool_calls = parsed_response
+                    stage = self._determine_stage(text, tool_calls)
                 
                 tracer.add_event("📊 Результат парсинга", {
+                    "stage": stage,
                     "tool_calls": tool_calls,
-                    "tool_calls_count": len(tool_calls)
+                    "tool_calls_count": len(tool_calls),
+                    "tool_calls_types": [type(tc).__name__ for tc in tool_calls] if tool_calls else []
                 })
-                logger.info(f"🎯 Запланировано инструментов: {len(tool_calls)}")
+                logger.info(f"🎯 Определена стадия: '{stage}', запланировано инструментов: {len(tool_calls)}")
+                logger.info(f"🔍 Типы элементов tool_calls: {[type(tc).__name__ for tc in tool_calls] if tool_calls else 'пусто'}")
                 
             except json.JSONDecodeError as e:
                 logger.error(f"❌ Ошибка парсинга JSON ответа планирования: {e}")
@@ -225,6 +239,7 @@ class DialogService:
                 tracer.add_event("❌ Ошибка парсинга JSON", f"Ошибка: {str(e)}")
                 # Fallback: пустой список инструментов
                 tool_calls = []
+                stage = 'fallback'
             
             # Выполнение инструментов (если они запланированы)
             tool_results = ""
@@ -234,8 +249,24 @@ class DialogService:
                 
                 # Выполняем каждый инструмент
                 for tool_call in tool_calls:
+                    # Проверяем формат tool_call
+                    if isinstance(tool_call, str):
+                        logger.warning(f"⚠️ Получена строка вместо объекта инструмента: '{tool_call}'")
+                        tracer.add_event("⚠️ Неверный формат инструмента", f"Получена строка: {tool_call}")
+                        continue
+                    
+                    if not isinstance(tool_call, dict):
+                        logger.warning(f"⚠️ Неверный тип инструмента: {type(tool_call)}, значение: {tool_call}")
+                        tracer.add_event("⚠️ Неверный тип инструмента", f"Тип: {type(tool_call)}, Значение: {tool_call}")
+                        continue
+                    
                     tool_name = tool_call.get('tool_name')
                     parameters = tool_call.get('parameters', {})
+                    
+                    if not tool_name:
+                        logger.warning(f"⚠️ Отсутствует tool_name в инструменте: {tool_call}")
+                        tracer.add_event("⚠️ Отсутствует tool_name", f"Инструмент: {tool_call}")
+                        continue
                     
                     tracer.add_event(f"🔧 Выполнение инструмента", f"Инструмент: {tool_name}, Параметры: {parameters}")
                     
@@ -255,10 +286,7 @@ class DialogService:
                 tracer.add_event("ℹ️ Инструменты не требуются", "Пустой список инструментов")
                 logger.info("ℹ️ Инструменты не требуются")
             
-            # Определяем стадию диалога
-            stage = self._determine_stage(text, tool_calls)
-            tracer.add_event("🎯 Стадия определена", f"Стадия: {stage}")
-            logger.info(f"🎯 Определена стадия: '{stage}'")
+            # Стадия уже определена в парсинге, дополнительная обработка не нужна
             
             # Быстрый путь для конфликтных ситуаций
             if stage == 'conflict_escalation':
