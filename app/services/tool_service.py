@@ -249,6 +249,80 @@ class ToolService:
             new_time=new_time
         )
 
+    async def execute_tool(self, tool_name: str, parameters: dict, user_id: int) -> str:
+        """
+        Выполняет указанный инструмент с заданными параметрами.
+        
+        Args:
+            tool_name: Название инструмента для выполнения
+            parameters: Параметры для инструмента
+            user_id: ID пользователя Telegram
+            
+        Returns:
+            Результат выполнения инструмента в виде строки
+            
+        Raises:
+            ValueError: Если инструмент не найден
+        """
+        try:
+            if tool_name == "get_all_services":
+                return self.get_all_services()
+            
+            elif tool_name == "get_masters_for_service":
+                service_name = parameters.get("service_name", "")
+                return self.get_masters_for_service(service_name)
+            
+            elif tool_name == "get_available_slots":
+                service_name = parameters.get("service_name", "")
+                date = parameters.get("date", "")
+                return self.get_available_slots(service_name, date)
+            
+            elif tool_name == "create_appointment":
+                master_name = parameters.get("master_name", "")
+                service_name = parameters.get("service_name", "")
+                date = parameters.get("date", "")
+                time = parameters.get("time", "")
+                client_name = parameters.get("client_name", "")
+                return self.create_appointment(master_name, service_name, date, time, client_name, user_id)
+            
+            elif tool_name == "call_manager":
+                reason = parameters.get("reason", "")
+                result = self.call_manager(reason)
+                return result.get("response_to_user", "Менеджер уведомлен")
+            
+            elif tool_name == "get_my_appointments":
+                appointments = self.get_my_appointments(user_id)
+                if not appointments:
+                    return "У вас нет предстоящих записей."
+                result = "Ваши предстоящие записи:\n"
+                for appointment in appointments:
+                    result += f"- {appointment['details']}\n"
+                return result
+            
+            elif tool_name == "cancel_appointment_by_id":
+                appointment_id = parameters.get("appointment_id")
+                if appointment_id is None:
+                    return "Ошибка: не указан ID записи для отмены"
+                return self.cancel_appointment_by_id(appointment_id)
+            
+            elif tool_name == "reschedule_appointment_by_id":
+                appointment_id = parameters.get("appointment_id")
+                new_date = parameters.get("new_date", "")
+                new_time = parameters.get("new_time", "")
+                if appointment_id is None:
+                    return "Ошибка: не указан ID записи для переноса"
+                return self.reschedule_appointment_by_id(appointment_id, new_date, new_time)
+            
+            elif tool_name == "get_full_history":
+                return self.get_full_history()
+            
+            else:
+                raise ValueError(f"Неизвестный инструмент: {tool_name}")
+                
+        except Exception as e:
+            logger.error(f"Ошибка выполнения инструмента {tool_name}: {e}")
+            return f"Ошибка выполнения {tool_name}: {str(e)}"
+
     def get_full_history(self) -> str:
         """
         Получает полную историю диалога для анализа контекста.

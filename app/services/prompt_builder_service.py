@@ -1,6 +1,7 @@
 """
 Сервис для построения промптов.
 Отвечает за формирование всех типов промптов для диалоговой системы.
+Реализует двухэтапную архитектуру: Классификация+Планирование -> Синтез.
 """
 
 from typing import List, Dict, Optional
@@ -13,6 +14,7 @@ class PromptBuilderService:
     """
     Сервис для построения промптов различных типов.
     Централизует всю логику формирования текстовых инструкций для LLM.
+    Реализует двухэтапную архитектуру обработки диалогов.
     """
     
     def __init__(self):
@@ -21,8 +23,37 @@ class PromptBuilderService:
         Загружает паттерны диалогов из конфигурации.
         """
         self.dialogue_patterns = dialogue_patterns
-        self.system_prompt_template = """
-# РОЛЬ
+        
+        # Шаблон для Этапа 1: Классификация и Планирование
+        self.classification_and_planning_template = """
+# ЗАДАЧА
+Тебе даны история диалога и новое сообщение клиента. Выполни ДВЕ задачи:
+1. **Классифицируй** сообщение, присвоив ему ОДНУ из следующих стадий: {stage_list}.
+2. **Спланируй** действия, выбрав один или несколько инструментов из списка ниже, которые необходимы для ответа.
+
+# ПРАВИЛА
+- Если для ответа на запрос нужна информация (цена, время, услуги), ты ДОЛЖЕН выбрать инструменты.
+- Если информация не нужна (на "привет"), верни пустой список инструментов.
+
+# ИНСТРУМЕНТЫ
+{tools_summary}
+
+# ИСТОРИЯ
+{history}
+
+# НОВОЕ СООБЩЕНИЕ
+{user_message}
+
+# ФОРМАТ ОТВЕТА
+Ответь ТОЛЬКО в формате JSON, содержащем два ключа: 'stage' и 'tool_calls'.
+Пример: {{"stage": "availability_check", "tool_calls": [{{"tool_name": "get_available_slots", "parameters": {{"date": "завтра"}}}}]}}
+
+ВАЖНО: Твой ответ должен быть ТОЛЬКО валидным JSON без дополнительного текста!
+"""
+
+        # Шаблон для Этапа 2: Синтез финального ответа
+        self.synthesis_template = """
+# РОЛЬ И СТИЛЬ
 Ты — Кэт, дружелюбный и профессиональный AI-администратор салона красоты.
 
 # СТИЛЬ ОБЩЕНИЯ
@@ -31,23 +62,17 @@ class PromptBuilderService:
 - Используй эмодзи сдержанно: при приветствии и после успешной записи.
 - Если для ответа не нужна внешняя информация (например, на "спасибо"), просто вежливо ответь.
 
-# РАБОТА С ИНФОРМАЦИЕЙ И ИНСТРУМЕНТАМИ
-- Твоя главная задача — предоставлять точную информацию. **Никогда не выдумывай** цены, время или услуги.
-- Если для ответа нужна информация, **ты ДОЛЖЕН использовать один или несколько инструментов**.
-- **Правила вызова:** Если ты решил использовать инструмент(ы), твой ответ должен быть ТОЛЬКО JSON-массивом с вызовами. В противном случае — отвечай обычным текстом.
-- Формат вызова: `[{{"tool_name": "...", "parameters": {{"...": "..."}}}}]`
-
-# ДОСТУПНЫЕ ИНСТРУМЕНТЫ
-{tools_summary}
-
-# РЕКОМЕНДАЦИИ И ПРИМЕРЫ ДЛЯ ТЕКУЩЕЙ СИТУАЦИИ (СТАДИЯ: {stage_name})
+# РЕКОМЕНДАЦИИ ДЛЯ ТЕКУЩЕЙ СИТУАЦИИ (СТАДИЯ: {stage_name})
 ## Принципы:
 {stage_principles}
 ## Примеры:
 {stage_examples}
 
-# КОНТЕКСТ ДИАЛОГА
-{dialog_context}
+# ПОЛУЧЕННЫЕ ДАННЫЕ ОТ ИНСТРУМЕНТОВ
+{tool_results}
+
+# ТВОЯ ЗАДАЧА
+Основываясь на своей роли, рекомендациях и полученных данных, сформулируй финальный, вежливый и краткий ответ для клиента.
 """
     
     def _generate_tools_summary(self) -> str:
@@ -135,135 +160,76 @@ class PromptBuilderService:
         
         return "\n\n".join(formatted_examples)
     
-    
-    def build_classification_prompt(self, stages_list: str, history: List[Dict], user_message: str) -> str:
+    def build_classification_and_planning_prompt(
+        self, 
+        history: List[Dict], 
+        user_message: str
+    ) -> str:
         """
-        Формирует промпт для классификации стадии диалога.
+        Формирует промпт для Этапа 1: Классификация и Планирование.
         
         Args:
-            stages_list: Список доступных стадий в виде строки
             history: История диалога
             user_message: Новое сообщение пользователя
             
         Returns:
-            Промпт для классификации стадии
+            Промпт для классификации и планирования
         """
-        return f"""Проанализируй историю диалога и новое сообщение пользователя. Определи, к какой из следующих стадий относится ПОСЛЕДНЕЕ сообщение: {stages_list}.
-
-ВАЖНО: Если клиент выражает явное недовольство, жалуется, угрожает или прямо просит позвать человека, присвой стадию 'conflict_escalation'. Это высший приоритет.
-
-В ответе укажи ТОЛЬКО ID стадии.
-
-История: {history}
-Новое сообщение: {user_message}"""
+        # Получаем список доступных стадий
+        stages_list = ", ".join(list(self.dialogue_patterns.keys()))
+        
+        # Генерируем краткое описание инструментов
+        tools_summary = self._generate_tools_summary()
+        
+        # Форматируем историю для промпта
+        history_text = ""
+        for msg in history:
+            role = "Пользователь" if msg["role"] == "user" else "Ассистент"
+            content = msg["parts"][0]["text"]
+            history_text += f"{role}: {content}\n"
+        
+        # Собираем промпт по шаблону
+        prompt = self.classification_and_planning_template.format(
+            stage_list=stages_list,
+            tools_summary=tools_summary,
+            history=history_text.strip(),
+            user_message=user_message
+        )
+        
+        return prompt
     
-    def build_generation_prompt(
+    def build_synthesis_prompt(
         self, 
         stage: str, 
-        dialog_history: List[Dict], 
-        dialog_context: str = "",
+        tool_results: str,
         client_name: Optional[str] = None,
         client_phone_saved: bool = False
     ) -> str:
         """
-        Формирует основной промпт для генерации ответа на основе стадии диалога.
-        Использует новый гибридный подход с принципами и примерами из dialogue_patterns.json.
+        Формирует промпт для Этапа 2: Синтез финального ответа.
         
         Args:
             stage: ID стадии диалога
-            dialog_history: История диалога
-            dialog_context: Дополнительный контекст диалога
+            tool_results: Результаты выполнения инструментов
             client_name: Имя клиента
             client_phone_saved: Сохранен ли телефон клиента
             
         Returns:
-            Сформированный системный промпт
+            Промпт для синтеза ответа
         """
-        # Генерируем краткое описание инструментов
-        tools_summary = self._generate_tools_summary()
-        
         # Получаем данные стадии из dialogue_patterns.json
         stage_data = self.dialogue_patterns.get(stage, {})
         stage_name = stage_data.get('description', stage)
         stage_principles = self._format_principles(stage_data.get('principles', []), client_name, client_phone_saved)
         stage_examples = self._format_examples(stage_data.get('examples', []))
         
-        # Собираем промпт по новому шаблону
-        system_prompt = self.system_prompt_template.format(
-            tools_summary=tools_summary,
+        # Собираем промпт по шаблону
+        prompt = self.synthesis_template.format(
             stage_name=stage_name,
             stage_principles=stage_principles,
             stage_examples=stage_examples,
-            dialog_context=dialog_context
+            tool_results=tool_results
         )
         
-        return system_prompt
-    
-    def build_fallback_prompt(
-        self, 
-        dialog_context: str = "",
-        client_name: Optional[str] = None,
-        client_phone_saved: bool = False
-    ) -> str:
-        """
-        Формирует универсальный промпт для fallback режима.
-        Использует новый гибридный подход.
-        
-        Args:
-            dialog_context: Дополнительный контекст диалога
-            client_name: Имя клиента
-            client_phone_saved: Сохранен ли телефон клиента
-            
-        Returns:
-            Универсальный системный промпт
-        """
-        # Генерируем краткое описание инструментов
-        tools_summary = self._generate_tools_summary()
-        
-        # Получаем данные стадии fallback из dialogue_patterns.json
-        stage_data = self.dialogue_patterns.get('fallback', {})
-        stage_name = stage_data.get('description', 'fallback')
-        stage_principles = self._format_principles(stage_data.get('principles', []), client_name, client_phone_saved)
-        stage_examples = self._format_examples(stage_data.get('examples', []))
-        
-        # Собираем промпт по новому шаблону
-        system_prompt = self.system_prompt_template.format(
-            tools_summary=tools_summary,
-            stage_name=stage_name,
-            stage_principles=stage_principles,
-            stage_examples=stage_examples,
-            dialog_context=dialog_context
-        )
-        
-        return system_prompt
-    
-    def build_full_history_with_system_prompt(self, dialog_history: List[Dict], system_prompt: str) -> List[Dict]:
-        """
-        Формирует полную историю диалога с системной инструкцией.
-        
-        Args:
-            dialog_history: История диалога
-            system_prompt: Системный промпт
-            
-        Returns:
-            Полная история с системной инструкцией
-        """
-        # Получаем текущую дату и время
-        current_datetime = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        
-        # Добавляем информацию о текущей дате и времени к системному промпту
-        enhanced_system_prompt = f"{system_prompt}\n\nТекущая дата и время: {current_datetime}"
-        
-        # Добавляем системную инструкцию в начало истории
-        full_history = [
-            {
-                "role": "user",
-                "parts": [{"text": enhanced_system_prompt}]
-            }
-        ]
-        
-        # Добавляем историю диалога
-        full_history.extend(dialog_history)
-        
-        return full_history
+        return prompt
     

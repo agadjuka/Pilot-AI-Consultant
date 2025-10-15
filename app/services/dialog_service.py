@@ -13,9 +13,7 @@ from app.services.llm_service import get_llm_service
 from app.services.appointment_service import AppointmentService
 from app.services.tool_service import ToolService
 from app.services.google_calendar_service import GoogleCalendarService
-from app.services.classification_service import ClassificationService
 from app.services.prompt_builder_service import PromptBuilderService
-from app.services.tool_orchestrator_service import ToolOrchestratorService
 from app.core.dialogue_pattern_loader import dialogue_patterns
 from app.services.dialogue_tracer_service import DialogueTracer
 from app.core.logging_config import log_dialog_start, log_dialog_end, log_error
@@ -42,9 +40,6 @@ class DialogService:
         """
         self.repository = DialogHistoryRepository(db_session)
         self.llm_service = get_llm_service()
-        
-        # Инициализируем ClassificationService
-        self.classification_service = ClassificationService(self.llm_service)
         
         # Инициализируем PromptBuilderService
         self.prompt_builder = PromptBuilderService()
@@ -75,78 +70,16 @@ class DialogService:
             google_calendar_service=self.google_calendar_service
         )
         
-        # Создаем экземпляр ToolOrchestratorService
-        self.tool_orchestrator = ToolOrchestratorService(
-            llm_service=self.llm_service,
-            tool_service=self.tool_service,
-            prompt_builder=self.prompt_builder,
-            client_repository=self.client_repository
-        )
-        
         # Кратковременная память о показанных записях для каждого пользователя
         # Формат: {user_id: [{"id": int, "details": str}, ...]}
         self.last_shown_appointments = {}
     
-    def _build_dialog_context(self, dialogue_stage: str, user_id: int, client) -> str:
-        """
-        Формирует дополнительный контекст диалога на основе стадии и данных клиента.
-        
-        Args:
-            dialogue_stage: Стадия диалога
-            user_id: ID пользователя
-            client: Объект клиента
-            
-        Returns:
-            Строка с дополнительным контекстом
-        """
-        # Базовый контекст о записях для стадий просмотра, отмены и переноса
-        if dialogue_stage in ['view_booking', 'cancellation_request', 'rescheduling']:
-            try:
-                appointments_data = self.tool_service.get_my_appointments(user_id)
-                # Сохраняем записи в кратковременной памяти
-                self.last_shown_appointments[user_id] = appointments_data
-                
-                if appointments_data:
-                    if dialogue_stage == 'view_booking':
-                        appointments_text = "Ваши предстоящие записи:\n"
-                        for appointment in appointments_data:
-                            appointments_text += f"- {appointment['details']}\n"
-                        return (
-                            f"ДАННЫЕ_ЗАПИСЕЙ: {appointments_text}. "
-                            "Если данные содержат список записей — перескажи их кратко и дружелюбно, ничего не выдумывай. "
-                            "Если там сказано, что записей нет — вежливо предложи помощь с записью."
-                        )
-                    else:  # cancellation_request или rescheduling
-                        appointments_text = "Доступные записи для изменения:\n"
-                        for appointment in appointments_data:
-                            appointments_text += f"- {appointment['details']}\n"
-                        return (
-                            f"СКРЫТЫЙ_КОНТЕКСТ_ЗАПИСЕЙ: {appointments_text} "
-                            f"Определи, к какой из этих записей относится запрос клиента, и вызови соответствующий инструмент "
-                            f"({'cancel_appointment_by_id' if dialogue_stage == 'cancellation_request' else 'reschedule_appointment_by_id'}) "
-                            "с правильным ID. Не показывай ID клиенту."
-                        )
-                else:
-                    if dialogue_stage == 'view_booking':
-                        return "У вас нет предстоящих записей."
-                    else:
-                        return "У клиента нет записей для отмены/переноса."
-            except Exception:
-                self.last_shown_appointments[user_id] = []
-                return "Ошибка получения записей."
-        
-        return ""
 
     async def process_user_message(self, user_id: int, text: str) -> str:
         """
-        Обрабатывает сообщение пользователя с использованием паттернов диалогов:
-        1. Получает историю диалога из БД
-        2. Сохраняет новое сообщение пользователя
-        3. Классифицирует стадию диалога
-        4. Извлекает релевантные паттерны для стадии
-        5. Формирует динамический промпт с паттернами
-        6. Запускает цикл генерации с вызовами инструментов
-        7. Сохраняет финальный ответ в БД
+        Обрабатывает сообщение пользователя с использованием двухэтапной архитектуры:
+        1. Этап 1: Классификация стадии и планирование инструментов
+        2. Этап 2: Синтез финального ответа
         
         Args:
             user_id: ID пользователя Telegram
@@ -165,6 +98,7 @@ class DialogService:
             # 0. Загружаем (или создаем) клиента
             client = self.client_repository.get_or_create_by_telegram_id(user_id)
             tracer.add_event("👤 Клиент загружен", f"ID клиента: {client.id}, Имя: {client.first_name}, Телефон: {client.phone_number}")
+            
             # 1. Получаем историю диалога (окно контекста - последние N сообщений)
             history_records = self.repository.get_recent_messages(user_id, limit=self.CONTEXT_WINDOW_SIZE)
             tracer.add_event("📚 История диалога загружена", f"Количество сообщений: {len(history_records)} (окно контекста: {self.CONTEXT_WINDOW_SIZE})")
@@ -186,50 +120,67 @@ class DialogService:
             )
             tracer.add_event("💾 Сообщение сохранено в БД", f"Роль: user, Текст: {text}")
             
-            # 3. Этап 1: Классификация стадии диалога
+            # ЭТАП 1: Классификация и Планирование
+            tracer.add_event("🔍 Этап 1: Классификация и планирование", "Начинаем первый вызов LLM")
+            logger.info("🔍 Этап 1: Классификация и планирование")
             
-            # Получаем полный промпт для классификации
-            stages_list = ", ".join(list(dialogue_patterns.keys()))
-            classification_prompt = self.prompt_builder.build_classification_prompt(
-                stages_list=stages_list,
+            # Формируем промпт для классификации и планирования
+            classification_prompt = self.prompt_builder.build_classification_and_planning_prompt(
                 history=dialog_history,
                 user_message=text
             )
             
-            tracer.add_event("🔍 Запрос на классификацию", {
+            tracer.add_event("📝 Промпт классификации сформирован", {
                 "prompt": classification_prompt,
-                "available_stages": list(dialogue_patterns.keys())
+                "length": len(classification_prompt)
             })
             
-            stage_and_pd_and_raw = await self.classification_service.get_dialogue_stage(
-                history=dialog_history,
-                user_message=text,
-                user_id=user_id
-            )
-            dialogue_stage, extracted_pd, raw_response = stage_and_pd_and_raw
-
-            tracer.add_event("✅ Результат классификации", {
-                "stage": dialogue_stage,
-                "extracted_pd": extracted_pd,
-                "raw_response": raw_response
-            })
-            logger.info(f"🎯 Gemini определил стадию: '{dialogue_stage}'")
-
-            # Если классификатор извлек ПДн — сохраняем их в БД
-            if extracted_pd:
-                update_data = {}
-                if extracted_pd.get('name') and not client.first_name:
-                    update_data['first_name'] = extracted_pd['name']
-                if extracted_pd.get('phone') and not client.phone_number:
-                    update_data['phone_number'] = extracted_pd['phone']
-                if update_data:
-                    client = self.client_repository.update(client.id, update_data)
-                    tracer.add_event("📝 ПД обновлены в БД", f"Обновленные поля: {list(update_data.keys())}")
+            # Создаем историю для первого вызова LLM
+            classification_history = [
+                {
+                    "role": "user",
+                    "parts": [{"text": classification_prompt}]
+                }
+            ]
             
-            # 4. Этап 2: Определение стратегии обработки (План А или План Б)
+            # Первый вызов LLM для классификации и планирования
+            classification_response = await self.llm_service.generate_response(classification_history)
+            tracer.add_event("✅ Ответ классификации получен", f"Ответ: {classification_response}")
+            logger.info(f"🔍 Сырой ответ LLM: '{classification_response}'")
+            
+            # Парсим JSON-ответ
+            try:
+                import json
+                import re
+                
+                # Удаляем markdown блоки если они есть
+                cleaned_response = classification_response.strip()
+                if cleaned_response.startswith('```') and cleaned_response.endswith('```'):
+                    cleaned_response = cleaned_response[3:-3].strip()
+                elif cleaned_response.startswith('```json'):
+                    cleaned_response = cleaned_response[7:-3].strip()
+                
+                parsed_response = json.loads(cleaned_response)
+                stage = parsed_response.get('stage')
+                tool_calls = parsed_response.get('tool_calls', [])
+                
+                tracer.add_event("📊 Результат парсинга", {
+                    "stage": stage,
+                    "tool_calls": tool_calls,
+                    "tool_calls_count": len(tool_calls)
+                })
+                logger.info(f"🎯 Определена стадия: '{stage}', запланировано инструментов: {len(tool_calls)}")
+                
+            except json.JSONDecodeError as e:
+                logger.error(f"❌ Ошибка парсинга JSON ответа классификации: {e}")
+                logger.error(f"❌ Сырой ответ: '{classification_response}'")
+                tracer.add_event("❌ Ошибка парсинга JSON", f"Ошибка: {str(e)}")
+                # Fallback: используем стадию fallback
+                stage = 'fallback'
+                tool_calls = []
             
             # Быстрый путь для конфликтных ситуаций
-            if dialogue_stage == 'conflict_escalation':
+            if stage == 'conflict_escalation':
                 logger.warning(f"⚠️ КОНФЛИКТНАЯ СТАДИЯ: Немедленная эскалация на менеджера")
                 
                 tracer.add_event("⚠️ Конфликтная ситуация", "Эскалация на менеджера")
@@ -255,67 +206,71 @@ class DialogService:
                 # Возвращаем ответ пользователю и завершаем обработку
                 return manager_response['response_to_user']
             
-            if dialogue_stage is not None:
-                # План А: Валидная стадия найдена - используем паттерны диалога
-                logger.info(f"📋 План А: Используем стадию '{dialogue_stage}'")
+            # Выполнение инструментов (если они запланированы)
+            tool_results = ""
+            if tool_calls:
+                tracer.add_event("⚙️ Выполнение инструментов", f"Количество инструментов: {len(tool_calls)}")
+                logger.info(f"⚙️ Выполнение {len(tool_calls)} инструментов")
                 
-                tracer.add_event("📋 План А: Использование паттернов", f"Стадия: {dialogue_stage}")
-                
-                # Формируем дополнительный контекст диалога
-                dialog_context = self._build_dialog_context(dialogue_stage, user_id, client)
-                
-                # Формируем промпт через PromptBuilderService
-                system_prompt = self.prompt_builder.build_generation_prompt(
-                    stage=dialogue_stage,
-                    dialog_history=dialog_history,
-                    dialog_context=dialog_context,
-                    client_name=client.first_name,
-                    client_phone_saved=bool(client.phone_number)
-                )
-                
-                tracer.add_event("📝 Финальный промпт для генерации", {
-                    "prompt": system_prompt,
-                    "length": len(system_prompt),
-                    "stage": dialogue_stage
-                })
+                # Выполняем каждый инструмент
+                for tool_call in tool_calls:
+                    tool_name = tool_call.get('tool_name')
+                    parameters = tool_call.get('parameters', {})
+                    
+                    tracer.add_event(f"🔧 Выполнение инструмента", f"Инструмент: {tool_name}, Параметры: {parameters}")
+                    
+                    try:
+                        # Вызываем инструмент через ToolService
+                        result = await self.tool_service.execute_tool(tool_name, parameters, user_id)
+                        tool_results += f"Результат {tool_name}: {result}\n"
+                        
+                        tracer.add_event(f"✅ Инструмент выполнен", f"Инструмент: {tool_name}, Результат: {result}")
+                        
+                    except Exception as e:
+                        error_msg = f"Ошибка выполнения {tool_name}: {str(e)}"
+                        tool_results += error_msg + "\n"
+                        tracer.add_event(f"❌ Ошибка инструмента", f"Инструмент: {tool_name}, Ошибка: {str(e)}")
+                        logger.error(f"❌ Ошибка выполнения инструмента {tool_name}: {e}")
             else:
-                # План Б: Fallback - используем универсальный системный промпт
-                logger.info(f"🔄 План Б: Используем fallback промпт")
-                
-                tracer.add_event("🔄 План Б: Fallback промпт", "Использование универсального промпта")
-                
-                # Формируем промпт через PromptBuilderService
-                system_prompt = self.prompt_builder.build_fallback_prompt(
-                    dialog_context="",
-                    client_name=client.first_name,
-                    client_phone_saved=bool(client.phone_number)
-                )
-                
-                tracer.add_event("📝 Fallback промпт сформирован", {
-                    "prompt": system_prompt,
-                    "length": len(system_prompt),
-                    "type": "fallback"
-                })
+                tracer.add_event("ℹ️ Инструменты не требуются", "Пустой список инструментов")
+                logger.info("ℹ️ Инструменты не требуются")
             
-            # 5. Этап 3: Генерация и выполнение инструментов
-            tracer.add_event("⚙️ Запуск цикла инструментов", "Начинаем выполнение ToolOrchestrator")
-            logger.info("⚙️ Запуск цикла инструментов")
+            # ЭТАП 2: Синтез финального ответа
+            tracer.add_event("🎨 Этап 2: Синтез ответа", "Начинаем второй вызов LLM")
+            logger.info("🎨 Этап 2: Синтез финального ответа")
             
-            bot_response_text, intermediate_history = await self.tool_orchestrator.execute_tool_cycle(
-                system_prompt=system_prompt,
-                history=dialog_history,
-                user_message=text,
-                user_id=user_id,
-                tracer=tracer
+            # Формируем промпт для синтеза
+            synthesis_prompt = self.prompt_builder.build_synthesis_prompt(
+                stage=stage,
+                tool_results=tool_results,
+                client_name=client.first_name,
+                client_phone_saved=bool(client.phone_number)
             )
             
-            tracer.add_event("✅ Цикл инструментов завершен", {
-                "final_response": bot_response_text,
-                "response_length": len(bot_response_text)
+            tracer.add_event("📝 Промпт синтеза сформирован", {
+                "prompt": synthesis_prompt,
+                "length": len(synthesis_prompt),
+                "stage": stage
             })
-            logger.info("✅ Цикл инструментов завершен")
             
-            # 7. Сохраняем финальный ответ бота в БД
+            # Создаем историю для второго вызова LLM
+            synthesis_history = [
+                {
+                    "role": "user",
+                    "parts": [{"text": synthesis_prompt}]
+                }
+            ]
+            
+            # Второй вызов LLM для синтеза финального ответа
+            bot_response_text = await self.llm_service.generate_response(synthesis_history)
+            
+            tracer.add_event("✅ Финальный ответ получен", {
+                "response": bot_response_text,
+                "length": len(bot_response_text)
+            })
+            logger.info("✅ Финальный ответ сгенерирован")
+            
+            # Сохраняем финальный ответ бота в БД
             self.repository.add_message(
                 user_id=user_id,
                 role="model",
@@ -330,7 +285,7 @@ class DialogService:
             # Логируем завершение обработки
             log_dialog_end(logger, bot_response_text)
             
-            # 8. Возвращаем сгенерированный текст
+            # Возвращаем сгенерированный текст
             return bot_response_text
             
         except Exception as e:
