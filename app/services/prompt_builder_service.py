@@ -7,7 +7,6 @@
 from typing import List, Dict, Optional
 from datetime import datetime
 from app.core.dialogue_pattern_loader import dialogue_patterns
-from app.services.tool_definitions import all_tools_dict
 
 
 class PromptBuilderService:
@@ -52,20 +51,18 @@ class PromptBuilderService:
 
         # === ЭТАП 2: МЫШЛЕНИЕ ===
         self.THINKING_TEMPLATE = """
-# РОЛЬ И СТИЛЬ
-Ты — Кэт, AI-администратор салона красоты "Элегант". Ты дружелюбная, профессиональная и всегда готова помочь клиентам с записью на услуги. Твой стиль общения: теплый, но деловой, с легким юмором когда уместно. Ты всегда помнишь детали предыдущих разговоров и используешь их для персонализации общения.
-# ГЛАВНАЯ ЗАДАЧА
-Твоя задача — логично **продолжить диалог**.
-1. **Продолжи диалог логично**, проанализировав ИСТОРИЮ, чтобы не повторяться.
-2. **Используй СОБРАННЫЕ ДАННЫЕ**, чтобы дать исчерпывающий ответ на ПОСЛЕДНИЙ ЗАПРОС КЛИЕНТА.
-3. Если необходимо совершить действие, используй "ИСПОЛНИТЕЛЬНЫЕ ИНСТРУМЕНТЫ".
-4. Иногда обращайся к клиенту по имени. Не делай это в каждом сообщении.
-5. Иногда в ключевых моментах используй эмодзи. Не делай это в каждом сообщениии
-6.Если у тебя есть примеры для общения на этой стадии, старайся использовать именно их.
+# ЗАДАЧА
+Твоя задача — логично продолжить диалог, проанализировав историю и запрос клиента.
 
-**КЛЮЧЕВЫЕ ПРАВИЛА ПОВЕДЕНИЯ:**
-1.  **НЕ ЗДОРОВАЙСЯ**, если в ИСТОРИИ уже есть приветствие. Просто продолжай разговор по сути.
-2.  **НЕ ОБРАЩАЙСЯ ПО ИМЕНИ в каждом сообщении.** Делай это изредка
+# СЦЕНАРИЙ ДЛЯ СТАДИИ
+{stage_scenario}
+
+# ДОСТУПНЫЕ ИНСТРУМЕНТЫ
+{thinking_tools}
+
+# ОБЩИЕ ПРАВИЛА
+{rules}
+
 # КОНТЕКСТ
 - Текущая дата: {current_datetime}
 - О клиенте: {client_context}
@@ -73,78 +70,35 @@ class PromptBuilderService:
 - Запрос: {user_message}
 {hidden_context}
 
-# СЦЕНАРИЙ ДЛЯ СТАДИИ '{stage_name}':
-{stage_scenario}
-
-# ГЛАВНАЯ ЗАДАЧА
-Следуя сценарию, реши, что делать дальше. У тебя ДВА варианта:
-1. **Если** тебе НЕ ХВАТАЕТ данных для полного ответа (например, нужны свободные слоты), верни **ТОЛЬКО JSON** с вызовом "разведывательных" инструментов из списка ниже.
-2. **Если** тебе ХВАТАЕТ данных, просто **сформулируй текстовый ответ** для клиента.
-
-# "РАЗВЕДЫВАТЕЛЬНЫЕ" ИНСТРУМЕНТЫ
-{read_only_tools_summary}
-
-# РАБОТА С ID ЗАПИСЕЙ
-Если в диалоге появляется # СКРЫТЫЙ КОНТЕКСТ ЗАПИСЕЙ, это твой источник правды для ID.
-- Когда нужно вызвать инструмент, требующий `appointment_id` (например, `cancel_appointment_by_id`), ты ОБЯЗАН взять числовое значение `id` из этого контекста.
-- Сопоставь запрос клиента (например, "отмените стрижку") с полем `details` в контексте, чтобы найти правильный `id`.
-- НИКОГДА не подставляй текстовое описание в параметр `appointment_id`.
-
-# ФОРМАТ ЗАПРОСА ДАННЫХ
-Если нужны инструменты, твой ответ должен быть ТОЛЬКО JSON-объектом с ключом `tool_calls`.
-`tool_calls` — это МАССИВ ОБЪЕКТОВ. Каждый объект должен иметь ключи `tool_name` и `parameters`.
-
-**ПРАВИЛЬНЫЙ ФОРМАТ:**
-```json
-{{"tool_calls": [{{"tool_name": "get_available_slots", "parameters": {{"date": "2025-10-16"}}}}]}}
-```
-
-**НЕПРАВИЛЬНЫЙ ФОРМАТ (НЕ ДЕЛАЙ ТАК):**
-```json
-{{"tool_calls": ["get_available_slots"]}}
-```
-
-ВАЖНО: `tool_calls` — это массив ОБЪЕКТОВ, а не строк!
+# ФОРМАТ ОТВЕТА
+Если нужны инструменты, верни ТОЛЬКО JSON с вызовом инструментов.
+Если инструменты не нужны, сформулируй текстовый ответ для клиента.
 """
 
         # === ЭТАП 3: СИНТЕЗ ===
         self.SYNTHESIS_TEMPLATE = """
-# РОЛЬ И СТИЛЬ
-Ты — Кэт, AI-администратор салона красоты "Элегант". Ты дружелюбная, профессиональная и всегда готова помочь клиентам с записью на услуги. Твой стиль общения: теплый, но деловой, с легким юмором когда уместно. Ты всегда помнишь детали предыдущих разговоров и используешь их для персонализации общения. Не используешь имена клиентов в каждом сообщении.
+# РОЛЬ И ЗАДАЧА
+Ты — Кэт, AI-администратор салона красоты "Элегант". Твоя задача — логично продолжить диалог, используя собранные данные.
 
-# ГЛАВНАЯ ЗАДАЧА
-Твоя задача — логично **продолжить диалог**.
-1. **Продолжи диалог логично**, проанализировав ИСТОРИЮ, чтобы не повторяться.
-2. Иногда (раз в 3-5 сообщений) обращайся к клиенту по имени. Не делай это в каждом сообщении.
-3. **Используй СОБРАННЫЕ ДАННЫЕ**, чтобы дать исчерпывающий ответ на ПОСЛЕДНИЙ ЗАПРОС КЛИЕНТА.
-4. Если необходимо совершить действие, используй "ИСПОЛНИТЕЛЬНЫЕ ИНСТРУМЕНТЫ".
-5. Иногда (изредка) в ключевых моментах используй эмодзи. Не делай это в каждом сообщениии
-6.Если у тебя есть примеры для общения на этой стадии, старайся использовать именно их.
+# СЦЕНАРИЙ ДЕЙСТВИЙ
+{stage_scenario}
 
-**КЛЮЧЕВЫЕ ПРАВИЛА ПОВЕДЕНИЯ:**
-1.  **НЕ ЗДОРОВАЙСЯ**, если в ИСТОРИИ уже есть приветствие. Просто продолжай разговор по сути.
+# ВОЗМОЖНЫЕ ДЕЙСТВИЯ
+{synthesis_tools}
 
+# ОБЩИЕ ПРАВИЛА
+{rules}
 
 # КОНТЕКСТ
 - Текущая дата: {current_datetime}
 - О клиенте: {client_context}
 - История: {history}
 - Последний запрос: {user_message}
-- **Собранные тобой данные:** {tool_results}
+- Собранные данные: {tool_results}
 
-# "ИСПОЛНИТЕЛЬНЫЕ" ИНСТРУМЕНТЫ
-{write_tools_summary}
-
-# ФОРМАТ ДЕЙСТВИЯ (если нужно)
-```json
-{{"tool_calls": [{{"tool_name": "название_инструмента", "parameters": {{"param1": "value1", "param2": "value2"}}}}]}}
-```
-
-ВАЖНО: 
-- Если нужны инструменты + ответ клиенту — верни JSON, а затем текст
-- Если инструменты не нужны — верни только текст
-
-# ФИНАЛЬНЫЙ ОТВЕТ:
+# ФИНАЛЬНЫЙ ОТВЕТ
+Если нужны инструменты + ответ клиенту — верни JSON, а затем текст.
+Если инструменты не нужны — верни только текст.
 """
     
     def _generate_current_datetime(self) -> str:
@@ -195,98 +149,6 @@ class PromptBuilderService:
         
         return "\n".join(formatted_history)
     
-    def _generate_tools_summary(self, tools_list: List) -> str:
-        """
-        Генерирует краткое описание указанного набора инструментов.
-        
-        Args:
-            tools_list: Список FunctionDeclaration объектов
-            
-        Returns:
-            Отформатированная строка с описанием инструментов
-        """
-        tools_summary = ""
-        
-        for func_decl in tools_list:
-            # Извлекаем параметры из схемы
-            params = []
-            if hasattr(func_decl, 'parameters') and func_decl.parameters:
-                # Преобразуем в словарь для работы
-                params_dict = func_decl.parameters
-                if hasattr(params_dict, 'properties') and params_dict.properties:
-                    params = list(params_dict.properties.keys())
-            
-            # Формируем краткое описание
-            if params:
-                params_str = ", ".join(params)
-                # Берем только первое предложение из описания
-                short_desc = func_decl.description.split('.')[0]
-                tools_summary += f"- {func_decl.name}({params_str}): {short_desc}.\n"
-            else:
-                # Берем только первое предложение из описания
-                short_desc = func_decl.description.split('.')[0]
-                tools_summary += f"- {func_decl.name}(): {short_desc}.\n"
-        
-        return tools_summary.strip()
-    
-    def _filter_tools_by_available(self, tools_list: List, available_tools: Optional[List[str]]) -> List:
-        """
-        Фильтрует список инструментов, оставляя только те, которые разрешены для текущей стадии.
-        
-        Args:
-            tools_list: Полный список инструментов (FunctionDeclaration объекты)
-            available_tools: Список имен разрешенных инструментов для текущей стадии
-            
-        Returns:
-            Отфильтрованный список инструментов
-        """
-        if not available_tools:
-            # Если список доступных инструментов пуст, возвращаем пустой список
-            return []
-        
-        filtered_tools = []
-        for func_decl in tools_list:
-            if func_decl.name in available_tools:
-                filtered_tools.append(func_decl)
-        
-        return filtered_tools
-    
-    def _format_stage_principles(self, stage_name: str, client_name: Optional[str] = None, client_phone_saved: bool = False) -> str:
-        """
-        Форматирует сценарий стадии в читаемую строку.
-        
-        Args:
-            stage_name: Название стадии
-            client_name: Имя клиента
-            client_phone_saved: Сохранен ли телефон клиента
-            
-        Returns:
-            Отформатированная строка со сценарием стадии
-        """
-        stage_data = self.dialogue_patterns.get(stage_name, {})
-        scenario = stage_data.get('scenario', [])
-        
-        if not scenario:
-            return "Будь вежливым, профессиональным и полезным. Всегда предоставляй точную информацию."
-        
-        # Добавляем информацию о клиенте, если она есть
-        client_info = ""
-        if client_name:
-            client_info += f" Имя клиента: {client_name}."
-        if client_phone_saved:
-            client_info += " Телефон клиента сохранен в базе данных."
-        
-        # Форматируем сценарий в список
-        formatted_scenario = []
-        for step in scenario:
-            formatted_scenario.append(step)
-        
-        result = "\n".join(formatted_scenario)
-        if client_info:
-            result += f"\n\nДополнительная информация:{client_info}"
-        
-        return result
-    
     # === МЕТОДЫ ДЛЯ ТРЕХЭТАПНОЙ АРХИТЕКТУРЫ ===
     
     def build_classification_prompt(
@@ -322,7 +184,6 @@ class PromptBuilderService:
         user_message: str,
         client_name: Optional[str] = None,
         client_phone_saved: bool = False,
-        available_tools: Optional[List[str]] = None,
         hidden_context: str = ""
     ) -> str:
         """
@@ -334,11 +195,14 @@ class PromptBuilderService:
             user_message: Новое сообщение пользователя
             client_name: Имя клиента
             client_phone_saved: Сохранен ли телефон клиента
-            available_tools: Список доступных инструментов для текущей стадии
+            hidden_context: Скрытый контекст
             
         Returns:
             Промпт для этапа мышления
         """
+        # Получаем данные стадии из dialogue_patterns
+        stage_data = self.dialogue_patterns.get(stage_name, {})
+        
         # Форматируем историю диалога
         history_text = self._format_dialog_history(history)
         
@@ -355,16 +219,12 @@ class PromptBuilderService:
         current_datetime = self._generate_current_datetime()
         
         # Форматируем сценарий стадии
-        stage_scenario = self._format_stage_principles(stage_name, client_name, client_phone_saved)
+        scenario = stage_data.get('scenario', [])
+        stage_scenario = "\n".join(scenario) if scenario else "Будь вежливым, профессиональным и полезным."
         
-        # Получаем полный словарь всех определений инструментов
-        all_tools = list(all_tools_dict.values())
-        
-        # Фильтруем инструменты по доступным для текущей стадии
-        filtered_tools = self._filter_tools_by_available(all_tools, available_tools)
-        
-        # Генерируем описание отфильтрованных инструментов
-        tools_summary = self._generate_tools_summary(filtered_tools)
+        # Получаем инструменты и правила из конфигурации
+        thinking_tools = stage_data.get('thinking_tools', '')
+        rules = stage_data.get('rules', '')
         
         # Собираем промпт по шаблону
         prompt = self.THINKING_TEMPLATE.format(
@@ -373,36 +233,39 @@ class PromptBuilderService:
             history=history_text,
             user_message=user_message,
             hidden_context=hidden_context,
-            stage_name=stage_name,
             stage_scenario=stage_scenario,
-            read_only_tools_summary=tools_summary
+            thinking_tools=thinking_tools,
+            rules=rules
         )
         
         return prompt
     
     def build_synthesis_prompt(
         self,
+        stage_name: str,
         history: List[Dict],
         user_message: str,
         tool_results: str,
         client_name: Optional[str] = None,
-        client_phone_saved: bool = False,
-        available_tools: Optional[List[str]] = None
+        client_phone_saved: bool = False
     ) -> str:
         """
         Формирует промпт для Этапа 3: Синтез.
         
         Args:
+            stage_name: Определенная стадия диалога
             history: История диалога
             user_message: Новое сообщение пользователя
             tool_results: Результаты выполнения инструментов с этапа мышления
             client_name: Имя клиента
             client_phone_saved: Сохранен ли телефон клиента
-            available_tools: Список доступных инструментов для текущей стадии
             
         Returns:
             Промпт для этапа синтеза
         """
+        # Получаем данные стадии из dialogue_patterns
+        stage_data = self.dialogue_patterns.get(stage_name, {})
+        
         # Форматируем историю диалога
         history_text = self._format_dialog_history(history)
         
@@ -418,14 +281,13 @@ class PromptBuilderService:
         # Генерируем текущую дату и время
         current_datetime = self._generate_current_datetime()
         
-        # Получаем полный словарь всех определений инструментов
-        all_tools = list(all_tools_dict.values())
+        # Форматируем сценарий стадии
+        scenario = stage_data.get('scenario', [])
+        stage_scenario = "\n".join(scenario) if scenario else "Будь вежливым, профессиональным и полезным."
         
-        # Фильтруем инструменты по доступным для текущей стадии
-        filtered_tools = self._filter_tools_by_available(all_tools, available_tools)
-        
-        # Генерируем описание отфильтрованных инструментов
-        tools_summary = self._generate_tools_summary(filtered_tools)
+        # Получаем инструменты и правила из конфигурации
+        synthesis_tools = stage_data.get('synthesis_tools', '')
+        rules = stage_data.get('rules', '')
         
         # Собираем промпт по шаблону
         prompt = self.SYNTHESIS_TEMPLATE.format(
@@ -434,7 +296,9 @@ class PromptBuilderService:
             history=history_text,
             user_message=user_message,
             tool_results=tool_results,
-            write_tools_summary=tools_summary
+            stage_scenario=stage_scenario,
+            synthesis_tools=synthesis_tools,
+            rules=rules
         )
         
         return prompt
