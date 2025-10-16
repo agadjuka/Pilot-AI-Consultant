@@ -221,17 +221,24 @@ class ToolService:
 
 
 
-    def get_my_appointments(self, user_telegram_id: int) -> list:
+    def get_my_appointments(self, user_telegram_id: int) -> str:
         """
-        Получает все предстоящие записи пользователя в структурированном виде.
+        Получает все предстоящие записи пользователя в текстовом виде.
         
         Args:
             user_telegram_id: ID пользователя в Telegram
         
         Returns:
-            Список словарей с записями, где каждый словарь содержит 'id' и 'details'
+            Текстовое сообщение с записями или сообщение об их отсутствии
         """
-        return self.appointment_service.get_my_appointments(user_telegram_id=user_telegram_id)
+        appointments = self.appointment_service.get_my_appointments(user_telegram_id=user_telegram_id)
+        if not appointments:
+            return "У вас нет предстоящих записей."
+        
+        result = "Ваши предстоящие записи:\n"
+        for appointment in appointments:
+            result += f"- {appointment['details']}\n"
+        return result
 
     def cancel_appointment_by_id(self, appointment_id: int, user_telegram_id: int) -> str:
         """

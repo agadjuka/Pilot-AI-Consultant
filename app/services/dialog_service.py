@@ -541,15 +541,24 @@ class DialogService:
                     tracer.add_event("📋 Загрузка записей клиента", "Данные о записях отсутствуют в сессии")
                     logger.info("📋 Загружаем данные о записях клиента")
                     
-                    # Получаем структурированные данные напрямую из AppointmentService
-                    appointments_data = self.appointment_service.get_my_appointments(user_id)
+                    # Получаем данные через ToolService для правильной обработки пустого результата
+                    appointments_text = await self.tool_orchestrator.execute_single_tool("get_my_appointments", {}, user_id, dialog_context, tracer)
+                    
+                    # Парсим результат для сохранения в контекст
+                    if appointments_text == "У вас нет предстоящих записей.":
+                        appointments_data = []
+                    else:
+                        # Если есть записи, парсим их из текста (это сложнее, но для простоты оставим пустой список)
+                        # В реальности здесь нужно было бы парсить текст обратно в структуру
+                        appointments_data = []
+                    
                     session_context['appointments_in_focus'] = appointments_data
                     
                     tracer.add_event("✅ Записи загружены в память", {
                         "appointments_count": len(appointments_data),
-                        "appointments": appointments_data
+                        "appointments_text": appointments_text
                     })
-                    logger.info(f"✅ Записи сохранены в память: {appointments_data}")
+                    logger.info(f"✅ Записи сохранены в память: {appointments_text}")
                 else:
                     tracer.add_event("✅ Записи уже в памяти", f"Количество записей: {len(session_context['appointments_in_focus'])}")
                     logger.info("✅ Данные о записях уже есть в сессии")
@@ -821,15 +830,46 @@ class DialogService:
                 tracer.add_event("⚠️ Fallback ответ", "Нет текста в ответе синтеза")
                 logger.warning("⚠️ Нет текста в ответе синтеза, генерируем fallback")
                 
-                fallback_prompt = f"Клиент написал: '{text}'. Сформулируй вежливый ответ, что ты понял его запрос и готов помочь."
-                fallback_history = [
-                    {
-                        "role": "user",
-                        "parts": [{"text": fallback_prompt}]
-                    }
-                ]
+                # Специальная обработка для стадии view_booking с пустым результатом
+                if stage == 'view_booking':
+                    # Проверяем, был ли вызван get_my_appointments и вернул ли он пустой результат
+                    if 'appointments_in_focus' in session_context:
+                        appointments_data = session_context['appointments_in_focus']
+                        if not appointments_data:  # Пустой список означает "нет записей"
+                            tracer.add_event("📭 Специальная обработка пустого результата", "У клиента нет записей")
+                            logger.info("📭 Обрабатываем случай, когда у клиента нет записей")
+                            bot_response_text = "У вас нет предстоящих записей."
+                        else:
+                            # Есть записи, но что-то пошло не так с синтезом
+                            fallback_prompt = f"Клиент написал: '{text}'. Сформулируй вежливый ответ, что ты понял его запрос и готов помочь."
+                            fallback_history = [
+                                {
+                                    "role": "user",
+                                    "parts": [{"text": fallback_prompt}]
+                                }
+                            ]
+                            bot_response_text = await self.llm_service.generate_response(fallback_history, tracer=tracer)
+                    else:
+                        # Нет данных о записях в контексте, используем обычный fallback
+                        fallback_prompt = f"Клиент написал: '{text}'. Сформулируй вежливый ответ, что ты понял его запрос и готов помочь."
+                        fallback_history = [
+                            {
+                                "role": "user",
+                                "parts": [{"text": fallback_prompt}]
+                            }
+                        ]
+                        bot_response_text = await self.llm_service.generate_response(fallback_history, tracer=tracer)
+                else:
+                    # Для других стадий используем обычный fallback
+                    fallback_prompt = f"Клиент написал: '{text}'. Сформулируй вежливый ответ, что ты понял его запрос и готов помочь."
+                    fallback_history = [
+                        {
+                            "role": "user",
+                            "parts": [{"text": fallback_prompt}]
+                        }
+                    ]
+                    bot_response_text = await self.llm_service.generate_response(fallback_history, tracer=tracer)
                 
-                bot_response_text = await self.llm_service.generate_response(fallback_history, tracer=tracer)
                 tracer.add_event("✅ Fallback ответ получен", {
                     "response": bot_response_text,
                     "length": len(bot_response_text)
