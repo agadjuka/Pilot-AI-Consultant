@@ -22,7 +22,8 @@ class ToolService:
         service_repository: ServiceRepository,
         master_repository: MasterRepository,
         appointment_service: AppointmentService,
-        google_calendar_service: GoogleCalendarService
+        google_calendar_service: GoogleCalendarService,
+        client_repository
     ):
         """
         Инициализирует ToolService с необходимыми репозиториями и сервисами.
@@ -32,11 +33,13 @@ class ToolService:
             master_repository: Репозиторий для работы с мастерами
             appointment_service: Сервис для управления записями
             google_calendar_service: Сервис для работы с Google Calendar
+            client_repository: Репозиторий для работы с клиентами
         """
         self.service_repository = service_repository
         self.master_repository = master_repository
         self.appointment_service = appointment_service
         self.google_calendar_service = google_calendar_service
+        self.client_repository = client_repository
 
     def get_all_services(self) -> str:
         """
@@ -351,6 +354,20 @@ class ToolService:
             elif tool_name == "get_full_history":
                 return self.get_full_history()
             
+            elif tool_name == "save_client_name":
+                name = parameters.get("name", "")
+                logger.info(f"👤 [TOOL EXECUTION] Сохранение имени клиента: name='{name}', user_id={user_id}")
+                result = self.save_client_name(name, user_id)
+                logger.info(f"✅ [TOOL EXECUTION] Результат сохранения имени: {result}")
+                return result
+            
+            elif tool_name == "save_client_phone":
+                phone = parameters.get("phone", "")
+                logger.info(f"📞 [TOOL EXECUTION] Сохранение телефона клиента: phone='{phone}', user_id={user_id}")
+                result = self.save_client_phone(phone, user_id)
+                logger.info(f"✅ [TOOL EXECUTION] Результат сохранения телефона: {result}")
+                return result
+            
             else:
                 raise ValueError(f"Неизвестный инструмент: {tool_name}")
                 
@@ -366,6 +383,96 @@ class ToolService:
             Строка с информацией о запросе истории диалога
         """
         return "Запрошена полная история. (в будущем здесь будет логика)"
+
+    def save_client_name(self, name: str, user_telegram_id: int) -> str:
+        """
+        Сохраняет имя клиента в базу данных.
+        
+        Args:
+            name: Имя клиента для сохранения
+            user_telegram_id: ID пользователя в Telegram
+            
+        Returns:
+            Подтверждение сохранения или сообщение об ошибке
+        """
+        try:
+            # Получаем или создаем клиента
+            client = self.client_repository.get_or_create_by_telegram_id(user_telegram_id)
+            
+            # Если имя уже есть, не перезаписываем
+            if client.first_name:
+                logger.info(f"ℹ️ Имя клиента {user_telegram_id} уже сохранено: '{client.first_name}'")
+                return f"Имя уже сохранено: {client.first_name}"
+            
+            # Обновляем имя
+            self.client_repository.update(client.id, {'first_name': name})
+            logger.info(f"✅ Имя клиента {user_telegram_id} сохранено: '{name}'")
+            return f"Имя '{name}' сохранено"
+            
+        except Exception as e:
+            logger.error(f"❌ Ошибка сохранения имени клиента {user_telegram_id}: {e}")
+            return f"Ошибка сохранения имени: {str(e)}"
+
+    def save_client_phone(self, phone: str, user_telegram_id: int) -> str:
+        """
+        Сохраняет номер телефона клиента в базу данных.
+        
+        Args:
+            phone: Номер телефона для сохранения
+            user_telegram_id: ID пользователя в Telegram
+            
+        Returns:
+            Подтверждение сохранения или сообщение об ошибке
+        """
+        try:
+            # Нормализуем номер телефона
+            normalized_phone = self._normalize_phone(phone)
+            
+            # Получаем или создаем клиента
+            client = self.client_repository.get_or_create_by_telegram_id(user_telegram_id)
+            
+            # Если телефон уже есть, не перезаписываем
+            if client.phone_number:
+                logger.info(f"ℹ️ Телефон клиента {user_telegram_id} уже сохранен: '{client.phone_number}'")
+                return f"Телефон уже сохранен: {client.phone_number}"
+            
+            # Обновляем телефон
+            self.client_repository.update(client.id, {'phone_number': normalized_phone})
+            logger.info(f"✅ Телефон клиента {user_telegram_id} сохранен: '{normalized_phone}'")
+            return f"Телефон '{normalized_phone}' сохранен"
+            
+        except Exception as e:
+            logger.error(f"❌ Ошибка сохранения телефона клиента {user_telegram_id}: {e}")
+            return f"Ошибка сохранения телефона: {str(e)}"
+
+    def _normalize_phone(self, phone: str) -> str:
+        """
+        Нормализует номер телефона к стандартному формату +7XXXXXXXXXX.
+        
+        Args:
+            phone: Номер телефона в любом формате
+            
+        Returns:
+            Нормализованный номер телефона
+        """
+        import re
+        
+        # Убираем все пробелы, дефисы и скобки
+        cleaned = re.sub(r'[\s\-\(\)]', '', phone)
+        
+        # Если номер начинается с 8, заменяем на +7
+        if cleaned.startswith('8'):
+            cleaned = '+7' + cleaned[1:]
+        
+        # Если номер начинается с 7, добавляем +
+        elif cleaned.startswith('7'):
+            cleaned = '+' + cleaned
+        
+        # Если номер не начинается с +, добавляем +7
+        elif not cleaned.startswith('+'):
+            cleaned = '+7' + cleaned
+        
+        return cleaned
 
     def _find_service_by_fuzzy_match(self, service_name: str, all_services: list) -> object:
         """

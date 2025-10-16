@@ -232,6 +232,54 @@ get_full_history_declaration = FunctionDeclaration(
 )
 
 
+# Определение инструмента для сохранения имени клиента
+save_client_name_declaration = FunctionDeclaration(
+    name="save_client_name",
+    description=(
+        "Сохраняет имя клиента в базу данных. "
+        "Используется когда клиент предоставляет свое имя для записи."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "name": {
+                "type": "string",
+                "description": (
+                    "Имя клиента для сохранения. "
+                    "Например: 'Анна', 'Мария', 'Джимми'. "
+                    "Должно быть реальным именем человека."
+                )
+            }
+        },
+        "required": ["name"]
+    }
+)
+
+
+# Определение инструмента для сохранения номера телефона клиента
+save_client_phone_declaration = FunctionDeclaration(
+    name="save_client_phone",
+    description=(
+        "Сохраняет номер телефона клиента в базу данных. "
+        "Используется когда клиент предоставляет свой номер телефона для записи."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "phone": {
+                "type": "string",
+                "description": (
+                    "Номер телефона клиента для сохранения. "
+                    "Например: '+79221192369', '8-922-119-23-69'. "
+                    "Может быть в любом формате - система автоматически нормализует."
+                )
+            }
+        },
+        "required": ["phone"]
+    }
+)
+
+
 # Разделяем инструменты на два набора согласно двухэтапной архитектуре
 
 # Инструменты для получения информации (разведывательные) - доступны на этапе планирования
@@ -248,7 +296,9 @@ write_tools = [
     create_appointment_declaration,
     cancel_appointment_by_id_declaration,
     reschedule_appointment_by_id_declaration,
-    call_manager_declaration
+    call_manager_declaration,
+    save_client_name_declaration,
+    save_client_phone_declaration
 ]
 
 # Создаем Tool объекты для каждого набора
