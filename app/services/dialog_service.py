@@ -335,6 +335,19 @@ class DialogService:
             tracer.add_event("🧠 Этап 2: Основной цикл мышления", f"Максимум итераций: {MAX_ITERATIONS}")
             logger.info("🧠 Этап 2: Основной цикл мышления и речи")
             
+            # Получаем данные стадии из новой структуры patterns
+            stage_data = self.prompt_builder.dialogue_patterns.get(stage, {})
+            stage_goal = stage_data.get('goal', 'Помочь клиенту')
+            stage_scenario = stage_data.get('scenario', [])
+            available_tools = stage_data.get('available_tools', [])
+            
+            tracer.add_event("📋 Данные стадии загружены", {
+                "stage": stage,
+                "goal": stage_goal,
+                "scenario_steps": len(stage_scenario),
+                "available_tools": available_tools
+            })
+            
             # Переменные для цикла мышления
             tool_results = ""
             bot_response_text = ""
@@ -344,16 +357,30 @@ class DialogService:
                 tracer.add_event(f"🔄 Итерация {iteration + 1}", f"Цикл мышления")
                 logger.info(f"🔄 Итерация {iteration + 1}/{MAX_ITERATIONS} цикла мышления")
                 
-                # Формируем основной промпт с полной информацией
-                main_prompt = self.prompt_builder.build_main_prompt(
-                    stage_name=stage,
-                    history=dialog_history,
-                    user_message=text,
-                    tool_results=tool_results,
-                    client_name=client.first_name,
-                    client_phone_saved=bool(client.phone_number),
-                    use_all_tools=True  # На основном этапе доступны все инструменты
-                )
+                # Формируем промпт в зависимости от итерации
+                if iteration == 0:
+                    # Первая итерация - планирование (только сбор данных)
+                    main_prompt = self.prompt_builder.build_planning_prompt(
+                        stage_name=stage,
+                        stage_scenario=stage_scenario,
+                        available_tools=available_tools,
+                        history=dialog_history,
+                        user_message=text,
+                        client_name=client.first_name,
+                        client_phone_saved=bool(client.phone_number)
+                    )
+                else:
+                    # Последующие итерации - синтез
+                    main_prompt = self.prompt_builder.build_synthesis_prompt(
+                        stage_name=stage,
+                        stage_scenario=stage_scenario,
+                        available_tools=available_tools,
+                        history=dialog_history,
+                        user_message=text,
+                        tool_results=tool_results,
+                        client_name=client.first_name,
+                        client_phone_saved=bool(client.phone_number)
+                    )
                 
                 tracer.add_event(f"📝 Промпт мышления {iteration + 1} сформирован", {
                     "prompt_length": len(main_prompt),
@@ -369,9 +396,23 @@ class DialogService:
                     }
                 ]
                 
-                # Вызов LLM с полным набором инструментов
-                from app.services.tool_definitions import salon_tools
-                main_response = await self.llm_service.generate_response(main_history, salon_tools, tracer=tracer)
+                # Вызов LLM с инструментами, доступными для текущей стадии
+                from app.services.tool_definitions import all_tools_dict
+                
+                # Фильтруем инструменты по доступным для стадии
+                stage_tools = []
+                if available_tools:
+                    for tool_name in available_tools:
+                        if tool_name in all_tools_dict:
+                            stage_tools.append(all_tools_dict[tool_name])
+                
+                tracer.add_event(f"🔧 Инструменты для стадии {iteration + 1}", {
+                    "available_tools": available_tools,
+                    "filtered_tools_count": len(stage_tools),
+                    "tool_names": [tool.name for tool in stage_tools]
+                })
+                
+                main_response = await self.llm_service.generate_response(main_history, stage_tools, tracer=tracer)
                 
                 tracer.add_event(f"✅ Ответ мышления {iteration + 1} получен", {
                     "response_length": len(main_response),
@@ -436,8 +477,15 @@ class DialogService:
                     if iteration_results:
                         tool_results += f"\n--- Итерация {iteration + 1} ---\n" + "\n".join(iteration_results) + "\n"
                     
-                    # Если есть текст в ответе, сохраняем его для финального ответа
-                    if cleaned_text.strip():
+                    # КЛЮЧЕВОЕ ИЗМЕНЕНИЕ: Игнорируем текст на первой итерации (сбор данных)
+                    if iteration == 0:  # Первая итерация (iteration + 1 = 1)
+                        tracer.add_event(f"🚫 Игнорирование текста на первой итерации {iteration + 1}", {
+                            "ignored_text": cleaned_text.strip(),
+                            "reason": "Первая итерация предназначена только для сбора данных"
+                        })
+                        logger.info(f"🚫 Игнорируем текст на первой итерации {iteration + 1} - только сбор данных")
+                    elif cleaned_text.strip():
+                        # На второй и последующих итерациях сохраняем текст для финального ответа
                         bot_response_text = cleaned_text.strip()
                         tracer.add_event(f"📝 Текст сохранен для финального ответа {iteration + 1}", {
                             "text": bot_response_text,

@@ -260,3 +260,8 @@ salon_tools = Tool(
     function_declarations=read_only_tools + write_tools
 )
 
+# Словарь всех инструментов для удобного доступа по имени
+all_tools_dict = {
+    tool.name: tool for tool in read_only_tools + write_tools
+}
+
