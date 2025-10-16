@@ -51,7 +51,7 @@ class PromptBuilderService:
 - Запрос: {user_message}
 
 # СЦЕНАРИЙ ДЛЯ СТАДИИ '{stage_name}':
-{stage_principles}
+{stage_scenario}
 
 # ГЛАВНАЯ ЗАДАЧА
 Следуя сценарию, реши, что делать дальше. У тебя ДВА варианта:
@@ -91,7 +91,7 @@ class PromptBuilderService:
 - **Собранные тобой данные:** {tool_results}
 
 # СЦЕНАРИЙ ДЛЯ СТАДИИ '{stage_name}':
-{stage_principles}
+{stage_scenario}
 
 # ГЛАВНАЯ ЗАДАЧА
 Вот все данные, которые ты просил. Теперь твоя задача — **сформулировать финальный ответ**. Ты можешь либо просто ответить текстом, либо, если это логично по сценарию, совершить "исполнительное" действие.
@@ -192,7 +192,7 @@ class PromptBuilderService:
     
     def _format_stage_principles(self, stage_name: str, client_name: Optional[str] = None, client_phone_saved: bool = False) -> str:
         """
-        Форматирует принципы стадии в читаемую строку.
+        Форматирует сценарий стадии в читаемую строку.
         
         Args:
             stage_name: Название стадии
@@ -200,12 +200,12 @@ class PromptBuilderService:
             client_phone_saved: Сохранен ли телефон клиента
             
         Returns:
-            Отформатированная строка с принципами стадии
+            Отформатированная строка со сценарием стадии
         """
         stage_data = self.dialogue_patterns.get(stage_name, {})
-        principles = stage_data.get('principles', [])
+        scenario = stage_data.get('scenario', [])
         
-        if not principles:
+        if not scenario:
             return "Будь вежливым, профессиональным и полезным. Всегда предоставляй точную информацию."
         
         # Добавляем информацию о клиенте, если она есть
@@ -215,12 +215,12 @@ class PromptBuilderService:
         if client_phone_saved:
             client_info += " Телефон клиента сохранен в базе данных."
         
-        # Форматируем принципы в список
-        formatted_principles = []
-        for principle in principles:
-            formatted_principles.append(principle)
+        # Форматируем сценарий в список
+        formatted_scenario = []
+        for step in scenario:
+            formatted_scenario.append(step)
         
-        result = "\n".join(formatted_principles)
+        result = "\n".join(formatted_scenario)
         if client_info:
             result += f"\n\nДополнительная информация:{client_info}"
         
@@ -294,8 +294,8 @@ class PromptBuilderService:
         # Генерируем текущую дату и время
         current_datetime = self._generate_current_datetime()
         
-        # Форматируем принципы стадии
-        stage_principles = self._format_stage_principles(stage_name, client_name, client_phone_saved)
+        # Форматируем сценарий стадии
+        stage_scenario = self._format_stage_principles(stage_name, client_name, client_phone_saved)
         
         # Генерируем описание read-only инструментов
         read_only_tools_summary = self._generate_tools_summary(read_only_tools)
@@ -307,7 +307,7 @@ class PromptBuilderService:
             history=history_text,
             user_message=user_message,
             stage_name=stage_name,
-            stage_principles=stage_principles,
+            stage_scenario=stage_scenario,
             read_only_tools_summary=read_only_tools_summary
         )
         
@@ -351,8 +351,8 @@ class PromptBuilderService:
         # Генерируем текущую дату и время
         current_datetime = self._generate_current_datetime()
         
-        # Форматируем принципы стадии
-        stage_principles = self._format_stage_principles(stage_name, client_name, client_phone_saved)
+        # Форматируем сценарий стадии
+        stage_scenario = self._format_stage_principles(stage_name, client_name, client_phone_saved)
         
         # Генерируем описание write инструментов
         write_tools_summary = self._generate_tools_summary(write_tools)
@@ -365,7 +365,7 @@ class PromptBuilderService:
             user_message=user_message,
             tool_results=tool_results,
             stage_name=stage_name,
-            stage_principles=stage_principles,
+            stage_scenario=stage_scenario,
             write_tools_summary=write_tools_summary
         )
         
