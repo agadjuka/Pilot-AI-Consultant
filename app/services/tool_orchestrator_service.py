@@ -739,6 +739,14 @@ class ToolOrchestratorService:
         elif function_name == "get_full_history":
             return method()
         
+        elif function_name == "save_client_name":
+            name = function_args.get("name", "")
+            return method(name, user_id)
+        
+        elif function_name == "save_client_phone":
+            phone = function_args.get("phone", "")
+            return method(phone, user_id)
+        
         else:
             return f"Ошибка: неизвестная функция '{function_name}'"
     
@@ -803,6 +811,14 @@ class ToolOrchestratorService:
         
         elif function_name == "get_full_history":
             return method()
+        
+        elif function_name == "save_client_name":
+            name = function_args.get("name", "")
+            return method(name, user_id)
+        
+        elif function_name == "save_client_phone":
+            phone = function_args.get("phone", "")
+            return method(phone, user_id)
         
         else:
             return f"Ошибка: неизвестная функция '{function_name}'"
