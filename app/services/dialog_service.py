@@ -349,7 +349,8 @@ class DialogService:
         
         # Очищаем исходный текст от всех строк TOOL_CALL:
         cleaned_text = response
-        tool_call_pattern = r'TOOL_CALL:\s*(\w+)\((.*?)\)'
+        # Удаляем строки с TOOL_CALL, включая обратные кавычки
+        tool_call_pattern = r'`?TOOL_CALL:\s*(\w+)\((.*?)\)`?'
         cleaned_text = re.sub(tool_call_pattern, '', cleaned_text, flags=re.MULTILINE)
         
         # Дополнительная очистка: удаляем лишние переносы строк
@@ -375,7 +376,8 @@ class DialogService:
         if tool_calls:
             # Очищаем исходный текст от всех строк TOOL_CALL:
             cleaned_text = hybrid_response
-            tool_call_pattern = r'TOOL_CALL:\s*(\w+)\((.*?)\)'
+            # Удаляем строки с TOOL_CALL, включая обратные кавычки
+            tool_call_pattern = r'`?TOOL_CALL:\s*(\w+)\((.*?)\)`?'
             cleaned_text = re.sub(tool_call_pattern, '', cleaned_text, flags=re.MULTILINE)
             
             # Дополнительная очистка: удаляем лишние переносы строк
