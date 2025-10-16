@@ -457,7 +457,6 @@ class DialogService:
             
             # Формируем промпт для синтеза
             synthesis_prompt = self.prompt_builder.build_synthesis_prompt(
-                stage_name=stage,
                 history=dialog_history,
                 user_message=text,
                 tool_results=tool_results,

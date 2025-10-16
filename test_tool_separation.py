@@ -57,28 +57,28 @@ def test_prompt_builder():
     
     prompt_builder = PromptBuilderService()
     
-    # Тестируем промпт планирования
-    planning_prompt = prompt_builder.build_planning_prompt(
+    # Тестируем промпт мышления
+    thinking_prompt = prompt_builder.build_thinking_prompt(
+        stage_name="greeting",
         history=[],
         user_message="Хочу записаться на маникюр"
     )
     
-    # Проверяем, что в промпте планирования есть только read_only инструменты
+    # Проверяем, что в промпте мышления есть только read_only инструменты
     for tool_name in ['get_all_services', 'get_available_slots']:
-        assert tool_name in planning_prompt, f"❌ {tool_name} должен быть в промпте планирования"
+        assert tool_name in thinking_prompt, f"❌ {tool_name} должен быть в промпте мышления"
     
-    # Проверяем, что в промпте планирования НЕТ write инструментов
+    # Проверяем, что в промпте мышления НЕТ write инструментов
     for tool_name in ['create_appointment', 'cancel_appointment_by_id']:
-        assert tool_name not in planning_prompt, f"❌ {tool_name} НЕ должен быть в промпте планирования"
+        assert tool_name not in thinking_prompt, f"❌ {tool_name} НЕ должен быть в промпте мышления"
     
-    print("✅ Промпт планирования использует только read_only инструменты!")
+    print("✅ Промпт мышления использует только read_only инструменты!")
     
     # Тестируем промпт синтеза
     synthesis_prompt = prompt_builder.build_synthesis_prompt(
         history=[],
         user_message="Хочу записаться на маникюр",
-        tool_results="Результат get_all_services: Маникюр - 2000 руб, 60 мин",
-        stage="booking_confirmation"
+        tool_results="Результат get_all_services: Маникюр - 2000 руб, 60 мин"
     )
     
     # Проверяем, что в промпте синтеза есть write инструменты
