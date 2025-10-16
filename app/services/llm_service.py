@@ -423,10 +423,11 @@ class LLMService:
             if message.get("role") == "system":
                 system_text = message.get("text", "")
                 
-                # Добавляем инструкции по function calling (актуальные имена и параметры)
+                # Добавляем инструкции по function calling (новый строковый формат)
                 function_calling_instructions = """
 
-ВАЖНО: Если нужно вызвать инструмент(ы), ответь ТОЛЬКО списком вызовов в формате JSON. Пример: [{"tool_name": "get_services"}, {"tool_name": "get_available_slots", "parameters": {"date": "завтра"}}]
+ВАЖНО: Если нужно вызвать инструмент(ы), используй новый строковый формат TOOL_CALL:
+`TOOL_CALL: имя_инструмента(параметр1="значение1", параметр2="значение2")`
 
 Доступные инструменты:
 - get_all_services — вернуть список услуг
@@ -444,8 +445,10 @@ class LLMService:
 3) Если в системном контексте указано, что имя и/или телефон клиента сохранены в БД, НЕ задавайте вопросы об этих данных — сразу создавайте запись.
 
 Примеры:
-- Один инструмент: [{"tool_name": "get_available_slots", "parameters": {"service_name": "Маникюр", "date": "2025-10-15"}}]
-- Несколько инструментов: [{"tool_name": "get_all_services"}, {"tool_name": "get_available_slots", "parameters": {"service_name": "Маникюр", "date": "завтра"}}]
+- Один инструмент: `TOOL_CALL: get_available_slots(service_name="Маникюр", date="2025-10-15")`
+- Несколько инструментов:
+`TOOL_CALL: get_all_services()`
+`TOOL_CALL: get_available_slots(service_name="Маникюр", date="завтра")`
 
 НИКОГДА не отвечайте обычным текстом, если по логике нужно вызвать инструмент!
 """

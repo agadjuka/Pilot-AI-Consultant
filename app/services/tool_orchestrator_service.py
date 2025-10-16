@@ -78,6 +78,54 @@ class ToolOrchestratorService:
         else:
             return str(message)
     
+    def parse_tool_calls_from_string(self, text: str, dialog_context: Dict = None, tracer=None) -> List[Dict]:
+        """
+        Парсит строковый формат TOOL_CALL: function_name(param="value") из текста.
+        
+        Args:
+            text: Текст с вызовами инструментов в формате TOOL_CALL:
+            dialog_context: Контекст диалога для обогащения параметров
+            tracer: Трейсер для логирования
+            
+        Returns:
+            Список вызовов инструментов в формате [{"tool_name": "...", "parameters": {...}}]
+        """
+        tool_calls = []
+        
+        # Ищем все строки с форматом TOOL_CALL: function_name(param="value")
+        tool_call_pattern = r'TOOL_CALL:\s*(\w+)\((.*?)\)'
+        matches = re.finditer(tool_call_pattern, text, re.MULTILINE)
+        
+        for match in matches:
+            function_name = match.group(1)
+            raw_params = match.group(2).strip()
+            
+            # Парсим параметры в формате param="value"
+            params = {}
+            if raw_params:
+                param_pattern = r'(\w+)\s*=\s*"([^"]*)"'
+                param_matches = re.finditer(param_pattern, raw_params)
+                for param_match in param_matches:
+                    param_name = param_match.group(1)
+                    param_value = param_match.group(2)
+                    params[param_name] = param_value
+            
+            tool_call = {
+                "tool_name": function_name,
+                "parameters": params
+            }
+            tool_calls.append(tool_call)
+            
+            if tracer:
+                tracer.log(f"🔧 [String Format] Найден вызов: {function_name}({params})")
+        
+        # Обогащаем вызовы инструментов контекстом диалога
+        if dialog_context and tool_calls:
+            enriched_calls = self.enrich_tool_calls(tool_calls, dialog_context, tracer)
+            return enriched_calls
+        
+        return tool_calls
+
     def enrich_tool_calls(self, tool_calls: List[Dict], dialog_context: Dict, tracer=None) -> List[Dict]:
         """
         Обогащает вызовы инструментов недостающими параметрами из контекста диалога.
@@ -282,7 +330,30 @@ class ToolOrchestratorService:
                 elif hasattr(part, 'text') and part.text:
                     text_payload = part.text.strip()
                     
-                    # УЛУЧШЕННАЯ ЛОГИКА: Надежный парсер JSON с очисткой
+                    # НОВЫЙ ФОРМАТ: Сначала проверяем строковый формат TOOL_CALL:
+                    string_tool_calls = self.parse_tool_calls_from_string(text_payload, dialog_context, tracer)
+                    if string_tool_calls:
+                        has_function_call = True
+                        
+                        # Обрабатываем каждый найденный вызов инструмента
+                        for tool_call in string_tool_calls:
+                            if isinstance(tool_call, dict) and "tool_name" in tool_call:
+                                function_name = tool_call["tool_name"]
+                                function_args = tool_call.get("parameters", {})
+                                
+                                # Создаем mock function_call для совместимости
+                                class MockFunctionCall:
+                                    def __init__(self, name, args):
+                                        self.name = name
+                                        self.args = args
+                                
+                                function_calls.append(MockFunctionCall(function_name, function_args))
+                        
+                        iteration_log["response"] = f"Строковый формат с {len(string_tool_calls)} вызовами инструментов"
+                        logger.info(f"🔧 [String Format] {len(string_tool_calls)} инструментов из строкового формата")
+                        continue  # Переходим к обработке function_calls
+                    
+                    # УЛУЧШЕННАЯ ЛОГИКА: Надежный парсер JSON с очисткой (резервный вариант)
                     cleaned_json_str = text_payload.strip()
                     
                     # Проверяем наличие Markdown-блока с JSON

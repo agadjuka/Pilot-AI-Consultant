@@ -215,23 +215,99 @@ class DialogService:
                 "updated_context": dialog_context
             })
     
-    def parse_tool_calls(self, planning_response_json: str) -> List[Dict]:
+    def _parse_parameters_string(self, params_string: str) -> Dict[str, str]:
         """
-        Парсит JSON-ответ от LLM на этапе планирования и извлекает вызовы инструментов.
+        Парсит строку параметров в формате param1="value1", param2="value2" в словарь.
         
         Args:
-            planning_response_json: JSON-строка с вызовами инструментов
+            params_string: Строка с параметрами (например: 'date="2025-10-16", service_name="маникюр"')
             
         Returns:
-            Список вызовов инструментов
+            Словарь параметров {"param1": "value1", "param2": "value2"}
         """
+        params = {}
+        if not params_string.strip():
+            return params
+        
+        # Регулярное выражение для поиска пар ключ="значение"
+        # Поддерживает русские символы и пробелы внутри значений
+        param_pattern = r'(\w+)\s*=\s*"([^"]*)"'
+        matches = re.finditer(param_pattern, params_string)
+        
+        for match in matches:
+            param_name = match.group(1)
+            param_value = match.group(2)
+            params[param_name] = param_value
+        
+        return params
+
+    def parse_tool_calls_from_response(self, response: str) -> List[Dict]:
+        """
+        Парсит ответ LLM и извлекает вызовы инструментов в новом строковом формате.
+        
+        Args:
+            response: Сырой ответ от LLM
+            
+        Returns:
+            Список вызовов инструментов в формате [{"tool_name": "...", "parameters": {...}}]
+        """
+        tool_calls = []
+        
+        # Регулярное выражение для поиска строк TOOL_CALL: function_name(param="value")
+        tool_call_pattern = r'TOOL_CALL:\s*(\w+)\((.*?)\)'
+        matches = re.finditer(tool_call_pattern, response, re.MULTILINE | re.DOTALL)
+        
+        for match in matches:
+            function_name = match.group(1)
+            raw_params = match.group(2).strip()
+            
+            # Парсим параметры
+            params = self._parse_parameters_string(raw_params)
+            
+            tool_call = {
+                "tool_name": function_name,
+                "parameters": params
+            }
+            tool_calls.append(tool_call)
+            
+            logger.info(f"🔧 [String Parser] Найден вызов: {function_name}({params})")
+        
+        return tool_calls
+
+    def parse_tool_calls(self, planning_response_json: str) -> List[Dict]:
+        """
+        Парсит ответ от LLM и извлекает вызовы инструментов в новом строковом формате.
+        
+        Args:
+            planning_response_json: Ответ от LLM (может содержать TOOL_CALL: или JSON)
+            
+        Returns:
+            Список вызовов инструментов в формате [{"tool_name": "...", "parameters": {...}}]
+        """
+        # Сначала пробуем новый строковый формат
+        tool_calls = self.parse_tool_calls_from_response(planning_response_json)
+        
+        if tool_calls:
+            logger.info(f"🔧 [String Parser] Найдено {len(tool_calls)} вызовов в строковом формате")
+            return tool_calls
+        
+        # Если строковый формат не найден, пробуем старый JSON (для обратной совместимости)
+        logger.info("🔧 [Fallback] Пробуем JSON-парсинг")
         try:
-            # Удаляем markdown блоки если они есть
+            # Улучшенная очистка markdown-блоков
             cleaned_response = planning_response_json.strip()
-            if cleaned_response.startswith('```') and cleaned_response.endswith('```'):
-                cleaned_response = cleaned_response[3:-3].strip()
-            elif cleaned_response.startswith('```json'):
-                cleaned_response = cleaned_response[7:-3].strip()
+            
+            # Удаляем блоки ```json ... ``` или ``` ... ```
+            if cleaned_response.startswith('```'):
+                # Находим конец блока
+                end_pos = cleaned_response.rfind('```')
+                if end_pos > 0:
+                    # Извлекаем содержимое между блоками
+                    content = cleaned_response[3:end_pos].strip()
+                    # Убираем префикс "json" если есть
+                    if content.startswith('json'):
+                        content = content[4:].strip()
+                    cleaned_response = content
             
             parsed_response = json.loads(cleaned_response)
             
@@ -242,17 +318,49 @@ class DialogService:
                 # Старый формат: [{"tool_name": "...", "parameters": {...}}]
                 return parsed_response
             
-            logger.warning(f"⚠️ Неожиданный формат ответа планирования: {parsed_response}")
+            logger.warning(f"⚠️ Неожиданный формат JSON ответа: {parsed_response}")
             return []
             
         except json.JSONDecodeError as e:
-            logger.error(f"❌ Ошибка парсинга JSON ответа планирования: {e}")
+            logger.error(f"❌ Ошибка парсинга JSON ответа: {e}")
             logger.error(f"❌ Сырой ответ: '{planning_response_json}'")
             return []
     
+    def parse_string_format_response(self, response: str) -> tuple[str, List[Dict]]:
+        """
+        Парсит ответ LLM в новом строковом формате TOOL_CALL: function_name(param="value").
+        
+        Args:
+            response: Сырой ответ от LLM
+            
+        Returns:
+            Кортеж (очищенный_текст_для_пользователя, список_вызовов_инструментов)
+        """
+        import re
+        
+        # Используем новый парсер для извлечения вызовов инструментов
+        tool_calls = self.parse_tool_calls_from_response(response)
+        
+        if not tool_calls:
+            # Если вызовов нет, возвращаем исходный текст
+            logger.info("❌ Строковые вызовы TOOL_CALL не найдены, возвращаем исходный текст")
+            return response, []
+        
+        # Очищаем исходный текст от всех строк TOOL_CALL:
+        cleaned_text = response
+        tool_call_pattern = r'TOOL_CALL:\s*(\w+)\((.*?)\)'
+        cleaned_text = re.sub(tool_call_pattern, '', cleaned_text, flags=re.MULTILINE)
+        
+        # Дополнительная очистка: удаляем лишние переносы строк
+        cleaned_text = re.sub(r'\n\s*\n\s*\n', '\n\n', cleaned_text).strip()
+        
+        logger.info(f"🔧 [String Format] Найдено {len(tool_calls)} вызовов, очищенный текст: {len(cleaned_text)} символов")
+        
+        return cleaned_text, tool_calls
+
     def parse_hybrid_response(self, hybrid_response: str) -> tuple[str, List[Dict]]:
         """
-        Парсит гибридный ответ LLM (JSON + текст) и извлекает вызовы инструментов.
+        Парсит гибридный ответ LLM (строковый формат + текст) и извлекает вызовы инструментов.
         
         Args:
             hybrid_response: Сырой ответ от LLM
@@ -260,6 +368,23 @@ class DialogService:
         Returns:
             Кортеж (очищенный_текст_для_пользователя, список_вызовов_инструментов)
         """
+        # Сначала пробуем новый строковый формат
+        tool_calls = self.parse_tool_calls_from_response(hybrid_response)
+        
+        if tool_calls:
+            # Очищаем исходный текст от всех строк TOOL_CALL:
+            cleaned_text = hybrid_response
+            tool_call_pattern = r'TOOL_CALL:\s*(\w+)\((.*?)\)'
+            cleaned_text = re.sub(tool_call_pattern, '', cleaned_text, flags=re.MULTILINE)
+            
+            # Дополнительная очистка: удаляем лишние переносы строк
+            cleaned_text = re.sub(r'\n\s*\n\s*\n', '\n\n', cleaned_text).strip()
+            
+            logger.info(f"🔧 [Hybrid String] Найдено {len(tool_calls)} вызовов в строковом формате")
+            return cleaned_text, tool_calls
+        
+        # Если строковый формат не найден, пробуем старый JSON (для обратной совместимости)
+        logger.info("🔧 [Hybrid Fallback] Пробуем JSON-парсинг")
         import re
         
         # Ищем все блоки ``` ... ``` в ответе (с json или без)
@@ -508,7 +633,11 @@ class DialogService:
             tracer.add_event("🔍 Парсинг ответа мышления", f"Длина ответа: {len(thinking_response)}")
             logger.info(f"🔍 Парсинг ответа мышления")
             
-            cleaned_text, tool_calls = self.parse_hybrid_response(thinking_response)
+            # Сначала пробуем новый строковый формат, потом JSON
+            cleaned_text, tool_calls = self.parse_string_format_response(thinking_response)
+            if not tool_calls:
+                # Если строковый формат не найден, пробуем JSON
+                cleaned_text, tool_calls = self.parse_hybrid_response(thinking_response)
             
             # Извлекаем и сохраняем сущности из tool_calls и исходного сообщения
             if tool_calls:
@@ -635,7 +764,11 @@ class DialogService:
             tracer.add_event("🔍 Парсинг ответа синтеза", f"Длина ответа: {len(synthesis_response)}")
             logger.info(f"🔍 Парсинг ответа синтеза")
             
-            cleaned_text, tool_calls = self.parse_hybrid_response(synthesis_response)
+            # Сначала пробуем новый строковый формат, потом JSON
+            cleaned_text, tool_calls = self.parse_string_format_response(synthesis_response)
+            if not tool_calls:
+                # Если строковый формат не найден, пробуем JSON
+                cleaned_text, tool_calls = self.parse_hybrid_response(synthesis_response)
             
             # Извлекаем и сохраняем сущности из tool_calls и исходного сообщения
             if tool_calls:
