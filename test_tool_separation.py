@@ -76,6 +76,7 @@ def test_prompt_builder():
     
     # Тестируем промпт синтеза
     synthesis_prompt = prompt_builder.build_synthesis_prompt(
+        stage_name="greeting",
         history=[],
         user_message="Хочу записаться на маникюр",
         tool_results="Результат get_all_services: Маникюр - 2000 руб, 60 мин"

@@ -478,7 +478,6 @@ class DialogService:
                         user_message=text,
                         client_name=client.first_name,
                         client_phone_saved=bool(client.phone_number),
-                        available_tools=available_tools,
                         hidden_context=hidden_context
                     )
             
@@ -600,12 +599,12 @@ class DialogService:
             
             # Формируем промпт для синтеза
             synthesis_prompt = self.prompt_builder.build_synthesis_prompt(
+                stage_name=stage,
                 history=dialog_history,
                 user_message=text,
                 tool_results=tool_results,
                 client_name=client.first_name,
-                client_phone_saved=bool(client.phone_number),
-                available_tools=available_tools
+                client_phone_saved=bool(client.phone_number)
             )
             
             tracer.add_event("📝 Промпт синтеза сформирован", {
