@@ -172,6 +172,17 @@ class ToolOrchestratorService:
                     logger.info(f"🔧 Обогащен get_masters_for_service: добавлен service_name = {dialog_context['service_name']}")
             
             elif tool_name == 'create_appointment':
+                # Маппинг неправильных имен параметров на правильные
+                if 'appointment_date' in parameters and 'date' not in parameters:
+                    parameters['date'] = parameters.pop('appointment_date')
+                    enrichments.append(f"appointment_date -> date")
+                    logger.info(f"🔧 Обогащен create_appointment: переименован appointment_date в date")
+                
+                if 'appointment_time' in parameters and 'time' not in parameters:
+                    parameters['time'] = parameters.pop('appointment_time')
+                    enrichments.append(f"appointment_time -> time")
+                    logger.info(f"🔧 Обогащен create_appointment: переименован appointment_time в time")
+                
                 # Обогащаем все возможные параметры для создания записи
                 if not parameters.get('service_name') and dialog_context.get('service_name'):
                     parameters['service_name'] = dialog_context['service_name']
