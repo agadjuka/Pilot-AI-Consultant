@@ -28,7 +28,7 @@ class DialogService:
     """
     Оркестратор диалоговой логики.
     Координирует работу между хранилищем истории диалогов и AI-моделью.
-    Реализует двухэтапную архитектуру: Классификация -> Мышление и Речь (итеративный цикл).
+    Реализует финальную трехэтапную архитектуру: Классификация -> Мышление -> Синтез.
     """
     
     # Размер окна контекста - последние N сообщений
@@ -222,9 +222,10 @@ class DialogService:
 
     async def process_user_message(self, user_id: int, text: str) -> str:
         """
-        Обрабатывает сообщение пользователя с использованием двухэтапной архитектуры:
+        Обрабатывает сообщение пользователя с использованием финальной трехэтапной архитектуры:
         1. Этап 1: Классификация стадии диалога
-        2. Этап 2: Основной цикл "Мышления и Речи" с итеративным выполнением инструментов
+        2. Этап 2: Мышление (сбор данных через read-only инструменты)
+        3. Этап 3: Синтез (финальный ответ с возможными write-действиями)
         
         Args:
             user_id: ID пользователя Telegram
@@ -241,9 +242,6 @@ class DialogService:
         
         # Создаем трейсер для этого диалога
         tracer = DialogueTracer(user_id=user_id, user_message=text)
-        
-        # Максимальное количество итераций в цикле мышления
-        MAX_ITERATIONS = 5
         
         try:
             # 0. Загружаем (или создаем) клиента
@@ -271,7 +269,7 @@ class DialogService:
             )
             tracer.add_event("💾 Сообщение сохранено в БД", f"Роль: user, Текст: {text}")
             
-            # --- ЭТАП 1: КЛАССИФИКАЦИЯ ---
+            # === ЭТАП 1: КЛАССИФИКАЦИЯ ===
             tracer.add_event("🔍 Этап 1: Классификация", "Определяем стадию диалога")
             logger.info("🔍 Этап 1: Классификация стадии диалога")
             
@@ -331,192 +329,210 @@ class DialogService:
                 # Возвращаем ответ пользователю и завершаем обработку
                 return manager_response['response_to_user']
             
-            # --- ЭТАП 2: ОСНОВНОЙ ЦИКЛ "МЫШЛЕНИЯ И РЕЧИ" ---
-            tracer.add_event("🧠 Этап 2: Основной цикл мышления", f"Максимум итераций: {MAX_ITERATIONS}")
-            logger.info("🧠 Этап 2: Основной цикл мышления и речи")
+            # === ЭТАП 2: МЫШЛЕНИЕ ===
+            tracer.add_event("🧠 Этап 2: Мышление", "Сбор данных через read-only инструменты")
+            logger.info("🧠 Этап 2: Мышление - сбор данных")
             
-            # Получаем данные стадии из новой структуры patterns
-            stage_data = self.prompt_builder.dialogue_patterns.get(stage, {})
-            stage_goal = stage_data.get('goal', 'Помочь клиенту')
-            stage_scenario = stage_data.get('scenario', [])
-            available_tools = stage_data.get('available_tools', [])
-            
-            tracer.add_event("📋 Данные стадии загружены", {
-                "stage": stage,
-                "goal": stage_goal,
-                "scenario_steps": len(stage_scenario),
-                "available_tools": available_tools
-            })
-            
-            # Переменные для цикла мышления
-            tool_results = ""
-            bot_response_text = ""
-            
-            # Основной цикл мышления
-            for iteration in range(MAX_ITERATIONS):
-                tracer.add_event(f"🔄 Итерация {iteration + 1}", f"Цикл мышления")
-                logger.info(f"🔄 Итерация {iteration + 1}/{MAX_ITERATIONS} цикла мышления")
-                
-                # Формируем промпт в зависимости от итерации
-                if iteration == 0:
-                    # Первая итерация - планирование (только сбор данных)
-                    main_prompt = self.prompt_builder.build_planning_prompt(
+            # Формируем промпт для мышления
+            thinking_prompt = self.prompt_builder.build_thinking_prompt(
                         stage_name=stage,
-                        stage_scenario=stage_scenario,
-                        available_tools=available_tools,
                         history=dialog_history,
                         user_message=text,
                         client_name=client.first_name,
                         client_phone_saved=bool(client.phone_number)
                     )
-                else:
-                    # Последующие итерации - синтез
-                    main_prompt = self.prompt_builder.build_synthesis_prompt(
-                        stage_name=stage,
-                        stage_scenario=stage_scenario,
-                        available_tools=available_tools,
-                        history=dialog_history,
-                        user_message=text,
-                        tool_results=tool_results,
-                        client_name=client.first_name,
-                        client_phone_saved=bool(client.phone_number)
-                    )
-                
-                tracer.add_event(f"📝 Промпт мышления {iteration + 1} сформирован", {
-                    "prompt_length": len(main_prompt),
-                    "tool_results_length": len(tool_results),
+            
+            tracer.add_event("📝 Промпт мышления сформирован", {
+                "prompt_length": len(thinking_prompt),
                     "stage": stage
                 })
                 
-                # Создаем историю для вызова LLM
-                main_history = [
+            # Создаем историю для второго вызова LLM
+            thinking_history = [
                     {
                         "role": "user",
-                        "parts": [{"text": main_prompt}]
-                    }
-                ]
-                
-                # Вызов LLM с инструментами, доступными для текущей стадии
-                from app.services.tool_definitions import all_tools_dict
-                
-                # Фильтруем инструменты по доступным для стадии
-                stage_tools = []
-                if available_tools:
-                    for tool_name in available_tools:
-                        if tool_name in all_tools_dict:
-                            stage_tools.append(all_tools_dict[tool_name])
-                
-                tracer.add_event(f"🔧 Инструменты для стадии {iteration + 1}", {
-                    "available_tools": available_tools,
-                    "filtered_tools_count": len(stage_tools),
-                    "tool_names": [tool.name for tool in stage_tools]
-                })
-                
-                main_response = await self.llm_service.generate_response(main_history, stage_tools, tracer=tracer)
-                
-                tracer.add_event(f"✅ Ответ мышления {iteration + 1} получен", {
-                    "response_length": len(main_response),
-                    "iteration": iteration + 1
-                })
-                logger.info(f"✅ Ответ мышления {iteration + 1} получен")
-                
-                # Парсим гибридный ответ (JSON + текст)
-                tracer.add_event(f"🔍 Парсинг ответа {iteration + 1}", f"Длина ответа: {len(main_response)}")
-                logger.info(f"🔍 Парсинг ответа мышления {iteration + 1}")
-                
-                cleaned_text, tool_calls = self.parse_hybrid_response(main_response)
-                
-                # Анализируем ответ и принимаем решение
-                if tool_calls:
-                    # Есть вызовы инструментов - выполняем их
-                    tracer.add_event(f"⚙️ Выполнение инструментов {iteration + 1}", {
-                        "tool_calls": tool_calls,
-                        "tool_calls_count": len(tool_calls),
-                        "cleaned_text_length": len(cleaned_text)
-                    })
-                    logger.info(f"⚙️ Выполнение {len(tool_calls)} инструментов в итерации {iteration + 1}")
-                    
-                    # Выполняем инструменты
-                    iteration_results = []
-                    for tool_call in tool_calls:
-                        tool_name = tool_call.get('tool_name')
-                        parameters = tool_call.get('parameters', {})
-                        
-                        # Добавляем user_telegram_id к параметрам для инструментов, которые его требуют
-                        if tool_name in ['cancel_appointment_by_id', 'reschedule_appointment_by_id']:
-                            parameters['user_telegram_id'] = user_id
-                        
-                        tracer.add_event(f"🔧 Выполнение инструмента {iteration + 1}", f"Инструмент: {tool_name}, Параметры: {parameters}")
-                        
-                        try:
-                            # Выполняем инструмент через ToolOrchestratorService
-                            tool_result = await self.tool_orchestrator.execute_single_tool(tool_name, parameters, user_id)
-                            iteration_results.append(f"Результат {tool_name}: {tool_result}")
-                            
-                            # Специальная трассировка для операций с записями
-                            if tool_name == 'get_my_appointments':
-                                # Получаем структурированные данные напрямую из AppointmentService
-                                appointments_data = self.appointment_service.get_my_appointments(user_id)
-                                session_context['appointments_in_focus'] = appointments_data
-                                logger.info(f"🔍 Записи сохранены в память: {appointments_data}")
-                                tracer.add_event("🔍 Записи сохранены в память", {
-                                    "appointments_count": len(appointments_data),
-                                    "appointments": appointments_data
-                                })
-                            
-                            tracer.add_event(f"✅ Инструмент {iteration + 1} выполнен", f"Инструмент: {tool_name}, Результат: {tool_result}")
-                            logger.info(f"✅ Инструмент выполнен в итерации {iteration + 1}: {tool_name}")
-                            
-                        except Exception as e:
-                            error_msg = f"Ошибка выполнения {tool_name}: {str(e)}"
-                            iteration_results.append(error_msg)
-                            tracer.add_event(f"❌ Ошибка инструмента {iteration + 1}", f"Инструмент: {tool_name}, Ошибка: {str(e)}")
-                            logger.error(f"❌ Ошибка выполнения инструмента {tool_name} в итерации {iteration + 1}: {e}")
-                    
-                    # Обновляем результаты инструментов для следующей итерации
-                    if iteration_results:
-                        tool_results += f"\n--- Итерация {iteration + 1} ---\n" + "\n".join(iteration_results) + "\n"
-                    
-                    # КЛЮЧЕВОЕ ИЗМЕНЕНИЕ: Игнорируем текст на первой итерации (сбор данных)
-                    if iteration == 0:  # Первая итерация (iteration + 1 = 1)
-                        tracer.add_event(f"🚫 Игнорирование текста на первой итерации {iteration + 1}", {
-                            "ignored_text": cleaned_text.strip(),
-                            "reason": "Первая итерация предназначена только для сбора данных"
-                        })
-                        logger.info(f"🚫 Игнорируем текст на первой итерации {iteration + 1} - только сбор данных")
-                    elif cleaned_text.strip():
-                        # На второй и последующих итерациях сохраняем текст для финального ответа
-                        bot_response_text = cleaned_text.strip()
-                        tracer.add_event(f"📝 Текст сохранен для финального ответа {iteration + 1}", {
-                            "text": bot_response_text,
-                            "length": len(bot_response_text)
-                        })
-                        logger.info(f"📝 Текст сохранен для финального ответа в итерации {iteration + 1}")
-                    
-                    # Продолжаем цикл для следующей итерации
-                    continue
-                    
-                elif cleaned_text.strip():
-                    # Нет инструментов, но есть текстовый ответ - это финальный ответ
-                    bot_response_text = cleaned_text.strip()
-                    tracer.add_event(f"✅ Финальный ответ получен в итерации {iteration + 1}", {
-                        "response": bot_response_text,
-                        "length": len(bot_response_text),
-                        "iteration": iteration + 1
-                    })
-                    logger.info(f"✅ Финальный ответ получен в итерации {iteration + 1}")
-                    break
-                    
-                else:
-                    # Нет ни инструментов, ни текста - странная ситуация
-                    tracer.add_event(f"⚠️ Пустой ответ в итерации {iteration + 1}", "Нет инструментов и текста")
-                    logger.warning(f"⚠️ Пустой ответ в итерации {iteration + 1}")
-                    break
+                    "parts": [{"text": thinking_prompt}]
+                }
+            ]
             
-            # Если цикл завершился без финального ответа, генерируем fallback
-            if not bot_response_text.strip():
-                tracer.add_event("⚠️ Fallback ответ", "Цикл завершился без финального ответа")
-                logger.warning("⚠️ Цикл мышления завершился без финального ответа, генерируем fallback")
+            # Второй вызов LLM для мышления (с read-only инструментами)
+            from app.services.tool_definitions import read_only_tools
+            thinking_response = await self.llm_service.generate_response(thinking_history, read_only_tools, tracer=tracer)
+            
+            tracer.add_event("✅ Ответ мышления получен", {
+                "response_length": len(thinking_response),
+                "response": thinking_response
+            })
+            logger.info(f"✅ Ответ мышления получен")
+            
+            # Парсим ответ мышления
+            tracer.add_event("🔍 Парсинг ответа мышления", f"Длина ответа: {len(thinking_response)}")
+            logger.info(f"🔍 Парсинг ответа мышления")
+            
+            cleaned_text, tool_calls = self.parse_hybrid_response(thinking_response)
+            
+            # Переменная для результатов инструментов
+            tool_results = ""
+            
+            # Если есть вызовы инструментов - выполняем их
+            if tool_calls:
+                tracer.add_event("⚙️ Выполнение разведывательных инструментов", {
+                    "tool_calls": tool_calls,
+                    "tool_calls_count": len(tool_calls),
+                    "cleaned_text_length": len(cleaned_text)
+                })
+                logger.info(f"⚙️ Выполнение {len(tool_calls)} разведывательных инструментов")
+                
+                # Выполняем инструменты
+                iteration_results = []
+                for tool_call in tool_calls:
+                    tool_name = tool_call.get('tool_name')
+                    parameters = tool_call.get('parameters', {})
+                    
+                    # Добавляем user_telegram_id к параметрам для инструментов, которые его требуют
+                    if tool_name in ['cancel_appointment_by_id', 'reschedule_appointment_by_id']:
+                        parameters['user_telegram_id'] = user_id
+                    
+                    tracer.add_event(f"🔧 Выполнение разведывательного инструмента", f"Инструмент: {tool_name}, Параметры: {parameters}")
+                    
+                    try:
+                        # Выполняем инструмент через ToolOrchestratorService
+                        tool_result = await self.tool_orchestrator.execute_single_tool(tool_name, parameters, user_id)
+                        iteration_results.append(f"Результат {tool_name}: {tool_result}")
+                        
+                        # Специальная трассировка для операций с записями
+                        if tool_name == 'get_my_appointments':
+                            # Получаем структурированные данные напрямую из AppointmentService
+                            appointments_data = self.appointment_service.get_my_appointments(user_id)
+                            session_context['appointments_in_focus'] = appointments_data
+                            logger.info(f"🔍 Записи сохранены в память: {appointments_data}")
+                            tracer.add_event("🔍 Записи сохранены в память", {
+                                "appointments_count": len(appointments_data),
+                                "appointments": appointments_data
+                            })
+                        
+                        tracer.add_event(f"✅ Разведывательный инструмент выполнен", f"Инструмент: {tool_name}, Результат: {tool_result}")
+                        logger.info(f"✅ Разведывательный инструмент выполнен: {tool_name}")
+                        
+                    except Exception as e:
+                        error_msg = f"Ошибка выполнения {tool_name}: {str(e)}"
+                        iteration_results.append(error_msg)
+                        tracer.add_event(f"❌ Ошибка разведывательного инструмента", f"Инструмент: {tool_name}, Ошибка: {str(e)}")
+                        logger.error(f"❌ Ошибка выполнения разведывательного инструмента {tool_name}: {e}")
+                
+                # Формируем результаты инструментов
+                if iteration_results:
+                    tool_results = "\n".join(iteration_results)
+                
+                # Если есть текстовый ответ на этапе мышления - это финальный ответ
+                if cleaned_text.strip():
+                    bot_response_text = cleaned_text.strip()
+                    tracer.add_event("✅ Финальный ответ получен на этапе мышления", {
+                        "response": bot_response_text,
+                        "length": len(bot_response_text)
+                    })
+                    logger.info("✅ Финальный ответ получен на этапе мышления")
+                    
+                    # Сохраняем финальный ответ бота в БД
+                    self.repository.add_message(
+                        user_id=user_id,
+                        role="model",
+                        message_text=bot_response_text
+                    )
+                    
+                    tracer.add_event("💾 Финальный ответ сохранен", {
+                        "text": bot_response_text,
+                        "length": len(bot_response_text)
+                    })
+                    
+                    # Логируем завершение обработки
+                    log_dialog_end(logger, bot_response_text)
+                    
+                    # Возвращаем сгенерированный текст
+                    return bot_response_text
+            
+            # === ЭТАП 3: СИНТЕЗ ===
+            tracer.add_event("🎯 Этап 3: Синтез", "Формирование финального ответа с возможными действиями")
+            logger.info("🎯 Этап 3: Синтез - формирование финального ответа")
+            
+            # Формируем промпт для синтеза
+            synthesis_prompt = self.prompt_builder.build_synthesis_prompt(
+                stage_name=stage,
+                history=dialog_history,
+                user_message=text,
+                tool_results=tool_results,
+                client_name=client.first_name,
+                client_phone_saved=bool(client.phone_number)
+            )
+            
+            tracer.add_event("📝 Промпт синтеза сформирован", {
+                "prompt_length": len(synthesis_prompt),
+                "tool_results_length": len(tool_results),
+                "stage": stage
+            })
+            
+            # Создаем историю для третьего вызова LLM
+            synthesis_history = [
+                {
+                    "role": "user",
+                    "parts": [{"text": synthesis_prompt}]
+                }
+            ]
+            
+            # Третий вызов LLM для синтеза (с write инструментами)
+            from app.services.tool_definitions import write_tools
+            synthesis_response = await self.llm_service.generate_response(synthesis_history, write_tools, tracer=tracer)
+            
+            tracer.add_event("✅ Ответ синтеза получен", {
+                "response_length": len(synthesis_response),
+                "response": synthesis_response
+            })
+            logger.info(f"✅ Ответ синтеза получен")
+            
+            # Парсим ответ синтеза
+            tracer.add_event("🔍 Парсинг ответа синтеза", f"Длина ответа: {len(synthesis_response)}")
+            logger.info(f"🔍 Парсинг ответа синтеза")
+            
+            cleaned_text, tool_calls = self.parse_hybrid_response(synthesis_response)
+            
+            # Если есть вызовы инструментов - выполняем их
+            if tool_calls:
+                tracer.add_event("⚙️ Выполнение исполнительных инструментов", {
+                    "tool_calls": tool_calls,
+                    "tool_calls_count": len(tool_calls),
+                    "cleaned_text_length": len(cleaned_text)
+                })
+                logger.info(f"⚙️ Выполнение {len(tool_calls)} исполнительных инструментов")
+                
+                # Выполняем инструменты
+                for tool_call in tool_calls:
+                    tool_name = tool_call.get('tool_name')
+                    parameters = tool_call.get('parameters', {})
+                    
+                    # Добавляем user_telegram_id к параметрам для инструментов, которые его требуют
+                    if tool_name in ['cancel_appointment_by_id', 'reschedule_appointment_by_id']:
+                        parameters['user_telegram_id'] = user_id
+                    
+                    tracer.add_event(f"🔧 Выполнение исполнительного инструмента", f"Инструмент: {tool_name}, Параметры: {parameters}")
+                    
+                    try:
+                        # Выполняем инструмент через ToolOrchestratorService
+                        tool_result = await self.tool_orchestrator.execute_single_tool(tool_name, parameters, user_id)
+                        
+                        tracer.add_event(f"✅ Исполнительный инструмент выполнен", f"Инструмент: {tool_name}, Результат: {tool_result}")
+                        logger.info(f"✅ Исполнительный инструмент выполнен: {tool_name}")
+                        
+                    except Exception as e:
+                        tracer.add_event(f"❌ Ошибка исполнительного инструмента", f"Инструмент: {tool_name}, Ошибка: {str(e)}")
+                        logger.error(f"❌ Ошибка выполнения исполнительного инструмента {tool_name}: {e}")
+            
+            # Финальный ответ - это очищенный текст
+            bot_response_text = cleaned_text.strip()
+            
+            # Если нет текста, генерируем fallback
+            if not bot_response_text:
+                tracer.add_event("⚠️ Fallback ответ", "Нет текста в ответе синтеза")
+                logger.warning("⚠️ Нет текста в ответе синтеза, генерируем fallback")
                 
                 fallback_prompt = f"Клиент написал: '{text}'. Сформулируй вежливый ответ, что ты понял его запрос и готов помочь."
                 fallback_history = [
