@@ -84,17 +84,29 @@ class AppointmentService:
             
             # Находим мастера в БД
             all_masters = self.master_repository.get_all()
-            master = next((m for m in all_masters if master_name.lower() in m.name.lower()), None)
             
-            if not master:
-                # Если не найдено, показываем похожих мастеров
-                similar_masters = self._find_similar_masters(master_name, all_masters)
-                logger.warning(f"❌ [CREATE APPOINTMENT] Мастер не найден: '{master_name}', похожие: {similar_masters}")
-                if similar_masters:
-                    return f"Мастер '{master_name}' не найден. Возможно, вы имели в виду: {', '.join(similar_masters)}?"
-                return f"Мастер '{master_name}' не найден."
-            
-            logger.info(f"✅ [CREATE APPOINTMENT] Мастер найден: id={master.id}, name='{master.name}'")
+            # Если мастер не указан, автоматически выбираем первого доступного мастера для этой услуги
+            if not master_name or master_name.strip() == "":
+                logger.info(f"🔍 [CREATE APPOINTMENT] Мастер не указан, ищем доступного мастера для услуги '{service.name}'")
+                available_masters = self.master_repository.get_masters_for_service(service.id)
+                if available_masters:
+                    master = available_masters[0]  # Берем первого доступного мастера
+                    logger.info(f"✅ [CREATE APPOINTMENT] Автоматически выбран мастер: id={master.id}, name='{master.name}'")
+                else:
+                    logger.warning(f"❌ [CREATE APPOINTMENT] Нет доступных мастеров для услуги '{service.name}'")
+                    return f"К сожалению, сейчас нет доступных мастеров для услуги '{service.name}'."
+            else:
+                master = next((m for m in all_masters if master_name.lower() in m.name.lower()), None)
+                
+                if not master:
+                    # Если не найдено, показываем похожих мастеров
+                    similar_masters = self._find_similar_masters(master_name, all_masters)
+                    logger.warning(f"❌ [CREATE APPOINTMENT] Мастер не найден: '{master_name}', похожие: {similar_masters}")
+                    if similar_masters:
+                        return f"Мастер '{master_name}' не найден. Возможно, вы имели в виду: {', '.join(similar_masters)}?"
+                    return f"Мастер '{master_name}' не найден."
+                
+                logger.info(f"✅ [CREATE APPOINTMENT] Мастер найден: id={master.id}, name='{master.name}'")
             
             # Получаем длительность услуги
             duration_minutes = service.duration_minutes

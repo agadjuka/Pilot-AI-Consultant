@@ -183,6 +183,11 @@ class ToolOrchestratorService:
                     enrichments.append(f"appointment_time -> time")
                     logger.info(f"🔧 Обогащен create_appointment: переименован appointment_time в time")
                 
+                if 'service' in parameters and 'service_name' not in parameters:
+                    parameters['service_name'] = parameters.pop('service')
+                    enrichments.append(f"service -> service_name")
+                    logger.info(f"🔧 Обогащен create_appointment: переименован service в service_name")
+                
                 # Обогащаем все возможные параметры для создания записи
                 if not parameters.get('service_name') and dialog_context.get('service_name'):
                     parameters['service_name'] = dialog_context['service_name']
