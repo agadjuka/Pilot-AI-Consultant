@@ -2,7 +2,7 @@ from app.repositories.service_repository import ServiceRepository
 from app.repositories.master_repository import MasterRepository
 from app.services.appointment_service import AppointmentService
 from app.services.google_calendar_service import GoogleCalendarService
-from app.utils.date_parser import parse_date_string
+from app.utils.robust_date_parser import parse_date_robust
 from datetime import datetime, timedelta
 from difflib import SequenceMatcher
 import logging
@@ -111,7 +111,7 @@ class ToolService:
         """
         try:
             # Парсим дату в стандартный формат
-            parsed_date = parse_date_string(date)
+            parsed_date = parse_date_robust(date)
             if parsed_date is None:
                 return f"Неверный формат даты: {date}. Ожидается формат YYYY-MM-DD."
             
@@ -186,7 +186,7 @@ class ToolService:
             Строка с подтверждением записи или сообщение об ошибке
         """
         # Парсим дату в стандартный формат
-        parsed_date = parse_date_string(date)
+        parsed_date = parse_date_robust(date)
         if parsed_date is None:
             return f"Неверный формат даты: {date}. Ожидается формат YYYY-MM-DD."
         
@@ -267,7 +267,7 @@ class ToolService:
             Подтверждение переноса или сообщение об ошибке
         """
         # Парсим дату в стандартный формат
-        parsed_date = parse_date_string(new_date)
+        parsed_date = parse_date_robust(new_date)
         if parsed_date is None:
             return f"Неверный формат даты: {new_date}. Ожидается формат YYYY-MM-DD."
         
