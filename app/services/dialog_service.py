@@ -217,7 +217,7 @@ class DialogService:
     
     def _parse_parameters_string(self, params_string: str) -> Dict[str, str]:
         """
-        Парсит строку параметров в формате param1="value1", param2="value2" в словарь.
+        Парсит строку параметров в формате param1="value1", param2=value2 в словарь.
         
         Args:
             params_string: Строка с параметрами (например: 'date="2025-10-16", service_name="маникюр"')
@@ -229,14 +229,15 @@ class DialogService:
         if not params_string.strip():
             return params
         
-        # Регулярное выражение для поиска пар ключ="значение"
+        # Регулярное выражение для поиска пар ключ="значение" или ключ=значение
         # Поддерживает русские символы и пробелы внутри значений
-        param_pattern = r'(\w+)\s*=\s*"([^"]*)"'
+        param_pattern = r'(\w+)\s*=\s*("([^"]*)"|([^,\s]+))'
         matches = re.finditer(param_pattern, params_string)
         
         for match in matches:
             param_name = match.group(1)
-            param_value = match.group(2)
+            # Группа 3 - значение в кавычках, группа 4 - значение без кавычек
+            param_value = match.group(3) if match.group(3) is not None else match.group(4)
             params[param_name] = param_value
         
         return params
