@@ -195,6 +195,28 @@ class PromptBuilderService:
         
         return tools_summary.strip()
     
+    def _filter_tools_by_available(self, tools_list: List, available_tools: Optional[List[str]]) -> List:
+        """
+        Фильтрует список инструментов, оставляя только те, которые разрешены для текущей стадии.
+        
+        Args:
+            tools_list: Полный список инструментов (FunctionDeclaration объекты)
+            available_tools: Список имен разрешенных инструментов для текущей стадии
+            
+        Returns:
+            Отфильтрованный список инструментов
+        """
+        if not available_tools:
+            # Если список доступных инструментов пуст, возвращаем пустой список
+            return []
+        
+        filtered_tools = []
+        for func_decl in tools_list:
+            if func_decl.name in available_tools:
+                filtered_tools.append(func_decl)
+        
+        return filtered_tools
+    
     def _format_stage_principles(self, stage_name: str, client_name: Optional[str] = None, client_phone_saved: bool = False) -> str:
         """
         Форматирует сценарий стадии в читаемую строку.
@@ -269,7 +291,8 @@ class PromptBuilderService:
         history: List[Dict],
         user_message: str,
         client_name: Optional[str] = None,
-        client_phone_saved: bool = False
+        client_phone_saved: bool = False,
+        available_tools: Optional[List[str]] = None
     ) -> str:
         """
         Формирует промпт для Этапа 2: Мышление.
@@ -280,6 +303,7 @@ class PromptBuilderService:
             user_message: Новое сообщение пользователя
             client_name: Имя клиента
             client_phone_saved: Сохранен ли телефон клиента
+            available_tools: Список доступных инструментов для текущей стадии
             
         Returns:
             Промпт для этапа мышления
@@ -302,8 +326,11 @@ class PromptBuilderService:
         # Форматируем сценарий стадии
         stage_scenario = self._format_stage_principles(stage_name, client_name, client_phone_saved)
         
-        # Генерируем описание read-only инструментов
-        read_only_tools_summary = self._generate_tools_summary(read_only_tools)
+        # Фильтруем read-only инструменты по доступным для текущей стадии
+        filtered_read_only_tools = self._filter_tools_by_available(read_only_tools, available_tools)
+        
+        # Генерируем описание отфильтрованных read-only инструментов
+        read_only_tools_summary = self._generate_tools_summary(filtered_read_only_tools)
         
         # Собираем промпт по шаблону
         prompt = self.THINKING_TEMPLATE.format(
@@ -324,7 +351,8 @@ class PromptBuilderService:
         user_message: str,
         tool_results: str,
         client_name: Optional[str] = None,
-        client_phone_saved: bool = False
+        client_phone_saved: bool = False,
+        available_tools: Optional[List[str]] = None
     ) -> str:
         """
         Формирует промпт для Этапа 3: Синтез.
@@ -335,6 +363,7 @@ class PromptBuilderService:
             tool_results: Результаты выполнения инструментов с этапа мышления
             client_name: Имя клиента
             client_phone_saved: Сохранен ли телефон клиента
+            available_tools: Список доступных инструментов для текущей стадии
             
         Returns:
             Промпт для этапа синтеза
@@ -354,8 +383,11 @@ class PromptBuilderService:
         # Генерируем текущую дату и время
         current_datetime = self._generate_current_datetime()
         
-        # Генерируем описание write инструментов
-        write_tools_summary = self._generate_tools_summary(write_tools)
+        # Фильтруем write инструменты по доступным для текущей стадии
+        filtered_write_tools = self._filter_tools_by_available(write_tools, available_tools)
+        
+        # Генерируем описание отфильтрованных write инструментов
+        write_tools_summary = self._generate_tools_summary(filtered_write_tools)
         
         # Собираем промпт по шаблону
         prompt = self.SYNTHESIS_TEMPLATE.format(

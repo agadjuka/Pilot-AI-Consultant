@@ -333,13 +333,18 @@ class DialogService:
             tracer.add_event("🧠 Этап 2: Мышление", "Сбор данных через read-only инструменты")
             logger.info("🧠 Этап 2: Мышление - сбор данных")
             
+            # Извлекаем доступные инструменты для текущей стадии
+            stage_data = self.prompt_builder.dialogue_patterns.get(stage, {})
+            available_tools = stage_data.get('available_tools', [])
+            
             # Формируем промпт для мышления
             thinking_prompt = self.prompt_builder.build_thinking_prompt(
                         stage_name=stage,
                         history=dialog_history,
                         user_message=text,
                         client_name=client.first_name,
-                        client_phone_saved=bool(client.phone_number)
+                        client_phone_saved=bool(client.phone_number),
+                        available_tools=available_tools
                     )
             
             tracer.add_event("📝 Промпт мышления сформирован", {
@@ -461,7 +466,8 @@ class DialogService:
                 user_message=text,
                 tool_results=tool_results,
                 client_name=client.first_name,
-                client_phone_saved=bool(client.phone_number)
+                client_phone_saved=bool(client.phone_number),
+                available_tools=available_tools
             )
             
             tracer.add_event("📝 Промпт синтеза сформирован", {
