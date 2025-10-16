@@ -380,6 +380,30 @@ class DialogService:
             tracer.add_event("📊 Стадия определена", f"Стадия: {stage}")
             logger.info(f"🎯 Определена стадия: '{stage}'")
             
+            # === ПОДГОТОВКА КОНТЕКСТА ДЛЯ ОТМЕНЫ/ПЕРЕНОСА ===
+            # Проверяем, нужны ли данные о записях для текущей стадии
+            if stage in ['cancellation_request', 'rescheduling']:
+                tracer.add_event("🔍 Подготовка контекста для отмены/переноса", f"Стадия: {stage}")
+                logger.info(f"🔍 Подготовка контекста для стадии: {stage}")
+                
+                # Проверяем, есть ли уже данные о записях в сессии
+                if 'appointments_in_focus' not in session_context:
+                    tracer.add_event("📋 Загрузка записей клиента", "Данные о записях отсутствуют в сессии")
+                    logger.info("📋 Загружаем данные о записях клиента")
+                    
+                    # Получаем структурированные данные напрямую из AppointmentService
+                    appointments_data = self.appointment_service.get_my_appointments(user_id)
+                    session_context['appointments_in_focus'] = appointments_data
+                    
+                    tracer.add_event("✅ Записи загружены в память", {
+                        "appointments_count": len(appointments_data),
+                        "appointments": appointments_data
+                    })
+                    logger.info(f"✅ Записи сохранены в память: {appointments_data}")
+                else:
+                    tracer.add_event("✅ Записи уже в памяти", f"Количество записей: {len(session_context['appointments_in_focus'])}")
+                    logger.info("✅ Данные о записях уже есть в сессии")
+            
             # Быстрый путь для конфликтных ситуаций
             if stage == 'conflict_escalation':
                 logger.warning(f"⚠️ КОНФЛИКТНАЯ СТАДИЯ: Немедленная эскалация на менеджера")
@@ -416,13 +440,25 @@ class DialogService:
             available_tools = stage_data.get('available_tools', [])
             
             # Формируем промпт для мышления
+            # Добавляем скрытый контекст для стадий отмены/переноса
+            hidden_context = ""
+            if stage in ['cancellation_request', 'rescheduling'] and 'appointments_in_focus' in session_context:
+                appointments_data = session_context['appointments_in_focus']
+                if appointments_data:
+                    hidden_context = f"\n\n## СКРЫТЫЙ КОНТЕКСТ (только для тебя):\n"
+                    hidden_context += f"Записи клиента с ID для операций:\n"
+                    for appointment in appointments_data:
+                        hidden_context += f"- ID: {appointment['id']}, {appointment['details']}\n"
+                    hidden_context += f"\nИспользуй эти ID для вызова инструментов cancel_appointment_by_id или reschedule_appointment_by_id.\n"
+            
             thinking_prompt = self.prompt_builder.build_thinking_prompt(
                         stage_name=stage,
                         history=dialog_history,
                         user_message=text,
                         client_name=client.first_name,
                         client_phone_saved=bool(client.phone_number),
-                        available_tools=available_tools
+                        available_tools=available_tools,
+                        hidden_context=hidden_context
                     )
             
             tracer.add_event("📝 Промпт мышления сформирован", {
@@ -493,14 +529,9 @@ class DialogService:
                         
                         # Специальная трассировка для операций с записями
                         if tool_name == 'get_my_appointments':
-                            # Получаем структурированные данные напрямую из AppointmentService
-                            appointments_data = self.appointment_service.get_my_appointments(user_id)
-                            session_context['appointments_in_focus'] = appointments_data
-                            logger.info(f"🔍 Записи сохранены в память: {appointments_data}")
-                            tracer.add_event("🔍 Записи сохранены в память", {
-                                "appointments_count": len(appointments_data),
-                                "appointments": appointments_data
-                            })
+                            # Данные уже загружены на этапе подготовки контекста
+                            logger.info(f"🔍 Инструмент get_my_appointments выполнен (данные уже в памяти)")
+                            tracer.add_event("🔍 Инструмент get_my_appointments выполнен", "Данные уже загружены в память")
                         
                         tracer.add_event(f"✅ Разведывательный инструмент выполнен", f"Инструмент: {tool_name}, Результат: {tool_result}")
                         logger.info(f"✅ Разведывательный инструмент выполнен: {tool_name}")

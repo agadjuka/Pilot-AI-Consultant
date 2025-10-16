@@ -60,6 +60,7 @@ class PromptBuilderService:
 - О клиенте: {client_context}
 - История: {history}
 - Запрос: {user_message}
+{hidden_context}
 
 # СЦЕНАРИЙ ДЛЯ СТАДИИ '{stage_name}':
 {stage_scenario}
@@ -308,7 +309,8 @@ class PromptBuilderService:
         user_message: str,
         client_name: Optional[str] = None,
         client_phone_saved: bool = False,
-        available_tools: Optional[List[str]] = None
+        available_tools: Optional[List[str]] = None,
+        hidden_context: str = ""
     ) -> str:
         """
         Формирует промпт для Этапа 2: Мышление.
@@ -354,6 +356,7 @@ class PromptBuilderService:
             client_context=client_context,
             history=history_text,
             user_message=user_message,
+            hidden_context=hidden_context,
             stage_name=stage_name,
             stage_scenario=stage_scenario,
             read_only_tools_summary=read_only_tools_summary
