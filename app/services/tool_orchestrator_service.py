@@ -78,8 +78,96 @@ class ToolOrchestratorService:
         else:
             return str(message)
     
+    def enrich_tool_calls(self, tool_calls: List[Dict], dialog_context: Dict, tracer=None) -> List[Dict]:
+        """
+        Обогащает вызовы инструментов недостающими параметрами из контекста диалога.
+        
+        Args:
+            tool_calls: Список вызовов инструментов
+            dialog_context: Контекст диалога с сохраненными сущностями
+            
+        Returns:
+            Обогащенный список вызовов инструментов
+        """
+        if not dialog_context:
+            return tool_calls
+        
+        enriched_calls = []
+        enrichment_log = []
+        
+        for call in tool_calls:
+            tool_name = call.get('tool_name', '')
+            original_parameters = call.get('parameters', {}).copy()
+            parameters = original_parameters.copy()
+            
+            # Обогащаем параметры в зависимости от типа инструмента
+            enrichments = []
+            
+            if tool_name == 'get_available_slots':
+                # Если отсутствует service_name, но есть в контексте
+                if not parameters.get('service_name') and dialog_context.get('service_name'):
+                    parameters['service_name'] = dialog_context['service_name']
+                    enrichments.append(f"service_name = {dialog_context['service_name']}")
+                    logger.info(f"🔧 Обогащен get_available_slots: добавлен service_name = {dialog_context['service_name']}")
+                
+                # Если отсутствует date, но есть в контексте
+                if not parameters.get('date') and dialog_context.get('date'):
+                    parameters['date'] = dialog_context['date']
+                    enrichments.append(f"date = {dialog_context['date']}")
+                    logger.info(f"🔧 Обогащен get_available_slots: добавлена date = {dialog_context['date']}")
+            
+            elif tool_name == 'get_masters_for_service':
+                # Если отсутствует service_name, но есть в контексте
+                if not parameters.get('service_name') and dialog_context.get('service_name'):
+                    parameters['service_name'] = dialog_context['service_name']
+                    enrichments.append(f"service_name = {dialog_context['service_name']}")
+                    logger.info(f"🔧 Обогащен get_masters_for_service: добавлен service_name = {dialog_context['service_name']}")
+            
+            elif tool_name == 'create_appointment':
+                # Обогащаем все возможные параметры для создания записи
+                if not parameters.get('service_name') and dialog_context.get('service_name'):
+                    parameters['service_name'] = dialog_context['service_name']
+                    enrichments.append(f"service_name = {dialog_context['service_name']}")
+                    logger.info(f"🔧 Обогащен create_appointment: добавлен service_name = {dialog_context['service_name']}")
+                
+                if not parameters.get('master_name') and dialog_context.get('master_name'):
+                    parameters['master_name'] = dialog_context['master_name']
+                    enrichments.append(f"master_name = {dialog_context['master_name']}")
+                    logger.info(f"🔧 Обогащен create_appointment: добавлен master_name = {dialog_context['master_name']}")
+                
+                if not parameters.get('date') and dialog_context.get('date'):
+                    parameters['date'] = dialog_context['date']
+                    enrichments.append(f"date = {dialog_context['date']}")
+                    logger.info(f"🔧 Обогащен create_appointment: добавлена date = {dialog_context['date']}")
+            
+            # Логируем обогащение для этого инструмента
+            if enrichments:
+                enrichment_log.append({
+                    "tool_name": tool_name,
+                    "original_parameters": original_parameters,
+                    "enriched_parameters": parameters,
+                    "enrichments": enrichments
+                })
+            
+            # Создаем обогащенный вызов
+            enriched_call = {
+                'tool_name': tool_name,
+                'parameters': parameters
+            }
+            enriched_calls.append(enriched_call)
+        
+        # Логируем общее обогащение в трассировку
+        if tracer and enrichment_log:
+            tracer.add_event("🔧 Обогащение вызовов инструментов", {
+                "enrichment_log": enrichment_log,
+                "dialog_context": dialog_context,
+                "total_enriched": len(enrichment_log)
+            })
+        
+        return enriched_calls
+    
     async def execute_tool_cycle(self, system_prompt: str, history: List[Dict], 
-                               user_message: str, user_id: int, tracer=None) -> Tuple[str, List[Dict]]:
+                               user_message: str, user_id: int, tracer=None, dialog_context: Dict = None) -> Tuple[str, List[Dict]]:
         """
         Выполняет цикл обработки инструментов с LLM.
         Поддерживает параллельное выполнение нескольких инструментов.
@@ -217,8 +305,11 @@ class ToolOrchestratorService:
                         if isinstance(tool_calls_data, list) and len(tool_calls_data) > 0:
                             has_function_call = True
                             
-                            # Обрабатываем каждый вызов инструмента
-                            for tool_call in tool_calls_data:
+                            # Обогащаем вызовы инструментов перед обработкой
+                            enriched_tool_calls = self.enrich_tool_calls(tool_calls_data, dialog_context, tracer)
+                            
+                            # Обрабатываем каждый обогащенный вызов инструмента
+                            for tool_call in enriched_tool_calls:
                                 if isinstance(tool_call, dict) and "tool_name" in tool_call:
                                     function_name = tool_call["tool_name"]
                                     function_args = tool_call.get("parameters", {})
@@ -262,6 +353,17 @@ class ToolOrchestratorService:
                             # Разбираем пары key="value" (поддерживаем русские символы и пробелы внутри значений)
                             for m in re.finditer(r"(\w+)\s*=\s*\"([^\"]*)\"", raw_args):
                                 args[m.group(1)] = m.group(2)
+                        
+                        # Обогащаем параметры из контекста диалога
+                        if dialog_context:
+                            # Создаем временный tool_call для обогащения
+                            temp_tool_call = {
+                                'tool_name': function_name,
+                                'parameters': args
+                            }
+                            enriched_calls = self.enrich_tool_calls([temp_tool_call], dialog_context, tracer)
+                            if enriched_calls:
+                                args = enriched_calls[0]['parameters']
                         
                         # Создаем mock function_call для совместимости
                         class MockFunctionCall:
@@ -422,7 +524,7 @@ class ToolOrchestratorService:
         
         return bot_response_text, debug_iterations
     
-    async def execute_single_tool(self, tool_name: str, parameters: Dict, user_id: int) -> str:
+    async def execute_single_tool(self, tool_name: str, parameters: Dict, user_id: int, dialog_context: Dict = None, tracer=None) -> str:
         """
         Выполняет одиночный вызов инструмента.
         Упрощенная версия для случаев, когда нужно выполнить только один инструмент.
@@ -437,6 +539,17 @@ class ToolOrchestratorService:
         """
         try:
             logger.info(f"🔧 Выполнение одиночного инструмента: {tool_name}")
+            
+            # Обогащаем параметры из контекста диалога
+            if dialog_context:
+                temp_tool_call = {
+                    'tool_name': tool_name,
+                    'parameters': parameters
+                }
+                enriched_calls = self.enrich_tool_calls([temp_tool_call], dialog_context, tracer)
+                if enriched_calls:
+                    parameters = enriched_calls[0]['parameters']
+                    logger.info(f"🔧 Параметры одиночного инструмента обогащены: {parameters}")
             
             # Выполняем инструмент через ToolService
             result = await self._execute_function_async(tool_name, parameters, user_id)

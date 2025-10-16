@@ -85,6 +85,10 @@ class DialogService:
         # Кратковременная память о контексте сессий для каждого пользователя
         # Формат: {user_id: {"appointments_in_focus": [{"id": int, "details": str}, ...], ...}}
         self.session_contexts = {}
+        
+        # Менеджер контекста для отслеживания ключевых сущностей диалога
+        # Формат: {user_telegram_id: {"service_name": str, "date": str, "master_name": str, ...}}
+        self.dialog_contexts = {}
     
 
     def parse_stage(self, stage_str: str) -> str:
@@ -118,6 +122,77 @@ class DialogService:
         logger.warning(f"⚠️ Неизвестная стадия в ответе '{cleaned_response}', используем fallback")
         logger.warning(f"⚠️ Первая строка: '{first_line}'")
         return 'fallback'
+    
+    def extract_and_save_entities(self, tool_calls: List[Dict], user_message: str, dialog_context: Dict, tracer=None) -> None:
+        """
+        Извлекает ключевые сущности из параметров инструментов и исходного сообщения пользователя
+        и сохраняет их в контексте диалога.
+        
+        Args:
+            tool_calls: Список вызовов инструментов
+            user_message: Исходное сообщение пользователя
+            dialog_context: Контекст диалога для обновления
+        """
+        # Анализируем параметры в tool_calls
+        extracted_entities = {}
+        
+        for tool_call in tool_calls:
+            params = tool_call.get('parameters', {})
+            
+            # Сохраняем service_name если есть
+            if 'service_name' in params and params['service_name']:
+                dialog_context['service_name'] = params['service_name']
+                extracted_entities['service_name'] = params['service_name']
+                logger.info(f"🔍 Сохранен service_name в контекст: {params['service_name']}")
+            
+            # Сохраняем date если есть
+            if 'date' in params and params['date']:
+                dialog_context['date'] = params['date']
+                extracted_entities['date'] = params['date']
+                logger.info(f"🔍 Сохранена date в контекст: {params['date']}")
+            
+            # Сохраняем master_name если есть
+            if 'master_name' in params and params['master_name']:
+                dialog_context['master_name'] = params['master_name']
+                extracted_entities['master_name'] = params['master_name']
+                logger.info(f"🔍 Сохранен master_name в контекст: {params['master_name']}")
+        
+        # Логируем извлеченные сущности в трассировку
+        if tracer and extracted_entities:
+            tracer.add_event("🔍 Извлечение сущностей из tool_calls", {
+                "extracted_entities": extracted_entities,
+                "tool_calls_count": len(tool_calls),
+                "updated_context": dialog_context
+            })
+        
+        # Дополнительно анализируем исходное сообщение пользователя для извлечения сущностей
+        # Это поможет "вспомнить" информацию, которую пользователь упоминал ранее
+        user_message_lower = user_message.lower()
+        
+        # Простое извлечение дат из сообщения (можно расширить)
+        import re
+        date_patterns = [
+            r'\d{1,2}[./]\d{1,2}[./]\d{2,4}',  # 15.01.2024 или 15/01/24
+            r'\d{1,2}\s+(января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)',  # 15 января
+            r'(сегодня|завтра|послезавтра)',  # относительные даты
+        ]
+        
+        extracted_from_message = {}
+        for pattern in date_patterns:
+            match = re.search(pattern, user_message_lower)
+            if match and 'date' not in dialog_context:
+                dialog_context['date'] = match.group(0)
+                extracted_from_message['date'] = match.group(0)
+                logger.info(f"🔍 Извлечена дата из сообщения: {match.group(0)}")
+                break
+        
+        # Логируем извлечение из сообщения пользователя в трассировку
+        if tracer and extracted_from_message:
+            tracer.add_event("🔍 Извлечение сущностей из сообщения пользователя", {
+                "extracted_from_message": extracted_from_message,
+                "user_message": user_message,
+                "updated_context": dialog_context
+            })
     
     def parse_tool_calls(self, planning_response_json: str) -> List[Dict]:
         """
@@ -239,6 +314,9 @@ class DialogService:
         
         # Получаем или создаем контекст для текущего пользователя
         session_context = self.session_contexts.setdefault(user_id, {})
+        
+        # Получаем или создаем контекст диалога для текущего пользователя
+        dialog_context = self.dialog_contexts.setdefault(user_id, {})
         
         # Создаем трейсер для этого диалога
         tracer = DialogueTracer(user_id=user_id, user_message=text)
@@ -376,6 +454,14 @@ class DialogService:
             
             cleaned_text, tool_calls = self.parse_hybrid_response(thinking_response)
             
+            # Извлекаем и сохраняем сущности из tool_calls и исходного сообщения
+            if tool_calls:
+                self.extract_and_save_entities(tool_calls, text, dialog_context, tracer)
+                tracer.add_event("🔍 Сущности извлечены и сохранены", {
+                    "dialog_context": dialog_context,
+                    "tool_calls_count": len(tool_calls)
+                })
+            
             # Переменная для результатов инструментов
             tool_results = ""
             
@@ -401,8 +487,8 @@ class DialogService:
                     tracer.add_event(f"🔧 Выполнение разведывательного инструмента", f"Инструмент: {tool_name}, Параметры: {parameters}")
                     
                     try:
-                        # Выполняем инструмент через ToolOrchestratorService
-                        tool_result = await self.tool_orchestrator.execute_single_tool(tool_name, parameters, user_id)
+                        # Выполняем инструмент через ToolOrchestratorService с контекстом и трассировкой
+                        tool_result = await self.tool_orchestrator.execute_single_tool(tool_name, parameters, user_id, dialog_context, tracer)
                         iteration_results.append(f"Результат {tool_name}: {tool_result}")
                         
                         # Специальная трассировка для операций с записями
@@ -500,6 +586,14 @@ class DialogService:
             
             cleaned_text, tool_calls = self.parse_hybrid_response(synthesis_response)
             
+            # Извлекаем и сохраняем сущности из tool_calls и исходного сообщения
+            if tool_calls:
+                self.extract_and_save_entities(tool_calls, text, dialog_context, tracer)
+                tracer.add_event("🔍 Сущности извлечены и сохранены (синтез)", {
+                    "dialog_context": dialog_context,
+                    "tool_calls_count": len(tool_calls)
+                })
+            
             # Если есть вызовы инструментов - выполняем их
             if tool_calls:
                 tracer.add_event("⚙️ Выполнение исполнительных инструментов", {
@@ -521,8 +615,8 @@ class DialogService:
                     tracer.add_event(f"🔧 Выполнение исполнительного инструмента", f"Инструмент: {tool_name}, Параметры: {parameters}")
                     
                     try:
-                        # Выполняем инструмент через ToolOrchestratorService
-                        tool_result = await self.tool_orchestrator.execute_single_tool(tool_name, parameters, user_id)
+                        # Выполняем инструмент через ToolOrchestratorService с контекстом и трассировкой
+                        tool_result = await self.tool_orchestrator.execute_single_tool(tool_name, parameters, user_id, dialog_context, tracer)
                         
                         tracer.add_event(f"✅ Исполнительный инструмент выполнен", f"Инструмент: {tool_name}, Результат: {tool_result}")
                         logger.info(f"✅ Исполнительный инструмент выполнен: {tool_name}")
