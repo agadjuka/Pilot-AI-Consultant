@@ -423,33 +423,33 @@ class DialogService:
                 # Формируем результаты инструментов
                 if iteration_results:
                     tool_results = "\n".join(iteration_results)
+            
+            # Если есть текстовый ответ на этапе мышления - это финальный ответ
+            if cleaned_text.strip():
+                bot_response_text = cleaned_text.strip()
+                tracer.add_event("✅ Финальный ответ получен на этапе мышления", {
+                    "response": bot_response_text,
+                    "length": len(bot_response_text)
+                })
+                logger.info("✅ Финальный ответ получен на этапе мышления")
                 
-                # Если есть текстовый ответ на этапе мышления - это финальный ответ
-                if cleaned_text.strip():
-                    bot_response_text = cleaned_text.strip()
-                    tracer.add_event("✅ Финальный ответ получен на этапе мышления", {
-                        "response": bot_response_text,
-                        "length": len(bot_response_text)
-                    })
-                    logger.info("✅ Финальный ответ получен на этапе мышления")
-                    
-                    # Сохраняем финальный ответ бота в БД
-                    self.repository.add_message(
-                        user_id=user_id,
-                        role="model",
-                        message_text=bot_response_text
-                    )
-                    
-                    tracer.add_event("💾 Финальный ответ сохранен", {
-                        "text": bot_response_text,
-                        "length": len(bot_response_text)
-                    })
-                    
-                    # Логируем завершение обработки
-                    log_dialog_end(logger, bot_response_text)
-                    
-                    # Возвращаем сгенерированный текст
-                    return bot_response_text
+                # Сохраняем финальный ответ бота в БД
+                self.repository.add_message(
+                    user_id=user_id,
+                    role="model",
+                    message_text=bot_response_text
+                )
+                
+                tracer.add_event("💾 Финальный ответ сохранен", {
+                    "text": bot_response_text,
+                    "length": len(bot_response_text)
+                })
+                
+                # Логируем завершение обработки
+                log_dialog_end(logger, bot_response_text)
+                
+                # Возвращаем сгенерированный текст
+                return bot_response_text
             
             # === ЭТАП 3: СИНТЕЗ ===
             tracer.add_event("🎯 Этап 3: Синтез", "Формирование финального ответа с возможными действиями")
