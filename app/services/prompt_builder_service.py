@@ -7,7 +7,7 @@
 from typing import List, Dict, Optional
 from datetime import datetime
 from app.core.dialogue_pattern_loader import dialogue_patterns
-from app.services.tool_definitions import read_only_tools, write_tools
+from app.services.tool_definitions import all_tools_dict
 
 
 class PromptBuilderService:
@@ -357,11 +357,14 @@ class PromptBuilderService:
         # Форматируем сценарий стадии
         stage_scenario = self._format_stage_principles(stage_name, client_name, client_phone_saved)
         
-        # Фильтруем read-only инструменты по доступным для текущей стадии
-        filtered_read_only_tools = self._filter_tools_by_available(read_only_tools, available_tools)
+        # Получаем полный словарь всех определений инструментов
+        all_tools = list(all_tools_dict.values())
         
-        # Генерируем описание отфильтрованных read-only инструментов
-        read_only_tools_summary = self._generate_tools_summary(filtered_read_only_tools)
+        # Фильтруем инструменты по доступным для текущей стадии
+        filtered_tools = self._filter_tools_by_available(all_tools, available_tools)
+        
+        # Генерируем описание отфильтрованных инструментов
+        tools_summary = self._generate_tools_summary(filtered_tools)
         
         # Собираем промпт по шаблону
         prompt = self.THINKING_TEMPLATE.format(
@@ -372,7 +375,7 @@ class PromptBuilderService:
             hidden_context=hidden_context,
             stage_name=stage_name,
             stage_scenario=stage_scenario,
-            read_only_tools_summary=read_only_tools_summary
+            read_only_tools_summary=tools_summary
         )
         
         return prompt
@@ -415,11 +418,14 @@ class PromptBuilderService:
         # Генерируем текущую дату и время
         current_datetime = self._generate_current_datetime()
         
-        # Фильтруем write инструменты по доступным для текущей стадии
-        filtered_write_tools = self._filter_tools_by_available(write_tools, available_tools)
+        # Получаем полный словарь всех определений инструментов
+        all_tools = list(all_tools_dict.values())
         
-        # Генерируем описание отфильтрованных write инструментов
-        write_tools_summary = self._generate_tools_summary(filtered_write_tools)
+        # Фильтруем инструменты по доступным для текущей стадии
+        filtered_tools = self._filter_tools_by_available(all_tools, available_tools)
+        
+        # Генерируем описание отфильтрованных инструментов
+        tools_summary = self._generate_tools_summary(filtered_tools)
         
         # Собираем промпт по шаблону
         prompt = self.SYNTHESIS_TEMPLATE.format(
@@ -428,7 +434,7 @@ class PromptBuilderService:
             history=history_text,
             user_message=user_message,
             tool_results=tool_results,
-            write_tools_summary=write_tools_summary
+            write_tools_summary=tools_summary
         )
         
         return prompt

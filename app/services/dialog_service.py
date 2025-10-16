@@ -19,6 +19,7 @@ from app.services.prompt_builder_service import PromptBuilderService
 from app.core.dialogue_pattern_loader import dialogue_patterns
 from app.services.dialogue_tracer_service import DialogueTracer
 from app.core.logging_config import log_dialog_start, log_dialog_end, log_error
+from app.services.tool_definitions import all_tools_dict
 
 # Получаем логгер для этого модуля
 logger = logging.getLogger(__name__)
@@ -89,6 +90,26 @@ class DialogService:
         # Менеджер контекста для отслеживания ключевых сущностей диалога
         # Формат: {user_telegram_id: {"service_name": str, "date": str, "master_name": str, ...}}
         self.dialog_contexts = {}
+    
+    def _get_filtered_tools(self, available_tools: List[str]):
+        """
+        Фильтрует инструменты по списку доступных для текущей стадии.
+        
+        Args:
+            available_tools: Список имен доступных инструментов
+            
+        Returns:
+            Список отфильтрованных FunctionDeclaration объектов
+        """
+        if not available_tools:
+            return []
+        
+        filtered_tools = []
+        for tool_name in available_tools:
+            if tool_name in all_tools_dict:
+                filtered_tools.append(all_tools_dict[tool_name])
+        
+        return filtered_tools
     
 
     def parse_stage(self, stage_str: str) -> str:
@@ -474,9 +495,9 @@ class DialogService:
                 }
             ]
             
-            # Второй вызов LLM для мышления (с read-only инструментами)
-            from app.services.tool_definitions import read_only_tools
-            thinking_response = await self.llm_service.generate_response(thinking_history, read_only_tools, tracer=tracer)
+            # Второй вызов LLM для мышления (с отфильтрованными инструментами)
+            filtered_tools = self._get_filtered_tools(available_tools)
+            thinking_response = await self.llm_service.generate_response(thinking_history, filtered_tools, tracer=tracer)
             
             tracer.add_event("✅ Ответ мышления получен", {
                 "response_length": len(thinking_response),
@@ -601,9 +622,9 @@ class DialogService:
                 }
             ]
             
-            # Третий вызов LLM для синтеза (с write инструментами)
-            from app.services.tool_definitions import write_tools
-            synthesis_response = await self.llm_service.generate_response(synthesis_history, write_tools, tracer=tracer)
+            # Третий вызов LLM для синтеза (с отфильтрованными инструментами)
+            filtered_tools = self._get_filtered_tools(available_tools)
+            synthesis_response = await self.llm_service.generate_response(synthesis_history, filtered_tools, tracer=tracer)
             
             tracer.add_event("✅ Ответ синтеза получен", {
                 "response_length": len(synthesis_response),
