@@ -105,6 +105,8 @@ class PromptBuilderService:
 - Последний запрос: {user_message}
 - Собранные данные: {tool_results}
 
+# ВАЖНО: Вся необходимая информация уже собрана в 'Собранных данных'. Не вызывай 'разведывательные' инструменты (get_...) повторно.
+
 # ВОЗМОЖНЫЕ ДЕЙСТВИЯ
 {synthesis_tools}
 """
@@ -226,8 +228,8 @@ class PromptBuilderService:
         # Генерируем текущую дату и время
         current_datetime = self._generate_current_datetime()
         
-        # Форматируем сценарий стадии
-        scenario = stage_data.get('scenario', [])
+        # Форматируем сценарий стадии для мышления
+        scenario = stage_data.get('thinking_scenario', [])
         stage_scenario = "\n".join(scenario) if scenario else "Будь вежливым, профессиональным и полезным."
         
         # Получаем инструменты и правила из конфигурации
@@ -289,9 +291,9 @@ class PromptBuilderService:
         # Генерируем текущую дату и время
         current_datetime = self._generate_current_datetime()
         
-        # Форматируем сценарий стадии
-        scenario = stage_data.get('scenario', [])
-        stage_scenario = "\n".join(scenario) if scenario else "Будь вежливым, профессиональным и полезным."
+        # Форматируем сценарий стадии для синтеза
+        scenario = stage_data.get('synthesis_scenario', [])
+        stage_scenario = "\n".join(scenario) if scenario else "Сформулируй вежливый и полезный ответ на основе 'Собранных данных'."
         
         # Получаем инструменты и правила из конфигурации
         synthesis_tools = stage_data.get('synthesis_tools', '')

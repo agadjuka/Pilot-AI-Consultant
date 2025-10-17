@@ -40,8 +40,8 @@ def load_patterns() -> Dict[str, Any]:
             if not isinstance(stage_data, dict):
                 raise ValueError(f"Стадия '{stage_id}' должна быть словарем")
             
-            # Проверяем новую структуру: goal, scenario, available_tools
-            required_fields = ['goal', 'scenario', 'available_tools']
+            # Проверяем новую структуру: goal, thinking_scenario, synthesis_scenario, available_tools
+            required_fields = ['goal', 'available_tools']
             for field in required_fields:
                 if field not in stage_data:
                     raise ValueError(f"Стадия '{stage_id}' должна содержать поле '{field}'")
@@ -50,16 +50,31 @@ def load_patterns() -> Dict[str, Any]:
             if not isinstance(stage_data['goal'], str):
                 raise ValueError(f"Поле 'goal' в стадии '{stage_id}' должно быть строкой")
             
-            if not isinstance(stage_data['scenario'], list):
-                raise ValueError(f"Поле 'scenario' в стадии '{stage_id}' должно быть списком")
-            
             if not isinstance(stage_data['available_tools'], list):
                 raise ValueError(f"Поле 'available_tools' в стадии '{stage_id}' должно быть списком")
             
-            # Проверяем, что все элементы scenario - строки
-            for i, step in enumerate(stage_data['scenario']):
-                if not isinstance(step, str):
-                    raise ValueError(f"Элемент {i} в 'scenario' стадии '{stage_id}' должен быть строкой")
+            # Проверяем наличие хотя бы одного сценария (thinking_scenario или synthesis_scenario)
+            has_thinking_scenario = 'thinking_scenario' in stage_data
+            has_synthesis_scenario = 'synthesis_scenario' in stage_data
+            
+            if not has_thinking_scenario and not has_synthesis_scenario:
+                raise ValueError(f"Стадия '{stage_id}' должна содержать хотя бы один сценарий: 'thinking_scenario' или 'synthesis_scenario'")
+            
+            # Проверяем thinking_scenario если есть
+            if has_thinking_scenario:
+                if not isinstance(stage_data['thinking_scenario'], list):
+                    raise ValueError(f"Поле 'thinking_scenario' в стадии '{stage_id}' должно быть списком")
+                for i, step in enumerate(stage_data['thinking_scenario']):
+                    if not isinstance(step, str):
+                        raise ValueError(f"Элемент {i} в 'thinking_scenario' стадии '{stage_id}' должен быть строкой")
+            
+            # Проверяем synthesis_scenario если есть
+            if has_synthesis_scenario:
+                if not isinstance(stage_data['synthesis_scenario'], list):
+                    raise ValueError(f"Поле 'synthesis_scenario' в стадии '{stage_id}' должно быть списком")
+                for i, step in enumerate(stage_data['synthesis_scenario']):
+                    if not isinstance(step, str):
+                        raise ValueError(f"Элемент {i} в 'synthesis_scenario' стадии '{stage_id}' должен быть строкой")
             
             # Проверяем, что все элементы available_tools - строки
             for i, tool in enumerate(stage_data['available_tools']):
