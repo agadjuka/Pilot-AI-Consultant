@@ -228,9 +228,18 @@ class PromptBuilderService:
         # Генерируем текущую дату и время
         current_datetime = self._generate_current_datetime()
         
+        # Получаем цель стадии
+        stage_goal = stage_data.get('goal', '')
+        
         # Форматируем сценарий стадии для мышления
         scenario = stage_data.get('thinking_scenario', [])
-        stage_scenario = "\n".join(scenario) if scenario else "Будь вежливым, профессиональным и полезным."
+        scenario_text = "\n".join(scenario) if scenario else "Будь вежливым, профессиональным и полезным."
+        
+        # Добавляем цель стадии в начало сценария
+        if stage_goal:
+            stage_scenario = f"ЦЕЛЬ СТАДИИ: {stage_goal}\n\n{scenario_text}"
+        else:
+            stage_scenario = scenario_text
         
         # Получаем инструменты и правила из конфигурации
         thinking_tools = stage_data.get('thinking_tools', '')
@@ -291,9 +300,18 @@ class PromptBuilderService:
         # Генерируем текущую дату и время
         current_datetime = self._generate_current_datetime()
         
+        # Получаем цель стадии
+        stage_goal = stage_data.get('goal', '')
+        
         # Форматируем сценарий стадии для синтеза
         scenario = stage_data.get('synthesis_scenario', [])
-        stage_scenario = "\n".join(scenario) if scenario else "Сформулируй вежливый и полезный ответ на основе 'Собранных данных'."
+        scenario_text = "\n".join(scenario) if scenario else "Сформулируй вежливый и полезный ответ на основе 'Собранных данных'."
+        
+        # Добавляем цель стадии в начало сценария
+        if stage_goal:
+            stage_scenario = f"ЦЕЛЬ СТАДИИ: {stage_goal}\n\n{scenario_text}"
+        else:
+            stage_scenario = scenario_text
         
         # Получаем инструменты и правила из конфигурации
         synthesis_tools = stage_data.get('synthesis_tools', '')

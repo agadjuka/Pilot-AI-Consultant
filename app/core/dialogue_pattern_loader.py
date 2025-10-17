@@ -40,8 +40,8 @@ def load_patterns() -> Dict[str, Any]:
             if not isinstance(stage_data, dict):
                 raise ValueError(f"Стадия '{stage_id}' должна быть словарем")
             
-            # Проверяем новую структуру: goal, thinking_scenario, synthesis_scenario, available_tools
-            required_fields = ['goal', 'available_tools']
+            # Проверяем новую структуру: goal обязательное, available_tools необязательное
+            required_fields = ['goal']
             for field in required_fields:
                 if field not in stage_data:
                     raise ValueError(f"Стадия '{stage_id}' должна содержать поле '{field}'")
@@ -50,8 +50,10 @@ def load_patterns() -> Dict[str, Any]:
             if not isinstance(stage_data['goal'], str):
                 raise ValueError(f"Поле 'goal' в стадии '{stage_id}' должно быть строкой")
             
-            if not isinstance(stage_data['available_tools'], list):
-                raise ValueError(f"Поле 'available_tools' в стадии '{stage_id}' должно быть списком")
+            # Проверяем тип available_tools только если поле присутствует
+            if 'available_tools' in stage_data:
+                if not isinstance(stage_data['available_tools'], list):
+                    raise ValueError(f"Поле 'available_tools' в стадии '{stage_id}' должно быть списком")
             
             # Проверяем наличие хотя бы одного сценария (thinking_scenario или synthesis_scenario)
             has_thinking_scenario = 'thinking_scenario' in stage_data
@@ -76,10 +78,11 @@ def load_patterns() -> Dict[str, Any]:
                     if not isinstance(step, str):
                         raise ValueError(f"Элемент {i} в 'synthesis_scenario' стадии '{stage_id}' должен быть строкой")
             
-            # Проверяем, что все элементы available_tools - строки
-            for i, tool in enumerate(stage_data['available_tools']):
-                if not isinstance(tool, str):
-                    raise ValueError(f"Элемент {i} в 'available_tools' стадии '{stage_id}' должен быть строкой")
+            # Проверяем, что все элементы available_tools - строки (только если поле присутствует)
+            if 'available_tools' in stage_data:
+                for i, tool in enumerate(stage_data['available_tools']):
+                    if not isinstance(tool, str):
+                        raise ValueError(f"Элемент {i} в 'available_tools' стадии '{stage_id}' должен быть строкой")
         
         return patterns
         
