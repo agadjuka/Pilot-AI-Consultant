@@ -1,16 +1,6 @@
 {
   "availability_check": {
-    "available_tools": [
-      "get_available_slots"
-    ],
     "goal": "Помочь клиенту найти и выбрать удобное время для записи.",
-    "synthesis_scenario": [
-      "1. Ты получил(а) данные о доступных слотах из 'Собранных данных'.",
-      "2. Твоя задача — сформулировать ответ с предложением доступных времен на основе полученных данных.",
-      "3. НЕ вызывай никаких инструментов повторно."
-    ],
-    "synthesis_tools": "",
-    "thinking_rules": "ФОРМАТ ВЫЗОВА ИНСТРУМЕНТОВ:\nТвой ответ должен содержать ТОЛЬКО строки вызова в формате:\n`TOOL_CALL: имя_инструмента(параметр1=\"значение1\")`\n\nПРИМЕР:\n`TOOL_CALL: get_available_slots(service_name=\"маникюр\", date=\"2025-10-17\")`",
     "thinking_scenario": [
       "1. Проанализируй запрос и историю, чтобы понять услугу и желаемую дату.",
       "2. Преобразуй дату в формат YYYY-MM-DD (например: понедельник → 2025-10-20).",
@@ -18,10 +8,27 @@
       "4. Проанализируй результат: если свободных интервалов много, уточни у клиента удобное время суток (утро/день/вечер); если мало — предложи 1-2 конкретных варианта.",
       "5. НЕ вызывай `create_appointment` на этой стадии. Дождись явного согласия клиента на конкретное время."
     ],
-    "thinking_tools": "get_available_slots(service_name: str, date: str)"
+    "synthesis_scenario": [
+      "1. Ты получил(а) данные о доступных слотах из 'Собранных данных'.",
+      "2. Проверь, попадает ли время в которое хочет прийти клиент в список свободных слотов.",
+      "2. Сформулируй ответ: либо спроси подтверждает ли клиент запись, либо вежливо ответь что это время занято и предложи другое.",
+      ""
+    ],
+    "thinking_tools": "get_available_slots(service_name: str, date: str)",
+    "synthesis_tools": "",
+    "thinking_rules": "ФОРМАТ ВЫЗОВА ИНСТРУМЕНТОВ:\nТвой ответ должен содержать ТОЛЬКО строки вызова в формате:\n`TOOL_CALL: имя_инструмента(параметр1=\"значение1\")`\n\nПРИМЕР:\n`TOOL_CALL: get_available_slots(service_name=\"маникюр\", date=\"2025-10-17\")`",
+    "synthesis_rules": ""
   },
   "booking_confirmation": {
     "goal": "Финализировать запись, когда все данные согласованы.",
+    "synthesis_rules": "Для сохранения данных и создания записи используй `create_appointment`, `save_client_name`, `save_client_phone`.\nТвой ответ должен быть гибридным, содержащим все необходимые TOOL_CALL и финальное подтверждение для клиента в одном сообщении.\nПример:\n`TOOL_CALL: create_appointment(master_name=\"Анна\", service_name=\"маникюр\", date=\"2025-10-17\", time=\"14:00\", client_name=\"Мария\")\n`TOOL_CALL: save_client_name(name=\"Мария\")\n`Запись подтверждена! Ждем вас 17 октября в 14:00.`",
+    "synthesis_scenario": [
+      "1. Данные о клиенте и времени уже известны.",
+      "2. Вызови 'исполнительный' инструмент `create_appointment` со всеми необходимыми данными (service_name, date, time и т.д.).",
+      "3. Одновременно с вызовом инструмента, напиши финальное подтверждающее сообщение для клиента."
+    ],
+    "synthesis_tools": "create_appointment(master_name: str, service_name: str, date: str, time: str, client_name: str)\nsave_client_name(name: str)\nsave_client_phone(phone: str)",
+    "thinking_rules": "ФОРМАТ ВЫЗОВА ИНСТРУМЕНТОВ:\nТвой ответ должен содержать ТОЛЬКО строки вызова в формате:\n`TOOL_CALL: имя_инструмента(параметр1=\"значение1\")`\n\nПРИМЕРЫ:\n`TOOL_CALL: create_appointment(master_name=\"Анна\", service_name=\"маникюр\", date=\"2025-10-17\", time=\"14:00\", client_name=\"Мария\")`\n`TOOL_CALL: save_client_name(name=\"Мария\")`\n`TOOL_CALL: save_client_phone(phone=\"+79123456789\")`",
     "thinking_scenario": [
       "1. Убедись, что из истории диалога ясно, что клиент ЯВНО СОГЛАСИЛСЯ на конкретную услугу, дату и время.",
       "2. Проверь (в системном контексте), известны ли имя и телефон клиента.",
@@ -30,28 +37,19 @@
       "5. Если все данные известны, вызови инструмент `create_appointment` и тут же напиши текстовое сообщение для пользователя.",
       "6. Если не хватает имени или телефона, НЕ вызывай `create_appointment`. Вместо этого перейди к стадии `contact_info_request`, вежливо запросив недостающие данные."
     ],
-    "synthesis_scenario": [
-      "1. Данные о клиенте и времени уже известны.",
-      "2. Вызови 'исполнительный' инструмент `create_appointment` со всеми необходимыми данными (service_name, date, time и т.д.).",
-      "3. Одновременно с вызовом инструмента, напиши финальное подтверждающее сообщение для клиента."
-    ],
-    "thinking_tools": "create_appointment(master_name: str, service_name: str, date: str, time: str, client_name: str)\nsave_client_name(name: str)\nsave_client_phone(phone: str)",
-    "synthesis_tools": "create_appointment(master_name: str, service_name: str, date: str, time: str, client_name: str)\nsave_client_name(name: str)\nsave_client_phone(phone: str)",
-    "thinking_rules": "ФОРМАТ ВЫЗОВА ИНСТРУМЕНТОВ:\nТвой ответ должен содержать ТОЛЬКО строки вызова в формате:\n`TOOL_CALL: имя_инструмента(параметр1=\"значение1\")`\n\nПРИМЕРЫ:\n`TOOL_CALL: create_appointment(master_name=\"Анна\", service_name=\"маникюр\", date=\"2025-10-17\", time=\"14:00\", client_name=\"Мария\")`\n`TOOL_CALL: save_client_name(name=\"Мария\")`\n`TOOL_CALL: save_client_phone(phone=\"+79123456789\")`",
-    "synthesis_rules": "Для сохранения данных и создания записи используй `create_appointment`, `save_client_name`, `save_client_phone`.\nТвой ответ должен быть гибридным, содержащим все необходимые TOOL_CALL и финальное подтверждение для клиента в одном сообщении.\nПример:\n`TOOL_CALL: create_appointment(master_name=\"Анна\", service_name=\"маникюр\", date=\"2025-10-17\", time=\"14:00\", client_name=\"Мария\")\n`TOOL_CALL: save_client_name(name=\"Мария\")\n`Запись подтверждена! Ждем вас 17 октября в 14:00.`"
+    "thinking_tools": "create_appointment(master_name: str, service_name: str, date: str, time: str, client_name: str)\nsave_client_name(name: str)\nsave_client_phone(phone: str)"
   },
   "booking_start": {
-    "available_tools": [
-      "get_all_services"
-    ],
     "goal": "Начать процесс записи, уточнив у клиента желаемую дату. Убедиться что такая услуга есть в нашем списке.",
-    "synthesis_tools": "",
-    "thinking_rules": "ФОРМАТ ВЫЗОВА ИНСТРУМЕНТОВ:\nТвой ответ должен содержать ТОЛЬКО строки вызова в формате:\n`TOOL_CALL: имя_инструмента(параметр1=\"значение1\")`\n\nПРИМЕР:\n`TOOL_CALL: get_all_services()`",
     "thinking_scenario": [
       "1. Убедись из истории, о какой услуге идет речь. Проверь есть ли такая услуга в нашем салоне.",
       "2. Твоя единственная задача — вежливо спросить у клиента, на какой день он хотел бы записаться."
     ],
-    "thinking_tools": "get_all_services()"
+    "synthesis_scenario": [],
+    "thinking_tools": "get_all_services()",
+    "synthesis_tools": "",
+    "thinking_rules": "ФОРМАТ ВЫЗОВА ИНСТРУМЕНТОВ:\nТвой ответ должен содержать ТОЛЬКО строки вызова в формате:\n`TOOL_CALL: имя_инструмента(параметр1=\"значение1\")`\n\nПРИМЕР:\n`TOOL_CALL: get_all_services()`",
+    "synthesis_rules": ""
   },
   "cancellation_request": {
     "available_tools": [
