@@ -104,6 +104,7 @@ class PromptBuilderService:
 - История: {history}
 - Последний запрос: {user_message}
 - Собранные данные: {tool_results}
+{hidden_context}
 
 # ВАЖНО: Вся необходимая информация уже собрана в 'Собранных данных'. Не вызывай 'разведывательные' инструменты (get_...) повторно.
 
@@ -266,7 +267,8 @@ class PromptBuilderService:
         user_message: str,
         tool_results: str,
         client_name: Optional[str] = None,
-        client_phone_saved: bool = False
+        client_phone_saved: bool = False,
+        hidden_context: str = ""
     ) -> str:
         """
         Формирует промпт для Этапа 3: Синтез.
@@ -278,6 +280,7 @@ class PromptBuilderService:
             tool_results: Результаты выполнения инструментов с этапа мышления
             client_name: Имя клиента
             client_phone_saved: Сохранен ли телефон клиента
+            hidden_context: Скрытый контекст с ID записей для операций
             
         Returns:
             Промпт для этапа синтеза
@@ -324,6 +327,7 @@ class PromptBuilderService:
             history=history_text,
             user_message=user_message,
             tool_results=tool_results,
+            hidden_context=hidden_context,
             stage_scenario=stage_scenario,
             synthesis_tools=synthesis_tools,
             rules=rules

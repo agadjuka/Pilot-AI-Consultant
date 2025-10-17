@@ -615,7 +615,6 @@ class DialogService:
                     hidden_context += f"Записи клиента с ID для операций:\n"
                     for appointment in appointments_data:
                         hidden_context += f"- ID: {appointment['id']}, {appointment['details']}\n"
-                    hidden_context += f"\nИспользуй эти ID для вызова инструментов cancel_appointment_by_id или reschedule_appointment_by_id.\n"
                     
                     # Логируем формирование скрытого контекста
                     tracer.add_event("🔍 Скрытый контекст сформирован", {
@@ -763,19 +762,23 @@ class DialogService:
             logger.info("🎯 Этап 3: Синтез - формирование финального ответа")
             
             # Формируем промпт для синтеза
+            # Передаем тот же скрытый контекст, что использовался на этапе мышления
             synthesis_prompt = self.prompt_builder.build_synthesis_prompt(
                 stage_name=stage,
                 history=dialog_history,
                 user_message=text,
                 tool_results=tool_results,
                 client_name=client.first_name,
-                client_phone_saved=bool(client.phone_number)
+                client_phone_saved=bool(client.phone_number),
+                hidden_context=hidden_context
             )
             
             tracer.add_event("📝 Промпт синтеза сформирован", {
                 "prompt_length": len(synthesis_prompt),
                 "tool_results_length": len(tool_results),
-                "stage": stage
+                "stage": stage,
+                "hidden_context_length": len(hidden_context),
+                "has_hidden_context": bool(hidden_context)
             })
             
             # Создаем историю для третьего вызова LLM
