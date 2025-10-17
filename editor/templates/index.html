@@ -3,10 +3,561 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Редактор конфигурации AI-бота</title>
+    <title>Редактор Персоны</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f5f5f5;
+            color: #333;
+        }
+
+        .container {
+            display: flex;
+            height: 100vh;
+        }
+
+        #sidebar {
+            width: 300px;
+            background-color: #2c3e50;
+            color: white;
+            padding: 20px;
+            overflow-y: auto;
+        }
+
+        #sidebar h2 {
+            margin-bottom: 20px;
+            font-size: 18px;
+            border-bottom: 2px solid #3498db;
+            padding-bottom: 10px;
+        }
+
+        .stage-list {
+            list-style: none;
+            margin-bottom: 20px;
+        }
+
+        .stage-item {
+            padding: 12px 15px;
+            margin-bottom: 5px;
+            background-color: #34495e;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+
+        .stage-item:hover {
+            background-color: #3498db;
+        }
+
+        .stage-item.active {
+            background-color: #e74c3c;
+        }
+
+        .add-stage-btn {
+            width: 100%;
+            padding: 12px;
+            background-color: #27ae60;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background-color 0.3s;
+        }
+
+        .add-stage-btn:hover {
+            background-color: #2ecc71;
+        }
+
+        #content {
+            flex: 1;
+            padding: 30px;
+            overflow-y: auto;
+        }
+
+        #content h2 {
+            margin-bottom: 25px;
+            color: #2c3e50;
+            font-size: 24px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #2c3e50;
+        }
+
+        .form-group input,
+        .form-group textarea {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #ddd;
+            border-radius: 5px;
+            font-size: 14px;
+            font-family: inherit;
+            transition: border-color 0.3s;
+        }
+
+        .form-group input:focus,
+        .form-group textarea:focus {
+            outline: none;
+            border-color: #3498db;
+        }
+
+        .form-group textarea {
+            min-height: 100px;
+            resize: vertical;
+        }
+
+        .form-group textarea.large {
+            min-height: 200px;
+        }
+
+        .prompts-section {
+            display: none;
+            margin-top: 30px;
+            padding-top: 30px;
+            border-top: 2px solid #ecf0f1;
+        }
+
+        .prompts-section h3 {
+            margin-bottom: 20px;
+            color: #2c3e50;
+        }
+
+        .toggle-prompts-btn {
+            background-color: #9b59b6;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-bottom: 20px;
+            transition: background-color 0.3s;
+        }
+
+        .toggle-prompts-btn:hover {
+            background-color: #8e44ad;
+        }
+
+        .footer {
+            position: fixed;
+            bottom: 0;
+            left: 300px;
+            right: 0;
+            background-color: white;
+            padding: 15px 30px;
+            border-top: 1px solid #ddd;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
+        }
+
+        .save-btn {
+            background-color: #3498db;
+            color: white;
+            border: none;
+            padding: 12px 25px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background-color 0.3s;
+        }
+
+        .save-btn:hover {
+            background-color: #2980b9;
+        }
+
+        .save-btn:disabled {
+            background-color: #bdc3c7;
+            cursor: not-allowed;
+        }
+
+        .status {
+            color: #27ae60;
+            font-weight: 600;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        .status.show {
+            opacity: 1;
+        }
+
+        .status.error {
+            color: #e74c3c;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 50px;
+            color: #7f8c8d;
+        }
+    </style>
 </head>
 <body>
-    <h1>Редактор конфигурации AI-бота</h1>
-    <p>Интерфейс для редактирования конфигурационных файлов будет добавлен в следующих версиях.</p>
+    <div class="container">
+        <!-- Левая панель - меню стадий -->
+        <div id="sidebar">
+            <h2>Стадии диалога</h2>
+            <ul class="stage-list" id="stageList">
+                <div class="loading">Загрузка...</div>
+            </ul>
+            <button class="add-stage-btn" onclick="addNewStage()">+ Новая стадия</button>
+        </div>
+
+        <!-- Правая панель - контент -->
+        <div id="content">
+            <h2 id="contentTitle">Выберите стадию для редактирования</h2>
+            
+            <button class="toggle-prompts-btn" onclick="togglePrompts()">Переключить на редактирование промптов</button>
+            
+            <!-- Форма редактирования стадии -->
+            <div id="stageForm">
+                <div class="form-group">
+                    <label for="goal">Цель стадии:</label>
+                    <textarea id="goal" placeholder="Опишите цель этой стадии диалога..."></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label for="thinking_scenario">Сценарий мышления:</label>
+                    <textarea id="thinking_scenario" class="large" placeholder="Опишите сценарий мышления..."></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label for="synthesis_scenario">Сценарий синтеза:</label>
+                    <textarea id="synthesis_scenario" class="large" placeholder="Опишите сценарий синтеза..."></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label for="thinking_tools">Инструменты мышления:</label>
+                    <textarea id="thinking_tools" placeholder="Список инструментов для мышления..."></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label for="synthesis_tools">Инструменты синтеза:</label>
+                    <textarea id="synthesis_tools" placeholder="Список инструментов для синтеза..."></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label for="thinking_rules">Правила мышления:</label>
+                    <textarea id="thinking_rules" placeholder="Правила для этапа мышления..."></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label for="synthesis_rules">Правила синтеза:</label>
+                    <textarea id="synthesis_rules" placeholder="Правила для этапа синтеза..."></textarea>
+                </div>
+            </div>
+
+            <!-- Скрытый блок для редактирования промптов -->
+            <div class="prompts-section" id="promptsSection">
+                <h3>Глобальные промпты</h3>
+                
+                <div class="form-group">
+                    <label for="CLASSIFICATION_TEMPLATE">Шаблон классификации:</label>
+                    <textarea id="CLASSIFICATION_TEMPLATE" class="large" placeholder="Шаблон для классификации сообщений..."></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label for="THINKING_TEMPLATE">Шаблон мышления:</label>
+                    <textarea id="THINKING_TEMPLATE" class="large" placeholder="Шаблон для этапа мышления..."></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label for="SYNTHESIS_TEMPLATE">Шаблон синтеза:</label>
+                    <textarea id="SYNTHESIS_TEMPLATE" class="large" placeholder="Шаблон для этапа синтеза..."></textarea>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Подвал с кнопкой сохранения -->
+    <div class="footer">
+        <button class="save-btn" onclick="saveChanges()" id="saveBtn">Сохранить изменения</button>
+        <div class="status" id="status"></div>
+    </div>
+
+    <script>
+        // Глобальные переменные
+        let patternsData = null;
+        let currentStage = null;
+        let isPromptsMode = false;
+
+        // Загрузка данных при инициализации
+        document.addEventListener('DOMContentLoaded', function() {
+            loadPatterns();
+        });
+
+        // Загрузка паттернов с сервера
+        async function loadPatterns() {
+            try {
+                const response = await fetch('/api/patterns');
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                patternsData = await response.json();
+                renderStageList();
+                
+                // Выбираем первую стадию по умолчанию
+                if (patternsData && Object.keys(patternsData).length > 0) {
+                    const firstStage = Object.keys(patternsData)[0];
+                    selectStage(firstStage);
+                }
+            } catch (error) {
+                console.error('Ошибка загрузки паттернов:', error);
+                showStatus('Ошибка загрузки данных', 'error');
+            }
+        }
+
+        // Отрисовка списка стадий
+        function renderStageList() {
+            const stageList = document.getElementById('stageList');
+            stageList.innerHTML = '';
+
+            if (!patternsData) {
+                stageList.innerHTML = '<div class="loading">Нет данных</div>';
+                return;
+            }
+
+            Object.keys(patternsData).forEach(stageName => {
+                const li = document.createElement('li');
+                li.className = 'stage-item';
+                li.textContent = stageName;
+                li.onclick = () => selectStage(stageName);
+                stageList.appendChild(li);
+            });
+        }
+
+        // Выбор стадии для редактирования
+        function selectStage(stageName) {
+            currentStage = stageName;
+            isPromptsMode = false;
+            
+            // Обновляем активный элемент в меню
+            document.querySelectorAll('.stage-item').forEach(item => {
+                item.classList.remove('active');
+            });
+            event.target.classList.add('active');
+
+            // Обновляем заголовок
+            document.getElementById('contentTitle').textContent = `Редактирование стадии: ${stageName}`;
+            
+            // Показываем форму стадии, скрываем промпты
+            document.getElementById('stageForm').style.display = 'block';
+            document.getElementById('promptsSection').style.display = 'none';
+            
+            // Заполняем поля данными стадии
+            displayStage(stageName);
+        }
+
+        // Отображение данных стадии в форме
+        function displayStage(stageName) {
+            if (!patternsData || !patternsData[stageName]) {
+                clearForm();
+                return;
+            }
+
+            const stage = patternsData[stageName];
+            
+            // Заполняем поля формы
+            document.getElementById('goal').value = stage.goal || '';
+            document.getElementById('thinking_scenario').value = stage.thinking_scenario || '';
+            document.getElementById('synthesis_scenario').value = stage.synthesis_scenario || '';
+            document.getElementById('thinking_tools').value = stage.thinking_tools || '';
+            document.getElementById('synthesis_tools').value = stage.synthesis_tools || '';
+            document.getElementById('thinking_rules').value = stage.thinking_rules || '';
+            document.getElementById('synthesis_rules').value = stage.synthesis_rules || '';
+        }
+
+        // Очистка формы
+        function clearForm() {
+            const fields = ['goal', 'thinking_scenario', 'synthesis_scenario', 
+                          'thinking_tools', 'synthesis_tools', 'thinking_rules', 'synthesis_rules'];
+            fields.forEach(fieldId => {
+                document.getElementById(fieldId).value = '';
+            });
+        }
+
+        // Переключение режима редактирования промптов
+        function togglePrompts() {
+            isPromptsMode = !isPromptsMode;
+            
+            if (isPromptsMode) {
+                document.getElementById('stageForm').style.display = 'none';
+                document.getElementById('promptsSection').style.display = 'block';
+                document.getElementById('contentTitle').textContent = 'Редактирование глобальных промптов';
+                document.querySelector('.toggle-prompts-btn').textContent = 'Переключить на редактирование стадий';
+                
+                // Загружаем промпты
+                loadPrompts();
+            } else {
+                document.getElementById('stageForm').style.display = 'block';
+                document.getElementById('promptsSection').style.display = 'none';
+                document.getElementById('contentTitle').textContent = currentStage ? 
+                    `Редактирование стадии: ${currentStage}` : 'Выберите стадию для редактирования';
+                document.querySelector('.toggle-prompts-btn').textContent = 'Переключить на редактирование промптов';
+            }
+        }
+
+        // Загрузка промптов
+        async function loadPrompts() {
+            try {
+                const response = await fetch('/api/prompts');
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const prompts = await response.json();
+                
+                // Заполняем поля промптов
+                document.getElementById('CLASSIFICATION_TEMPLATE').value = prompts.CLASSIFICATION_TEMPLATE || '';
+                document.getElementById('THINKING_TEMPLATE').value = prompts.THINKING_TEMPLATE || '';
+                document.getElementById('SYNTHESIS_TEMPLATE').value = prompts.SYNTHESIS_TEMPLATE || '';
+            } catch (error) {
+                console.error('Ошибка загрузки промптов:', error);
+                showStatus('Ошибка загрузки промптов', 'error');
+            }
+        }
+
+        // Добавление новой стадии
+        function addNewStage() {
+            const stageName = prompt('Введите имя новой стадии:');
+            if (!stageName || stageName.trim() === '') {
+                return;
+            }
+
+            const trimmedName = stageName.trim();
+            
+            // Проверяем, что стадия с таким именем не существует
+            if (patternsData && patternsData[trimmedName]) {
+                alert('Стадия с таким именем уже существует!');
+                return;
+            }
+
+            // Создаем новую пустую стадию
+            if (!patternsData) {
+                patternsData = {};
+            }
+            
+            patternsData[trimmedName] = {
+                goal: '',
+                thinking_scenario: '',
+                synthesis_scenario: '',
+                thinking_tools: '',
+                synthesis_tools: '',
+                thinking_rules: '',
+                synthesis_rules: ''
+            };
+
+            // Перерисовываем меню
+            renderStageList();
+            
+            // Выбираем новую стадию
+            selectStage(trimmedName);
+            
+            showStatus('Новая стадия добавлена', 'success');
+        }
+
+        // Сохранение изменений
+        async function saveChanges() {
+            const saveBtn = document.getElementById('saveBtn');
+            saveBtn.disabled = true;
+            saveBtn.textContent = 'Сохранение...';
+
+            try {
+                if (isPromptsMode) {
+                    // Сохраняем промпты
+                    await savePrompts();
+                } else {
+                    // Сохраняем паттерны
+                    await savePatterns();
+                }
+                
+                showStatus('Сохранено!', 'success');
+            } catch (error) {
+                console.error('Ошибка сохранения:', error);
+                showStatus('Ошибка сохранения', 'error');
+            } finally {
+                saveBtn.disabled = false;
+                saveBtn.textContent = 'Сохранить изменения';
+            }
+        }
+
+        // Сохранение паттернов
+        async function savePatterns() {
+            if (!patternsData) {
+                throw new Error('Нет данных для сохранения');
+            }
+
+            // Собираем данные текущей стадии
+            if (currentStage && patternsData[currentStage]) {
+                patternsData[currentStage] = {
+                    goal: document.getElementById('goal').value,
+                    thinking_scenario: document.getElementById('thinking_scenario').value,
+                    synthesis_scenario: document.getElementById('synthesis_scenario').value,
+                    thinking_tools: document.getElementById('thinking_tools').value,
+                    synthesis_tools: document.getElementById('synthesis_tools').value,
+                    thinking_rules: document.getElementById('thinking_rules').value,
+                    synthesis_rules: document.getElementById('synthesis_rules').value
+                };
+            }
+
+            const response = await fetch('/api/patterns', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(patternsData)
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+        }
+
+        // Сохранение промптов
+        async function savePrompts() {
+            const prompts = {
+                CLASSIFICATION_TEMPLATE: document.getElementById('CLASSIFICATION_TEMPLATE').value,
+                THINKING_TEMPLATE: document.getElementById('THINKING_TEMPLATE').value,
+                SYNTHESIS_TEMPLATE: document.getElementById('SYNTHESIS_TEMPLATE').value
+            };
+
+            const response = await fetch('/api/prompts', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(prompts)
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+        }
+
+        // Показ статуса
+        function showStatus(message, type = 'success') {
+            const status = document.getElementById('status');
+            status.textContent = message;
+            status.className = `status show ${type}`;
+            
+            setTimeout(() => {
+                status.className = 'status';
+            }, 3000);
+        }
+    </script>
 </body>
 </html>
