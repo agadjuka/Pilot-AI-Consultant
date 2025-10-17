@@ -37,7 +37,7 @@
     ],
     "thinking_tools": "create_appointment(master_name: str, service_name: str, date: str, time: str, client_name: str)\nsave_client_name(name: str)\nsave_client_phone(phone: str)",
     "synthesis_tools": "create_appointment(master_name: str, service_name: str, date: str, time: str, client_name: str)\nsave_client_name(name: str)\nsave_client_phone(phone: str)",
-    "thinking_rules": "",
+    "thinking_rules": "ФОРМАТ ВЫЗОВА ИНСТРУМЕНТОВ:\nТвой ответ должен содержать ТОЛЬКО строки вызова в формате:\n`TOOL_CALL: имя_инструмента(параметр1=\"значение1\")`\n\nПРИМЕРЫ:\n`TOOL_CALL: create_appointment(master_name=\"Анна\", service_name=\"маникюр\", date=\"2025-10-17\", time=\"14:00\", client_name=\"Мария\")`\n`TOOL_CALL: save_client_name(name=\"Мария\")`\n`TOOL_CALL: save_client_phone(phone=\"+79123456789\")`",
     "synthesis_rules": "Для сохранения данных и создания записи используй `create_appointment`, `save_client_name`, `save_client_phone`.\nТвой ответ должен быть гибридным, содержащим все необходимые TOOL_CALL и финальное подтверждение для клиента в одном сообщении.\nПример:\n`TOOL_CALL: create_appointment(master_name=\"Анна\", service_name=\"маникюр\", date=\"2025-10-17\", time=\"14:00\", client_name=\"Мария\")\n`TOOL_CALL: save_client_name(name=\"Мария\")\n`Запись подтверждена! Ждем вас 17 октября в 14:00.`"
   },
   "booking_start": {
