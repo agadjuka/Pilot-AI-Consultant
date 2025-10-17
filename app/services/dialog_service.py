@@ -541,24 +541,24 @@ class DialogService:
                     tracer.add_event("📋 Загрузка записей клиента", "Данные о записях отсутствуют в сессии")
                     logger.info("📋 Загружаем данные о записях клиента")
                     
-                    # Получаем данные через ToolService для правильной обработки пустого результата
-                    appointments_text = await self.tool_orchestrator.execute_single_tool("get_my_appointments", {}, user_id, dialog_context, tracer)
+                    # Получаем структурированные данные записей напрямую из AppointmentService
+                    appointments_data = self.appointment_service.get_my_appointments(user_id)
                     
-                    # Парсим результат для сохранения в контекст
-                    if appointments_text == "У вас нет предстоящих записей.":
-                        appointments_data = []
+                    # Логируем результат для отладки
+                    if appointments_data:
+                        logger.info(f"📋 Загружено {len(appointments_data)} записей для скрытого контекста")
+                        for appointment in appointments_data:
+                            logger.info(f"📅 Запись: ID={appointment['id']}, {appointment['details']}")
                     else:
-                        # Если есть записи, парсим их из текста (это сложнее, но для простоты оставим пустой список)
-                        # В реальности здесь нужно было бы парсить текст обратно в структуру
-                        appointments_data = []
+                        logger.info("📭 У клиента нет предстоящих записей")
                     
                     session_context['appointments_in_focus'] = appointments_data
                     
                     tracer.add_event("✅ Записи загружены в память", {
                         "appointments_count": len(appointments_data),
-                        "appointments_text": appointments_text
+                        "appointments_data": appointments_data
                     })
-                    logger.info(f"✅ Записи сохранены в память: {appointments_text}")
+                    logger.info(f"✅ Записи сохранены в память: {len(appointments_data)} записей")
                 else:
                     tracer.add_event("✅ Записи уже в памяти", f"Количество записей: {len(session_context['appointments_in_focus'])}")
                     logger.info("✅ Данные о записях уже есть в сессии")
@@ -609,6 +609,20 @@ class DialogService:
                     for appointment in appointments_data:
                         hidden_context += f"- ID: {appointment['id']}, {appointment['details']}\n"
                     hidden_context += f"\nИспользуй эти ID для вызова инструментов cancel_appointment_by_id или reschedule_appointment_by_id.\n"
+                    
+                    # Логируем формирование скрытого контекста
+                    tracer.add_event("🔍 Скрытый контекст сформирован", {
+                        "stage": stage,
+                        "appointments_count": len(appointments_data),
+                        "hidden_context": hidden_context
+                    })
+                    logger.info(f"🔍 Сформирован скрытый контекст для стадии {stage}: {len(appointments_data)} записей")
+                else:
+                    tracer.add_event("📭 Нет записей для скрытого контекста", f"Стадия: {stage}, Записей: 0")
+                    logger.info(f"📭 Нет записей для формирования скрытого контекста на стадии {stage}")
+            else:
+                tracer.add_event("ℹ️ Скрытый контекст не нужен", f"Стадия: {stage}")
+                logger.info(f"ℹ️ Скрытый контекст не формируется для стадии {stage}")
             
             thinking_prompt = self.prompt_builder.build_thinking_prompt(
                         stage_name=stage,
@@ -621,8 +635,10 @@ class DialogService:
             
             tracer.add_event("📝 Промпт мышления сформирован", {
                 "prompt_length": len(thinking_prompt),
-                    "stage": stage
-                })
+                "stage": stage,
+                "hidden_context_length": len(hidden_context),
+                "has_hidden_context": bool(hidden_context)
+            })
                 
             # Создаем историю для второго вызова LLM
             thinking_history = [
