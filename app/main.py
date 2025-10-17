@@ -23,7 +23,10 @@ async def startup_event():
     logger.info("╚═══════════════════════════════════════════════════════════")
     
     # Очищаем папку с логами при каждом запуске
-    clear_debug_logs()
+    try:
+        clear_debug_logs()
+    except Exception as e:
+        logger.warning(f"Не удалось очистить папку debug_logs: {e}. В облачной среде это нормально.")
 
 
 @app.get("/healthcheck", tags=["Health Check"])

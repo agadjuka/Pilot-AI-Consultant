@@ -6,6 +6,9 @@ from pathlib import Path
 from typing import List, Dict, Any, Optional, Union
 import logging
 
+from app.core.config import settings
+from app.services.s3_logger_service import S3LoggerService
+
 # Получаем логгер для этого модуля
 logger = logging.getLogger(__name__)
 
@@ -69,12 +72,10 @@ class DialogueTracer:
     
     def save_trace(self) -> None:
         """
-        Сохраняет всю трассировку в Markdown-файл.
+        Сохраняет всю трассировку в зависимости от режима логирования.
+        Поддерживает как локальное сохранение, так и загрузку в S3.
         """
         try:
-            # Создаем папку если не существует
-            self.debug_dir.mkdir(parents=True, exist_ok=True)
-            
             # Формируем содержимое файла
             content_lines = []
             
@@ -107,29 +108,91 @@ class DialogueTracer:
             content_lines.append(f"**Всего событий:** {len(self.trace_events)}")
             content_lines.append(f"**Время завершения:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
             
-            # Сохраняем файл
-            with open(self.filepath, "w", encoding="utf-8") as f:
-                f.write("\n".join(content_lines))
+            # Получаем содержимое файла как строку
+            file_content = "\n".join(content_lines)
             
-            # Трассировка сохранена
+            # Выбираем способ сохранения в зависимости от режима
+            if settings.LOG_MODE == "cloud":
+                self._save_to_cloud(file_content)
+            else:
+                self._save_to_local(file_content)
             
         except Exception as e:
             logger.error(f"❌ Ошибка при сохранении трассировки: {e}")
+    
+    def _save_to_local(self, file_content: str) -> None:
+        """
+        Сохраняет трассировку в локальный файл.
+        
+        Args:
+            file_content: Содержимое файла для сохранения
+        """
+        try:
+            # Создаем папку если не существует
+            self.debug_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Сохраняем файл локально
+            with open(self.filepath, "w", encoding="utf-8") as f:
+                f.write(file_content)
+            
+            logger.info(f"✅ Трассировка сохранена локально: {self.filepath}")
+            
+        except Exception as e:
+            logger.error(f"❌ Ошибка при локальном сохранении трассировки: {e}")
+            raise
+    
+    def _save_to_cloud(self, file_content: str) -> None:
+        """
+        Сохраняет трассировку в S3-хранилище.
+        
+        Args:
+            file_content: Содержимое файла для сохранения
+        """
+        try:
+            # Создаем экземпляр S3LoggerService
+            s3_logger = S3LoggerService()
+            
+            # Загружаем лог в S3
+            success = s3_logger.upload_log(file_content, self.filename)
+            
+            if success:
+                logger.info(f"✅ Трассировка загружена в S3: {self.filename}")
+            else:
+                logger.error(f"❌ Не удалось загрузить трассировку в S3: {self.filename}")
+                # В случае ошибки S3, сохраняем локально как fallback
+                logger.warning("🔄 Переключаемся на локальное сохранение как fallback")
+                self._save_to_local(file_content)
+                
+        except Exception as e:
+            logger.error(f"❌ Ошибка при облачном сохранении трассировки: {e}")
+            # В случае ошибки S3, сохраняем локально как fallback
+            logger.warning("🔄 Переключаемся на локальное сохранение как fallback")
+            try:
+                self._save_to_local(file_content)
+            except Exception as fallback_error:
+                logger.error(f"❌ Критическая ошибка: не удалось сохранить ни в S3, ни локально: {fallback_error}")
+                raise
 
 
 def clear_debug_logs(debug_dir: str = "debug_logs") -> None:
     """
     Очищает папку с логами при старте приложения.
     Удаляет все файлы и папку, затем создает пустую папку заново.
+    В облачном режиме эта функция не выполняет никаких действий.
     
     Args:
         debug_dir: Папка для очистки (по умолчанию debug_logs)
     """
+    # В облачном режиме не очищаем локальную папку
+    if settings.LOG_MODE == "cloud":
+        logger.info("🌤️ Облачный режим логирования: пропускаем очистку локальной папки")
+        return
+    
     debug_path = Path(debug_dir)
     
     if debug_path.exists():
         shutil.rmtree(debug_path)
-        # Папка очищена
+        logger.info(f"🗑️ Папка {debug_dir} очищена")
     
     debug_path.mkdir(parents=True, exist_ok=True)
-    # Папка создана
+    logger.info(f"📁 Папка {debug_dir} создана")

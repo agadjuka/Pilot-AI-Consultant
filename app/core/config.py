@@ -27,6 +27,15 @@ class Settings(BaseSettings):
     YANDEX_FOLDER_ID: Optional[str] = None
     YANDEX_API_KEY_SECRET: Optional[str] = None
 
+    # Logging Configuration
+    LOG_MODE: str = "local"  # "local" или "cloud"
+
+    # S3 Configuration (для облачного режима логирования)
+    S3_ACCESS_KEY_ID: Optional[str] = None
+    S3_SECRET_ACCESS_KEY: Optional[str] = None
+    S3_BUCKET_NAME: Optional[str] = None
+    S3_ENDPOINT_URL: str = "https://storage.yandexcloud.net"
+
 # Глобальная переменная для ленивой инициализации
 _settings: Optional[Settings] = None
 
