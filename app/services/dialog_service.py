@@ -831,12 +831,25 @@ class DialogService:
                         # Выполняем инструмент через ToolOrchestratorService с контекстом и трассировкой
                         tool_result = await self.tool_orchestrator.execute_single_tool(tool_name, parameters, user_id, dialog_context, tracer)
                         
+                        # Проверяем результат для критических операций
+                        if tool_name in ['cancel_appointment_by_id', 'reschedule_appointment_by_id']:
+                            if "Ошибка:" in tool_result or "не найдена" in tool_result or "нет прав" in tool_result:
+                                tracer.add_event(f"❌ Критическая ошибка инструмента", f"Инструмент: {tool_name}, Результат: {tool_result}")
+                                logger.error(f"❌ Критическая ошибка инструмента {tool_name}: {tool_result}")
+                                # Не продолжаем выполнение, если операция не удалась
+                                bot_response_text = tool_result
+                                break
+                        
                         tracer.add_event(f"✅ Исполнительный инструмент выполнен", f"Инструмент: {tool_name}, Результат: {tool_result}")
                         logger.info(f"✅ Исполнительный инструмент выполнен: {tool_name}")
                         
                     except Exception as e:
                         tracer.add_event(f"❌ Ошибка исполнительного инструмента", f"Инструмент: {tool_name}, Ошибка: {str(e)}")
                         logger.error(f"❌ Ошибка выполнения исполнительного инструмента {tool_name}: {e}")
+                        # Для критических операций прерываем выполнение при ошибке
+                        if tool_name in ['cancel_appointment_by_id', 'reschedule_appointment_by_id']:
+                            bot_response_text = f"Произошла ошибка при выполнении операции. Пожалуйста, обратитесь к менеджеру."
+                            break
             
             # Финальный ответ - это очищенный текст
             bot_response_text = cleaned_text.strip()

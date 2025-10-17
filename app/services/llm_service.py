@@ -435,8 +435,8 @@ class LLMService:
 - get_available_slots — свободные окна (service_name, date)
 - create_appointment — создать запись (master_name, service_name, date, time, client_name)
 - get_my_appointments — мои предстоящие записи
-- cancel_appointment_by_id — отменить запись (appointment_id)
-- reschedule_appointment_by_id — перенести запись (appointment_id, new_date, new_time)
+- cancel_appointment_by_id — отменить запись (appointment_id) — ВАЖНО: используй именно "appointment_id", не "id"
+- reschedule_appointment_by_id — перенести запись (appointment_id, new_date, new_time) — ВАЖНО: используй именно "appointment_id", не "id"
 - call_manager — позвать менеджера (reason)
 
 Правила вызова инструментов:

@@ -721,13 +721,25 @@ class ToolOrchestratorService:
             return method(user_id)
         
         elif function_name == "cancel_appointment_by_id":
-            appointment_id = function_args.get("appointment_id", 0)
+            # Поддерживаем как полное имя параметра, так и сокращенное
+            appointment_id = function_args.get("appointment_id") or function_args.get("id", 0)
+            try:
+                appointment_id = int(appointment_id)
+            except (ValueError, TypeError):
+                logger.warning(f"❌ [ORCHESTRATOR] Неверный формат appointment_id: {appointment_id}")
+                return "Ошибка: неверный формат ID записи"
             return method(appointment_id, user_id)
         
         elif function_name == "reschedule_appointment_by_id":
-            appointment_id = function_args.get("appointment_id", 0)
+            # Поддерживаем как полное имя параметра, так и сокращенное
+            appointment_id = function_args.get("appointment_id") or function_args.get("id", 0)
             new_date = function_args.get("new_date", "")
             new_time = function_args.get("new_time", "")
+            try:
+                appointment_id = int(appointment_id)
+            except (ValueError, TypeError):
+                logger.warning(f"❌ [ORCHESTRATOR] Неверный формат appointment_id: {appointment_id}")
+                return "Ошибка: неверный формат ID записи"
             return method(appointment_id, new_date, new_time, user_id)
         
         elif function_name == "call_manager":
@@ -794,13 +806,25 @@ class ToolOrchestratorService:
             return method(user_id)
         
         elif function_name == "cancel_appointment_by_id":
-            appointment_id = function_args.get("appointment_id", 0)
+            # Поддерживаем как полное имя параметра, так и сокращенное
+            appointment_id = function_args.get("appointment_id") or function_args.get("id", 0)
+            try:
+                appointment_id = int(appointment_id)
+            except (ValueError, TypeError):
+                logger.warning(f"❌ [ORCHESTRATOR] Неверный формат appointment_id: {appointment_id}")
+                return "Ошибка: неверный формат ID записи"
             return method(appointment_id, user_id)
         
         elif function_name == "reschedule_appointment_by_id":
-            appointment_id = function_args.get("appointment_id", 0)
+            # Поддерживаем как полное имя параметра, так и сокращенное
+            appointment_id = function_args.get("appointment_id") or function_args.get("id", 0)
             new_date = function_args.get("new_date", "")
             new_time = function_args.get("new_time", "")
+            try:
+                appointment_id = int(appointment_id)
+            except (ValueError, TypeError):
+                logger.warning(f"❌ [ORCHESTRATOR] Неверный формат appointment_id: {appointment_id}")
+                return "Ошибка: неверный формат ID записи"
             return method(appointment_id, new_date, new_time, user_id)
         
         elif function_name == "call_manager":

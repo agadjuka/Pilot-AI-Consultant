@@ -337,22 +337,40 @@ class ToolService:
                 return result
             
             elif tool_name == "cancel_appointment_by_id":
-                appointment_id = parameters.get("appointment_id")
+                # Поддерживаем как полное имя параметра, так и сокращенное
+                appointment_id = parameters.get("appointment_id") or parameters.get("id")
                 if appointment_id is None:
-                    logger.warning(f"❌ [TOOL EXECUTION] Отсутствует appointment_id для отмены записи")
+                    logger.warning(f"❌ [TOOL EXECUTION] Отсутствует appointment_id для отмены записи. Полученные параметры: {parameters}")
                     return "Ошибка: не указан ID записи для отмены"
+                
+                # Преобразуем в int, если передано как строка
+                try:
+                    appointment_id = int(appointment_id)
+                except (ValueError, TypeError):
+                    logger.warning(f"❌ [TOOL EXECUTION] Неверный формат appointment_id: {appointment_id}")
+                    return "Ошибка: неверный формат ID записи"
+                
                 logger.info(f"🗑️ [TOOL EXECUTION] Выполнение отмены записи: appointment_id={appointment_id}")
                 result = self.cancel_appointment_by_id(appointment_id, user_id)
                 logger.info(f"✅ [TOOL EXECUTION] Результат отмены записи: {result}")
                 return result
             
             elif tool_name == "reschedule_appointment_by_id":
-                appointment_id = parameters.get("appointment_id")
+                # Поддерживаем как полное имя параметра, так и сокращенное
+                appointment_id = parameters.get("appointment_id") or parameters.get("id")
                 new_date = parameters.get("new_date", "")
                 new_time = parameters.get("new_time", "")
                 if appointment_id is None:
-                    logger.warning(f"❌ [TOOL EXECUTION] Отсутствует appointment_id для переноса записи")
+                    logger.warning(f"❌ [TOOL EXECUTION] Отсутствует appointment_id для переноса записи. Полученные параметры: {parameters}")
                     return "Ошибка: не указан ID записи для переноса"
+                
+                # Преобразуем в int, если передано как строка
+                try:
+                    appointment_id = int(appointment_id)
+                except (ValueError, TypeError):
+                    logger.warning(f"❌ [TOOL EXECUTION] Неверный формат appointment_id: {appointment_id}")
+                    return "Ошибка: неверный формат ID записи"
+                
                 logger.info(f"📅 [TOOL EXECUTION] Выполнение переноса записи: appointment_id={appointment_id}, new_date='{new_date}', new_time='{new_time}'")
                 result = self.reschedule_appointment_by_id(appointment_id, new_date, new_time, user_id)
                 logger.info(f"✅ [TOOL EXECUTION] Результат переноса записи: {result}")
