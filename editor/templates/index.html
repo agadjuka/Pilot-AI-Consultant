@@ -374,8 +374,17 @@
             
             // Заполняем поля формы
             document.getElementById('goal').value = stage.goal || '';
-            document.getElementById('thinking_scenario').value = stage.thinking_scenario || '';
-            document.getElementById('synthesis_scenario').value = stage.synthesis_scenario || '';
+            
+            // Обрабатываем поля, которые могут быть списками
+            const thinkingScenario = Array.isArray(stage.thinking_scenario) 
+                ? stage.thinking_scenario.join('\n') 
+                : (stage.thinking_scenario || '');
+            const synthesisScenario = Array.isArray(stage.synthesis_scenario) 
+                ? stage.synthesis_scenario.join('\n') 
+                : (stage.synthesis_scenario || '');
+            
+            document.getElementById('thinking_scenario').value = thinkingScenario;
+            document.getElementById('synthesis_scenario').value = synthesisScenario;
             document.getElementById('thinking_tools').value = stage.thinking_tools || '';
             document.getElementById('synthesis_tools').value = stage.synthesis_tools || '';
             document.getElementById('thinking_rules').value = stage.thinking_rules || '';
@@ -453,8 +462,8 @@
             
             patternsData[trimmedName] = {
                 goal: '',
-                thinking_scenario: '',
-                synthesis_scenario: '',
+                thinking_scenario: [],
+                synthesis_scenario: [],
                 thinking_tools: '',
                 synthesis_tools: '',
                 thinking_rules: '',
@@ -503,10 +512,14 @@
 
             // Собираем данные текущей стадии
             if (currentStage && patternsData[currentStage]) {
+                // Обрабатываем поля, которые должны быть списками
+                const thinkingScenario = document.getElementById('thinking_scenario').value;
+                const synthesisScenario = document.getElementById('synthesis_scenario').value;
+                
                 patternsData[currentStage] = {
                     goal: document.getElementById('goal').value,
-                    thinking_scenario: document.getElementById('thinking_scenario').value,
-                    synthesis_scenario: document.getElementById('synthesis_scenario').value,
+                    thinking_scenario: thinkingScenario ? thinkingScenario.split('\n') : [],
+                    synthesis_scenario: synthesisScenario ? synthesisScenario.split('\n') : [],
                     thinking_tools: document.getElementById('thinking_tools').value,
                     synthesis_tools: document.getElementById('synthesis_tools').value,
                     thinking_rules: document.getElementById('thinking_rules').value,

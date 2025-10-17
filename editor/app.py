@@ -85,6 +85,16 @@ def get_patterns():
     try:
         with open(PATTERNS_FILE, 'r', encoding='utf-8') as f:
             patterns = json.load(f)
+        
+        # Обрабатываем поля, которые должны быть списками для отображения в textarea
+        for stage_name, stage_data in patterns.items():
+            if isinstance(stage_data, dict):
+                # Преобразуем списки в строки для отображения в textarea
+                if 'thinking_scenario' in stage_data and isinstance(stage_data['thinking_scenario'], list):
+                    stage_data['thinking_scenario'] = '\n'.join(stage_data['thinking_scenario'])
+                if 'synthesis_scenario' in stage_data and isinstance(stage_data['synthesis_scenario'], list):
+                    stage_data['synthesis_scenario'] = '\n'.join(stage_data['synthesis_scenario'])
+        
         return jsonify(patterns)
     except FileNotFoundError:
         return jsonify({'error': 'Файл dialogue_patterns.json не найден'}), 404
@@ -108,6 +118,24 @@ def save_patterns():
         
         if not patterns_data:
             return jsonify({'error': 'Отсутствуют данные для сохранения'}), 400
+        
+        # Обрабатываем данные перед сохранением
+        for stage_name, stage_data in patterns_data.items():
+            if isinstance(stage_data, dict):
+                # Убеждаемся, что поля thinking_scenario и synthesis_scenario являются списками
+                if 'thinking_scenario' in stage_data:
+                    if isinstance(stage_data['thinking_scenario'], str):
+                        # Если пришла строка, разбиваем по переводам строк
+                        stage_data['thinking_scenario'] = stage_data['thinking_scenario'].split('\n') if stage_data['thinking_scenario'] else []
+                    elif not isinstance(stage_data['thinking_scenario'], list):
+                        stage_data['thinking_scenario'] = []
+                
+                if 'synthesis_scenario' in stage_data:
+                    if isinstance(stage_data['synthesis_scenario'], str):
+                        # Если пришла строка, разбиваем по переводам строк
+                        stage_data['synthesis_scenario'] = stage_data['synthesis_scenario'].split('\n') if stage_data['synthesis_scenario'] else []
+                    elif not isinstance(stage_data['synthesis_scenario'], list):
+                        stage_data['synthesis_scenario'] = []
         
         # Создаем резервную копию
         backup_path = create_backup(PATTERNS_FILE)
