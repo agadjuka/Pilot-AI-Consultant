@@ -3,11 +3,11 @@ name = "beauty_salon_ai"
 version = "0.1.0"
 description = "AI-ассистент для салона красоты"
 authors = []
-readme = "README.md"
+# readme = "README.md"
 packages = [{include = "app"}]
 
 [tool.poetry.dependencies]
-python = "^3.11"
+python = "^3.10"
 fastapi = "^0.104.1"
 uvicorn = {extras = ["standard"], version = "^0.24.0"}
 pydantic = "^2.5.0"

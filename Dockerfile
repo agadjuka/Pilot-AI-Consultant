@@ -1,6 +1,6 @@
 # --- Этап 1: Сборка зависимостей ---
 # Используем официальный образ Python как базовый для сборки
-FROM python:3.11-slim as builder
+FROM python:3.10-slim as builder
 
 # Устанавливаем рабочую директорию
 WORKDIR /app
@@ -13,12 +13,12 @@ COPY poetry.lock pyproject.toml ./
 
 # Устанавливаем зависимости проекта, исключая dev-зависимости,
 # и создаем виртуальное окружение внутри /app/.venv
-RUN poetry config virtualenvs.in-project true && poetry install --no-dev --no-interaction --no-ansi
+RUN poetry config virtualenvs.in-project true && poetry install --only=main --no-interaction --no-ansi --no-root
 
 
-# --- Этап 2: Создание финального образа ---
+# --- Этап 2: Создание финальнytого образа ---
 # Используем тот же базовый образ для уменьшения размера
-FROM python:3.11-slim
+FROM python:3.10-slim
 
 # Устанавливаем рабочую директорию
 WORKDIR /app

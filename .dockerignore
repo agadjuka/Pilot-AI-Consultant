@@ -1,0 +1,28 @@
+# Исключаем виртуальные окружения
+.venv
+venv
+
+# Исключаем кэш Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Исключаем системные и IDE-файлы
+.git
+.gitignore
+.dockerignore
+*.md
+.idea/
+.vscode/
+
+# Исключаем локальные базы данных и логи
+/chroma_db_local/
+/debug_logs/
+
+# Исключаем файлы окружения
+.env
+
+# Исключаем папку с редактором
+/editor/
+
+
