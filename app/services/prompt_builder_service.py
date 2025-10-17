@@ -70,12 +70,7 @@ class PromptBuilderService:
 {stage_scenario}
 
 # ОБЩИЕ ПРАВИЛА
-# ФОРМАТ ВЫЗОВА ИНСТРУМЕНТОВ
-Если тебе нужны данные от 'разведывательных' инструментов, твой ответ должен содержать ТОЛЬКО строки вызова в формате:
-`TOOL_CALL: имя_инструмента(параметр1="значение1")`
-
-ПРИМЕР ВЫЗОВА:
-`TOOL_CALL: get_available_slots(service_name="маникюр", date="2025-10-17")`
+{rules}
 
 # КОНТЕКСТ
 - Текущая дата: {current_datetime}
@@ -246,8 +241,9 @@ class PromptBuilderService:
         else:
             stage_scenario = scenario_text
         
-        # Получаем инструменты из конфигурации
+        # Получаем инструменты и правила из конфигурации
         thinking_tools = stage_data.get('thinking_tools', '')
+        thinking_rules = stage_data.get('thinking_rules', '')
         
         # Собираем промпт по шаблону
         prompt = self.THINKING_TEMPLATE.format(
@@ -257,7 +253,8 @@ class PromptBuilderService:
             user_message=user_message,
             hidden_context=hidden_context,
             stage_scenario=stage_scenario,
-            thinking_tools=thinking_tools
+            thinking_tools=thinking_tools,
+            rules=thinking_rules
         )
         
         return prompt
