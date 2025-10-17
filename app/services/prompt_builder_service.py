@@ -234,7 +234,7 @@ class PromptBuilderService:
         
         # Получаем инструменты и правила из конфигурации
         thinking_tools = stage_data.get('thinking_tools', '')
-        rules = stage_data.get('rules', '')
+        rules = stage_data.get('thinking_rules', '')
         
         # Собираем промпт по шаблону
         prompt = self.THINKING_TEMPLATE.format(
@@ -297,7 +297,7 @@ class PromptBuilderService:
         
         # Получаем инструменты и правила из конфигурации
         synthesis_tools = stage_data.get('synthesis_tools', '')
-        rules = stage_data.get('rules', '')
+        rules = stage_data.get('synthesis_rules', '')
         
         # Собираем промпт по шаблону
         prompt = self.SYNTHESIS_TEMPLATE.format(
