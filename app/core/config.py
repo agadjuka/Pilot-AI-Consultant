@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     }
 
     # Database Configuration
-    DATABASE_URL: str = "sqlite:///./beauty_salon.db"  # По умолчанию SQLite для облака
+    DATABASE_URL: str = "postgresql://user:password@localhost/dbname"  # По умолчанию PostgreSQL
 
     # Telegram Bot
     TELEGRAM_BOT_TOKEN: Optional[str] = None

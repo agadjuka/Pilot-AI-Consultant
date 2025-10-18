@@ -20,7 +20,6 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     # Создаем таблицу dialog_history
-    # Для SQLite используем INTEGER вместо BigInteger для автоинкремента
     op.create_table('dialog_history',
         sa.Column('id', sa.Integer(), autoincrement=True, nullable=False),
         sa.Column('user_id', sa.BigInteger(), nullable=False),

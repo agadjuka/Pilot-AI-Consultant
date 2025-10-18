@@ -8,7 +8,7 @@ class DialogHistory(Base):
     
     __tablename__ = "dialog_history"
 
-    # Для SQLite используем Integer для автоинкремента
+    # Primary key для PostgreSQL
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     user_id = Column(BigInteger, nullable=False, index=True)
     role = Column(String(10), nullable=False)  # 'user' или 'model'
