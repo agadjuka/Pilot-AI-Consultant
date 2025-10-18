@@ -32,6 +32,7 @@ ENV PATH="/app/.venv/bin:$PATH"
 # Копируем исходный код приложения
 COPY app ./app
 COPY dialogue_patterns.json .
+COPY scripts ./scripts
 
 # Команда для запуска приложения
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]

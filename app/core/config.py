@@ -1,16 +1,18 @@
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import BaseSettings
 from typing import Optional
 
 class Settings(BaseSettings):
     # Модель загружает переменные из .env файла
-    model_config = SettingsConfigDict(env_file='.env', env_file_encoding='utf-8', extra='ignore')
+    class Config:
+        env_file = '.env'
+        env_file_encoding = 'utf-8'
+        extra = 'ignore'
 
-    # PostgreSQL Database
-    DATABASE_URL: str
+    # Database Configuration
+    DATABASE_URL: str = "sqlite:///./beauty_salon.db"  # По умолчанию SQLite для облака
 
     # Telegram Bot
     TELEGRAM_BOT_TOKEN: str
-
 
     # ChromaDB
     CHROMA_HOST: Optional[str] = None

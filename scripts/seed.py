@@ -1,6 +1,6 @@
 import random
 from faker import Faker
-from app.core.database import get_engine, get_session_local
+from app.core.database import get_engine, get_session_local, init_database
 from app.models.service import Service
 from app.models.master import Master
 
@@ -55,7 +55,10 @@ def seed_data():
         # Каждый мастер получает от 2 до 5 случайных услуг
         num_services = random.randint(2, 5)
         assigned_services = random.sample(services, num_services)
-        master.services.extend(assigned_services)
+        # Добавляем услуги по одной, проверяя на дубликаты
+        for service in assigned_services:
+            if service not in master.services:
+                master.services.append(service)
     
     db.commit()
     print(f"{len(masters)} masters created and linked to services.")
@@ -65,6 +68,11 @@ def seed_data():
 
 if __name__ == "__main__":
     try:
+        # Инициализируем базу данных
+        init_database()
+        print("Database initialized.")
+        
+        # Заполняем данными
         seed_data()
     finally:
         db.close()

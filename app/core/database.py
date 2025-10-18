@@ -2,6 +2,10 @@ from sqlalchemy import create_engine, Engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
 from typing import Generator, Optional
+import logging
+
+# Получаем логгер для этого модуля
+logger = logging.getLogger(__name__)
 
 # Создаем базовый класс для наших ORM моделей
 Base = declarative_base()
@@ -39,4 +43,24 @@ def get_db() -> Generator[Session, None, None]:
         yield db
     finally:
         db.close()
+
+
+def init_database():
+    """
+    Инициализирует базу данных, создавая все таблицы.
+    Вызывается при запуске приложения.
+    """
+    try:
+        logger.info("🗄️ DATABASE: Инициализация базы данных...")
+        
+        # Импортируем все модели для создания таблиц
+        from app.models import service, master, client, dialog_history, appointment
+        
+        # Создаем все таблицы
+        Base.metadata.create_all(bind=get_engine())
+        logger.info("✅ DATABASE: База данных успешно инициализирована")
+        
+    except Exception as e:
+        logger.error(f"❌ DATABASE: Ошибка инициализации базы данных: {e}")
+        raise
 
