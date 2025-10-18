@@ -44,6 +44,7 @@ jobs:
           folder-id: b1ged9dcl5dbfqojoa13
           revision-image-url: cr.yandex/${{ secrets.YC_REGISTRY_ID }}/beauty-salon-ai:${{ github.sha }}
           revision-service-account-id: 'aje7vj62jhsh2qjmuefm'
+          revision-memory: '1GB'
           revision-env: |
             DATABASE_URL=${lockbox:e6qubg675r964639f4mf:DATABASE_URL}
             TELEGRAM_BOT_TOKEN=${lockbox:e6qdalbbnli3rr7so26b:TELEGRAM_BOT_TOKEN}
