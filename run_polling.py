@@ -32,7 +32,7 @@ async def run_polling():
     logger.info("🔄 Удаление webhook...")
     
     # Удаляем webhook, если он был установле
-    # Telegram не позволяет одновременно использовать webhook и polling
+    # Telegram не позволяет одновременно использовать webhook и pollin
     webhook_deleted = await telegram_service.delete_webhook()
     if webhook_deleted:
         logger.info("✅ Webhook удален")
