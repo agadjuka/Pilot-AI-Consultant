@@ -1,4 +1,4 @@
-name: Deploy to Yandex Container Registry
+name: Deploy to Yandex Cloud
 
 on:
   push:
@@ -6,8 +6,8 @@ on:
       - main
 
 jobs:
-  build-and-push:
-    name: Build and Push Docker Image
+  build-and-deploy:
+    name: Build and Deploy to Yandex Cloud
     runs-on: ubuntu-latest
 
     steps:
@@ -26,6 +26,7 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Build and push Docker image
+        id: docker_build
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -34,3 +35,11 @@ jobs:
             cr.yandex/${{ secrets.YC_REGISTRY_ID }}/beauty-salon-ai:${{ github.sha }}
             cr.yandex/${{ secrets.YC_REGISTRY_ID }}/beauty-salon-ai:latest
           platforms: linux/amd64
+
+      - name: Deploy Serverless Container
+        uses: yc-actions/yc-sls-container-deploy@v1
+        with:
+          yc-sa-json-credentials: ${{ secrets.YC_SA_JSON_CREDENTIALS }}
+          container-name: 'beauty-salon-container'
+          folder-id: b1ged9dcl5dbfqojoa13
+          image-url: cr.yandex/${{ secrets.YC_REGISTRY_ID }}/beauty-salon-ai:${{ github.sha }}
