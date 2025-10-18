@@ -31,12 +31,6 @@ ENV PATH="/app/.venv/bin:$PATH"
 
 # Копируем исходный код приложения
 COPY app ./app
-COPY launch.py .
-COPY boot.sh .
-
-# Делаем boot.sh исполняемым
-RUN chmod +x boot.sh
 
 # Команда для запуска приложения
-# Используем наш новый скрипт-обертку для отладки
-CMD ["./boot.sh"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]
