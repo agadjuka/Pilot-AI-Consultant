@@ -14,7 +14,7 @@ from app.repositories.client_repository import ClientRepository
 from app.services.llm_service import get_llm_service
 from app.services.appointment_service import AppointmentService
 from app.services.tool_service import ToolService
-from app.services.google_calendar_service import GoogleCalendarService
+from app.services.db_calendar_service import DBCalendarService
 from app.services.prompt_builder_service import PromptBuilderService
 from app.core.dialogue_pattern_loader import dialogue_patterns
 from app.services.dialogue_tracer_service import DialogueTracer
@@ -54,8 +54,11 @@ class DialogService:
         self.appointment_repository = AppointmentRepository(db_session)
         self.client_repository = ClientRepository(db_session)
         
-        # Инициализируем Google Calendar Service
-        self.google_calendar_service = GoogleCalendarService()
+        # Инициализируем DB Calendar Service
+        self.db_calendar_service = DBCalendarService(
+            appointment_repository=self.appointment_repository,
+            master_repository=self.master_repository
+        )
         
         # Создаем экземпляр AppointmentService
         self.appointment_service = AppointmentService(
@@ -63,7 +66,7 @@ class DialogService:
             client_repository=self.client_repository,
             master_repository=self.master_repository,
             service_repository=self.service_repository,
-            google_calendar_service=self.google_calendar_service
+            db_calendar_service=self.db_calendar_service
         )
         
         # Создаем экземпляр ToolService
@@ -71,7 +74,7 @@ class DialogService:
             service_repository=self.service_repository,
             master_repository=self.master_repository,
             appointment_service=self.appointment_service,
-            google_calendar_service=self.google_calendar_service,
+            db_calendar_service=self.db_calendar_service,
             client_repository=self.client_repository
         )
         

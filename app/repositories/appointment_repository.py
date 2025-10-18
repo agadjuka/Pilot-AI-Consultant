@@ -31,23 +31,6 @@ class AppointmentRepository(BaseRepository[Appointment]):
             )
         ).order_by(Appointment.start_time).all()
     
-    def delete_by_event_id(self, event_id: str) -> bool:
-        """Удалить запись по ID события в Google Календаре"""
-        appointment = self.db.query(Appointment).filter(
-            Appointment.google_event_id == event_id
-        ).first()
-        
-        if appointment:
-            self.db.delete(appointment)
-            self.db.commit()
-            return True
-        return False
-    
-    def get_by_event_id(self, event_id: str) -> Optional[Appointment]:
-        """Получить запись по ID события в Google Календаре"""
-        return self.db.query(Appointment).filter(
-            Appointment.google_event_id == event_id
-        ).first()
     
     def get_next_appointment_by_user(self, user_telegram_id: int) -> Optional[Appointment]:
         """Получить ближайшую предстоящую запись пользователя"""

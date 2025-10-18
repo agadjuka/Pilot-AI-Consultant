@@ -2,7 +2,7 @@ from app.repositories.appointment_repository import AppointmentRepository
 from app.repositories.client_repository import ClientRepository
 from app.repositories.master_repository import MasterRepository
 from app.repositories.service_repository import ServiceRepository
-from app.services.google_calendar_service import GoogleCalendarService
+from app.services.db_calendar_service import DBCalendarService
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from difflib import SequenceMatcher
@@ -24,7 +24,7 @@ class AppointmentService:
         client_repository: ClientRepository,
         master_repository: MasterRepository,
         service_repository: ServiceRepository,
-        google_calendar_service: GoogleCalendarService
+        db_calendar_service: DBCalendarService
     ):
         """
         Инициализирует AppointmentService с необходимыми репозиториями и сервисами.
@@ -34,13 +34,13 @@ class AppointmentService:
             client_repository: Репозиторий для работы с клиентами
             master_repository: Репозиторий для работы с мастерами
             service_repository: Репозиторий для работы с услугами
-            google_calendar_service: Сервис для работы с Google Calendar
+            db_calendar_service: Сервис для работы с календарем через БД
         """
         self.appointment_repository = appointment_repository
         self.client_repository = client_repository
         self.master_repository = master_repository
         self.service_repository = service_repository
-        self.google_calendar_service = google_calendar_service
+        self.db_calendar_service = db_calendar_service
 
     def create_appointment(self, master_name: str, service_name: str, date: str, time: str, client_name: str, user_telegram_id: int) -> str:
         """
@@ -142,40 +142,23 @@ class AppointmentService:
             start_time_iso = start_datetime.strftime('%Y-%m-%dT%H:%M:%S')
             end_time_iso = end_datetime.strftime('%Y-%m-%dT%H:%M:%S')
             
-            # Вызываем метод создания события в Google Calendar
+            # Создаем запись через DBCalendarService
             # Формируем описание события для мастера
             description = f"Клиент: {client.first_name or client_name} | Телефон: {client.phone_number or '-'} | Telegram ID: {user_telegram_id}"
 
             try:
-                event_id = self.google_calendar_service.create_event(
-                    master_name=master_name,
-                    service_name=service_name,
-                    start_time_iso=start_time_iso,
-                    end_time_iso=end_time_iso,
+                appointment_id = self.db_calendar_service.create_event(
+                    master_id=master.id,
+                    service_id=service.id,
+                    user_telegram_id=user_telegram_id,
+                    start_time=start_datetime,
+                    end_time=end_datetime,
                     description=description
                 )
-                logger.info(f"✅ [CREATE APPOINTMENT] Событие создано в Google Calendar: event_id='{event_id}'")
+                logger.info(f"✅ [CREATE APPOINTMENT] Запись создана через DBCalendarService: appointment_id={appointment_id}")
             except Exception as calendar_error:
-                # Фолбэк: если интеграция с календарем недоступна (например, dev-среда),
-                # создаем локальный event_id и продолжаем сохранение записи в БД
-                # Это позволяет не блокировать продажи из-за внешнего сервиса
-                from uuid import uuid4
-                event_id = f"LOCAL-{uuid4()}"
-                logger.warning(f"⚠️ [CREATE APPOINTMENT] Календарь недоступен, используем локальный event_id: {event_id}. Ошибка: {calendar_error}")
-            
-            # Сохраняем запись в нашу БД
-            appointment_data = {
-                'user_telegram_id': user_telegram_id,
-                'google_event_id': event_id,
-                'master_id': master.id,
-                'service_id': service.id,
-                'start_time': start_datetime,
-                'end_time': end_datetime
-            }
-            
-            logger.info(f"💾 [CREATE APPOINTMENT] Сохранение записи в БД: {appointment_data}")
-            self.appointment_repository.create(appointment_data)
-            logger.info(f"✅ [CREATE APPOINTMENT] Запись успешно создана в БД")
+                logger.error(f"❌ [CREATE APPOINTMENT] Ошибка создания записи через DBCalendarService: {calendar_error}")
+                return f"Ошибка при создании записи: {str(calendar_error)}"
             
             success_message = f"Отлично! Я записала {client.first_name or client_name} на {service_name} к мастеру {master_name} на {date} в {time}."
             logger.info(f"🎉 [CREATE APPOINTMENT] Успешно завершено: {success_message}")
@@ -260,22 +243,15 @@ class AppointmentService:
             date_str = appointment.start_time.strftime("%d %B")
             time_str = appointment.start_time.strftime("%H:%M")
             
-            logger.info(f"📋 [CANCEL APPOINTMENT] Информация о записи: master='{master_name}', service='{service_name}', date='{date_str}', time='{time_str}', google_event_id='{appointment.google_event_id}'")
+            logger.info(f"📋 [CANCEL APPOINTMENT] Информация о записи: master='{master_name}', service='{service_name}', date='{date_str}', time='{time_str}'")
             
-            # Сначала пытаемся удалить событие в Google Calendar (не критично, если не удастся)
+            # Удаляем запись через DBCalendarService
             try:
-                self.google_calendar_service.delete_event(appointment.google_event_id)
-                logger.info(f"✅ [CANCEL APPOINTMENT] Событие удалено из Google Calendar: event_id='{appointment.google_event_id}'")
+                self.db_calendar_service.delete_event(appointment_id)
+                logger.info(f"✅ [CANCEL APPOINTMENT] Запись удалена через DBCalendarService: appointment_id={appointment_id}")
             except Exception as calendar_error:
-                # Логируем, но не блокируем удаление в БД
-                logger.warning(f"⚠️ [CANCEL APPOINTMENT] Не удалось удалить событие в календаре: {calendar_error}")
-
-            # Удаляем запись из нашей БД напрямую по объекту и проверяем результат
-            logger.info(f"💾 [CANCEL APPOINTMENT] Удаление записи из БД: appointment_id={appointment_id}")
-            deleted = self.appointment_repository.delete(appointment)
-            if not deleted:
-                logger.error(f"❌ [CANCEL APPOINTMENT] Не удалось удалить запись из БД: appointment_id={appointment_id}")
-                return "Не удалось отменить запись: запись не найдена или уже удалена."
+                logger.error(f"❌ [CANCEL APPOINTMENT] Ошибка удаления записи через DBCalendarService: {calendar_error}")
+                return f"Ошибка при отмене записи: {str(calendar_error)}"
 
             logger.info(f"✅ [CANCEL APPOINTMENT] Запись успешно удалена из БД: appointment_id={appointment_id}")
             
@@ -317,7 +293,7 @@ class AppointmentService:
             old_date_str = appointment.start_time.strftime("%d %B")
             old_time_str = appointment.start_time.strftime("%H:%M")
             
-            logger.info(f"📋 [RESCHEDULE APPOINTMENT] Информация о записи: master='{master_name}', service='{service_name}', old_date='{old_date_str}', old_time='{old_time_str}', google_event_id='{appointment.google_event_id}'")
+            logger.info(f"📋 [RESCHEDULE APPOINTMENT] Информация о записи: master='{master_name}', service='{service_name}', old_date='{old_date_str}', old_time='{old_time_str}'")
             
             # Получаем длительность услуги
             duration_minutes = appointment.service.duration_minutes
@@ -354,34 +330,18 @@ class AppointmentService:
             start_time_iso = start_datetime.strftime('%Y-%m-%dT%H:%M:%S')
             end_time_iso = end_datetime.strftime('%Y-%m-%dT%H:%M:%S')
             
-            # Сначала пытаемся обновить событие в Google Calendar
+            # Обновляем запись через DBCalendarService
             try:
-                # Формируем название события
-                summary = f"Запись: {master_name} - {service_name}"
-                
-                logger.info(f"📅 [RESCHEDULE APPOINTMENT] Обновление события в Google Calendar: event_id='{appointment.google_event_id}', summary='{summary}'")
-                self.google_calendar_service.update_event(
-                    event_id=appointment.google_event_id,
-                    summary=summary,
-                    start_datetime=start_datetime,
-                    end_datetime=end_datetime
+                logger.info(f"📅 [RESCHEDULE APPOINTMENT] Обновление записи через DBCalendarService: appointment_id={appointment_id}")
+                self.db_calendar_service.update_event(
+                    appointment_id=appointment_id,
+                    new_start_time=start_datetime,
+                    new_end_time=end_datetime
                 )
-                logger.info(f"✅ [RESCHEDULE APPOINTMENT] Событие обновлено в Google Calendar: event_id='{appointment.google_event_id}'")
+                logger.info(f"✅ [RESCHEDULE APPOINTMENT] Запись обновлена через DBCalendarService: appointment_id={appointment_id}")
             except Exception as calendar_error:
-                # Логируем, но не блокируем обновление в БД
-                logger.warning(f"⚠️ [RESCHEDULE APPOINTMENT] Не удалось обновить событие в календаре: {calendar_error}")
-
-            # Обновляем запись в нашей БД
-            update_data = {
-                'start_time': start_datetime,
-                'end_time': end_datetime
-            }
-            
-            logger.info(f"💾 [RESCHEDULE APPOINTMENT] Обновление записи в БД: appointment_id={appointment_id}, update_data={update_data}")
-            updated_appointment = self.appointment_repository.update(appointment.id, update_data)
-            if not updated_appointment:
-                logger.error(f"❌ [RESCHEDULE APPOINTMENT] Не удалось обновить запись в БД: appointment_id={appointment_id}")
-                return "Не удалось перенести запись."
+                logger.error(f"❌ [RESCHEDULE APPOINTMENT] Ошибка обновления записи через DBCalendarService: {calendar_error}")
+                return f"Ошибка при переносе записи: {str(calendar_error)}"
 
             logger.info(f"✅ [RESCHEDULE APPOINTMENT] Запись успешно обновлена в БД: appointment_id={appointment_id}")
             

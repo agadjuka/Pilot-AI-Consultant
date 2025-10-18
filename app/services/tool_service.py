@@ -1,7 +1,7 @@
 from app.repositories.service_repository import ServiceRepository
 from app.repositories.master_repository import MasterRepository
 from app.services.appointment_service import AppointmentService
-from app.services.google_calendar_service import GoogleCalendarService
+from app.services.db_calendar_service import DBCalendarService
 from app.utils.robust_date_parser import parse_date_robust
 from datetime import datetime, timedelta
 from difflib import SequenceMatcher
@@ -22,7 +22,7 @@ class ToolService:
         service_repository: ServiceRepository,
         master_repository: MasterRepository,
         appointment_service: AppointmentService,
-        google_calendar_service: GoogleCalendarService,
+        db_calendar_service: DBCalendarService,
         client_repository
     ):
         """
@@ -32,13 +32,13 @@ class ToolService:
             service_repository: Репозиторий для работы с услугами
             master_repository: Репозиторий для работы с мастерами
             appointment_service: Сервис для управления записями
-            google_calendar_service: Сервис для работы с Google Calendar
+            db_calendar_service: Сервис для работы с календарем через БД
             client_repository: Репозиторий для работы с клиентами
         """
         self.service_repository = service_repository
         self.master_repository = master_repository
         self.appointment_service = appointment_service
-        self.google_calendar_service = google_calendar_service
+        self.db_calendar_service = db_calendar_service
         self.client_repository = client_repository
 
     def get_all_services(self) -> str:
@@ -133,8 +133,8 @@ class ToolService:
             masters = self.master_repository.get_masters_for_service(service.id)
             master_names = [m.name for m in masters] if masters else []
             
-            # Получаем свободные интервалы из Google Calendar для запрошенной даты
-            free_intervals = self.google_calendar_service.get_free_slots(
+            # Получаем свободные интервалы из DBCalendarService для запрошенной даты
+            free_intervals = self.db_calendar_service.get_free_slots(
                 parsed_date,
                 duration_minutes,
                 master_names=master_names
@@ -153,7 +153,7 @@ class ToolService:
                 next_date_str = next_date.strftime("%Y-%m-%d")
                 
                 # Получаем свободные интервалы для следующей даты
-                next_free_intervals = self.google_calendar_service.get_free_slots(
+                next_free_intervals = self.db_calendar_service.get_free_slots(
                     next_date_str,
                     duration_minutes,
                     master_names=master_names

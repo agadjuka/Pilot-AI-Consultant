@@ -11,11 +11,6 @@ class Settings(BaseSettings):
     # Telegram Bot
     TELEGRAM_BOT_TOKEN: str
 
-    # Google Cloud Platform
-    GCP_PROJECT_ID: str
-    GCP_REGION: str
-    GOOGLE_APPLICATION_CREDENTIALS: str
-    GOOGLE_CALENDAR_ID: str
 
     # ChromaDB
     CHROMA_HOST: Optional[str] = None

@@ -10,7 +10,6 @@ class Appointment(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     user_telegram_id = Column(BigInteger, nullable=False, index=True)
-    google_event_id = Column(String, nullable=False, unique=True)
     master_id = Column(Integer, ForeignKey("masters.id"), nullable=False)
     service_id = Column(Integer, ForeignKey("services.id"), nullable=False)
     start_time = Column(DateTime, nullable=False)
