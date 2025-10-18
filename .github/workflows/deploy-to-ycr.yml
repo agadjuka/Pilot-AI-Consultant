@@ -43,3 +43,4 @@ jobs:
           container-name: 'beauty-salon-container'
           folder-id: b1ged9dcl5dbfqojoa13
           revision-image-url: cr.yandex/${{ secrets.YC_REGISTRY_ID }}/beauty-salon-ai:${{ github.sha }}
+          revision-service-account-id: 'aje7vj62jhsh2qjmuefm'
