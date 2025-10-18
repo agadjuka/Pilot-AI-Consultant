@@ -3,27 +3,23 @@ name: Deploy to Yandex Container Registry
 on:
   push:
     branches:
-      - main # Запускать при пуше в ветку main
+      - main
 
 jobs:
   build-and-push:
     name: Build and Push Docker Image
-    runs-on: ubuntu-latest # Использовать виртуальную машину на Ubuntu
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4 # Шаг 1: Скачиваем код репозитория
+        uses: actions/checkout@v4
 
       - name: Login to Yandex Container Registry
-        uses: docker/login-action@v3 # Шаг 2: Аутентификация в реестре
+        uses: yc-actions/yc-cr-login@v1 # ИСПОЛЬЗУЕМ СПЕЦИАЛИЗИРОВАННЫЙ ACTION
         with:
-          registry: cr.yandex
-          username: ${{ secrets.YC_SA_KEY_ID }}
-          password: ${{ secrets.YC_SA_PRIVATE_KEY }}
+          yc-sa-json-credentials: ${{ secrets.YC_SA_JSON_CREDENTIALS }} # ПЕРЕДАЕМ ВЕСЬ JSON-КЛЮЧ
 
       - name: Build, tag, and push image to Yandex Container Registry
-        # Шаг 3: Собираем, тегируем и загружаем образ
         run: |
           docker build -t cr.yandex/${{ secrets.YC_REGISTRY_ID }}/beauty-salon-ai:${{ github.sha }} .
           docker push cr.yandex/${{ secrets.YC_REGISTRY_ID }}/beauty-salon-ai:${{ github.sha }}
-        # Мы используем github.sha (хеш коммита) как уникальный тег для каждой сборки. Это лучшая практика.
