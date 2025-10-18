@@ -73,3 +73,19 @@ async def telegram_webhook(request: Request, background_tasks: BackgroundTasks):
     background_tasks.add_task(process_telegram_update, update)
     return {"status": "ok"}
 
+
+@router.post("/webhook", include_in_schema=False)
+async def telegram_webhook_generic(request: Request, background_tasks: BackgroundTasks):
+    """
+    Универсальный эндпоинт для приема вебхуков от Telegram.
+    Используется когда Telegram настроен на отправку на /telegram/webhook
+    """
+    try:
+        update_data = await request.json()
+        update = Update.model_validate(update_data)
+        background_tasks.add_task(process_telegram_update, update)
+        logger.info("✅ Webhook получен через /telegram/webhook")
+        return {"status": "ok"}
+    except Exception as e:
+        logger.error(f"❌ Ошибка обработки webhook: {e}")
+        return {"status": "error", "message": str(e)}
