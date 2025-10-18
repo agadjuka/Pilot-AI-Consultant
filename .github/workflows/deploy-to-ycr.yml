@@ -19,15 +19,18 @@ jobs:
         with:
           yc-sa-json-credentials: ${{ secrets.YC_SA_JSON_CREDENTIALS }} # ПЕРЕДАЕМ ВЕСЬ JSON-КЛЮЧ
 
-      - name: Build, tag, and push image to Yandex Container Registry
-        run: |
-          # Добавляем --tag для создания второго тега 'latest'
-          docker build \
-            -t cr.yandex/${{ secrets.YC_REGISTRY_ID }}/beauty-salon-ai:${{ github.sha }} \
-            -t cr.yandex/${{ secrets.YC_REGISTRY_ID }}/beauty-salon-ai:latest .
-          
-          # Пушим сначала уникальный тег
-          docker push cr.yandex/${{ secrets.YC_REGISTRY_ID }}/beauty-salon-ai:${{ github.sha }}
-          
-          # Затем пушим тег 'latest'
-          docker push cr.yandex/${{ secrets.YC_REGISTRY_ID }}/beauty-salon-ai:latest
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            cr.yandex/${{ secrets.YC_REGISTRY_ID }}/beauty-salon-ai:${{ github.sha }}
+            cr.yandex/${{ secrets.YC_REGISTRY_ID }}/beauty-salon-ai:latest
+          platforms: linux/amd64
