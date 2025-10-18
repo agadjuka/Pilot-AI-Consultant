@@ -20,7 +20,14 @@ def get_engine():
     global _engine
     if _engine is None:
         from app.core.config import settings
-        _engine = create_engine(settings.DATABASE_URL)
+        # Для SQLite добавляем дополнительные параметры
+        if settings.DATABASE_URL.startswith("sqlite"):
+            _engine = create_engine(
+                settings.DATABASE_URL,
+                connect_args={"check_same_thread": False}
+            )
+        else:
+            _engine = create_engine(settings.DATABASE_URL)
     return _engine
 
 
