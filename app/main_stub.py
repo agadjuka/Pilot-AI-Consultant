@@ -75,7 +75,7 @@ async def root_post(request: Request, background_tasks: BackgroundTasks):
         # Проверяем, что это Telegram update
         if "message" in update_data or "callback_query" in update_data:
             logger.info("✅ STUB: Обнаружен Telegram update")
-            update = Update.model_validate(update_data)
+            update = Update.parse_obj(update_data)
             background_tasks.add_task(process_telegram_update_stub, update)
             logger.info("🚀 STUB: Задача обработки добавлена в фоновую очередь")
             return {"status": "ok"}

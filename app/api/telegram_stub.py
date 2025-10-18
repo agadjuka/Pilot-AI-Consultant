@@ -98,7 +98,7 @@ async def telegram_webhook_stub(request: Request, background_tasks: BackgroundTa
         update_data = await request.json()
         logger.info(f"📦 STUB: Данные получены: {update_data}")
         
-        update = Update.model_validate(update_data)
+        update = Update.parse_obj(update_data)
         logger.info(f"✅ STUB: Update валидирован успешно")
         
         background_tasks.add_task(process_telegram_update_stub, update)
@@ -122,7 +122,7 @@ async def telegram_webhook_generic_stub(request: Request, background_tasks: Back
         update_data = await request.json()
         logger.info(f"📦 STUB: Данные получены через /webhook: {update_data}")
         
-        update = Update.model_validate(update_data)
+        update = Update.parse_obj(update_data)
         logger.info(f"✅ STUB: Update валидирован успешно через /webhook")
         
         background_tasks.add_task(process_telegram_update_stub, update)

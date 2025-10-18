@@ -101,7 +101,7 @@ async def telegram_webhook(request: Request, background_tasks: BackgroundTasks):
         update_data = await request.json()
         logger.info(f"📦 WEBHOOK: Данные получены: {update_data}")
         
-        update = Update.model_validate(update_data)
+        update = Update.parse_obj(update_data)
         logger.info(f"✅ WEBHOOK: Update валидирован успешно")
         
         background_tasks.add_task(process_telegram_update, update)
@@ -124,7 +124,7 @@ async def telegram_webhook_generic(request: Request, background_tasks: Backgroun
         update_data = await request.json()
         logger.info(f"📦 WEBHOOK: Данные получены через /webhook: {update_data}")
         
-        update = Update.model_validate(update_data)
+        update = Update.parse_obj(update_data)
         logger.info(f"✅ WEBHOOK: Update валидирован успешно через /webhook")
         
         background_tasks.add_task(process_telegram_update, update)

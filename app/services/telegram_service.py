@@ -84,7 +84,7 @@ class TelegramService:
                 data = response.json()
                 
                 if data.get("ok"):
-                    updates = [Update.model_validate(update) for update in data.get("result", [])]
+                    updates = [Update.parse_obj(update) for update in data.get("result", [])]
                     return updates
                 else:
                     logger.error(f"❌ Ошибка получения обновлений: {data}")
