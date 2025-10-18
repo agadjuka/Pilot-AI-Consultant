@@ -34,4 +34,4 @@ COPY ./app ./app
 
 # Команда для запуска приложения
 # Uvicorn будет запущен на порту 8080, что является стандартом для Cloud Run
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]
+CMD ["sh", "-c", "echo '>>> Переменные окружения:' && printenv && echo '<<< Запуск приложения...' && uvicorn app.main:app --host 0.0.0.0 --port 8080 --log-level debug"]
