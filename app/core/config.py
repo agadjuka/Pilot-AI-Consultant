@@ -1,18 +1,22 @@
-from pydantic import BaseSettings
+try:
+    from pydantic_settings import BaseSettings
+except ImportError:
+    from pydantic import BaseSettings
 from typing import Optional
 
 class Settings(BaseSettings):
     # Модель загружает переменные из .env файла
-    class Config:
-        env_file = '.env'
-        env_file_encoding = 'utf-8'
-        extra = 'ignore'
+    model_config = {
+        "env_file": ".env",
+        "env_file_encoding": "utf-8",
+        "extra": "ignore"
+    }
 
     # Database Configuration
     DATABASE_URL: str = "sqlite:///./beauty_salon.db"  # По умолчанию SQLite для облака
 
     # Telegram Bot
-    TELEGRAM_BOT_TOKEN: str
+    TELEGRAM_BOT_TOKEN: Optional[str] = None
 
     # ChromaDB
     CHROMA_HOST: Optional[str] = None
