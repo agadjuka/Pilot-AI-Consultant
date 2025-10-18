@@ -31,7 +31,12 @@ ENV PATH="/app/.venv/bin:$PATH"
 
 # Копируем исходный код приложения
 COPY app ./app
+COPY launch.py .
+COPY boot.sh .
+
+# Делаем boot.sh исполняемым
+RUN chmod +x boot.sh
 
 # Команда для запуска приложения
-# Uvicorn будет запущен на порту 8080, что является стандартом для Cloud Run
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]
+# Используем наш новый скрипт-обертку для отладки
+CMD ["./boot.sh"]
