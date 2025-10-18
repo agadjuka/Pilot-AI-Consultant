@@ -29,6 +29,26 @@ async def startup_event():
         logger.warning(f"Не удалось очистить папку debug_logs: {e}. В облачной среде это нормально.")
 
 
+@app.get("/", tags=["Root"])
+def root():
+    """Корневой эндпоинт для проверки доступности сервиса."""
+    return {
+        "status": "OK", 
+        "message": "Beauty Salon AI Assistant is running",
+        "version": "0.1.0"
+    }
+
+
+@app.post("/", tags=["Root"])
+def root_post():
+    """POST обработчик для корневого пути (для совместимости с Yandex Cloud)."""
+    return {
+        "status": "OK", 
+        "message": "Beauty Salon AI Assistant is running",
+        "version": "0.1.0"
+    }
+
+
 @app.get("/healthcheck", tags=["Health Check"])
 def health_check():
     """Простой эндпоинт для проверки работоспособности сервиса."""
