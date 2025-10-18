@@ -13,7 +13,7 @@ from app.services.telegram_service import telegram_service
 from app.api.telegram import process_telegram_update
 from app.services.dialogue_tracer_service import clear_debug_logs
 
-# Получаем логгер для этого модул
+# Получаем логгер для этого модуля
 logger = logging.getLogger(__name__)
 
 
