@@ -44,3 +44,12 @@ jobs:
           folder-id: b1ged9dcl5dbfqojoa13
           revision-image-url: cr.yandex/${{ secrets.YC_REGISTRY_ID }}/beauty-salon-ai:${{ github.sha }}
           revision-service-account-id: 'aje7vj62jhsh2qjmuefm'
+          revision-env: |
+            DATABASE_URL=${lockbox:e6qubg675r964639f4mf:DATABASE_URL}
+            TELEGRAM_BOT_TOKEN=${lockbox:e6qdalbbnli3rr7so26b:TELEGRAM_BOT_TOKEN}
+            LLM_PROVIDER=${lockbox:e6q1v8ns65qkghr2ii84:LLM_PROVIDER}
+            LOG_MODE=${lockbox:e6q7tie7gjfffl1qnqo6:LOG_MODE}
+            S3_ACCESS_KEY_ID=${lockbox:e6qm20toqp7cfg7knune:S3_ACCESS_KEY_ID}
+            S3_SECRET_ACCESS_KEY=${lockbox:e6qek3m612953g1stulr:S3_SECRET_ACCESS_KEY}
+            S3_BUCKET_NAME=${lockbox:e6qm28eseg9f16ve5bi0:S3_BUCKET_NAME}
+            GOOGLE_APPLICATION_CREDENTIALS=${lockbox:e6qqr5knk24iko7q24eg:GOOGLE_APPLICATION_CREDENTIALS}
