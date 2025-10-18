@@ -19,7 +19,6 @@ class DialogServiceStub:
         Инициализация заглушки.
         db_session игнорируется для совместимости с оригинальным API.
         """
-        logger.info("🔧 STUB: DialogServiceStub инициализирован (режим без БД)")
         self.db_session = db_session
     
     async def process_user_message(self, user_id: int, text: str) -> str:
@@ -33,10 +32,6 @@ class DialogServiceStub:
         Returns:
             Простой ответ бота
         """
-        logger.info("🎯 STUB: Обработка сообщения пользователя")
-        logger.info(f"👤 STUB: Пользователь ID: {user_id}")
-        logger.info(f"💬 STUB: Сообщение: '{text}'")
-        
         # Простая логика ответов
         text_lower = text.lower().strip()
         
@@ -84,7 +79,6 @@ class DialogServiceStub:
                 "Попробуйте команды: /start, /clear"
             )
         
-        logger.info(f"📤 STUB: Отправляем ответ: '{response[:50]}...'")
         return response
     
     def clear_history(self, user_id: int) -> int:
@@ -97,5 +91,4 @@ class DialogServiceStub:
         Returns:
             Количество "удаленных" записей (всегда 0 в заглушке)
         """
-        logger.info(f"🧹 STUB: Очистка истории для пользователя {user_id}")
         return 0

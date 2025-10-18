@@ -29,21 +29,11 @@ async def startup_event():
     logger.info("║ 🚀 Приложение запускается в режиме ЗАГЛУШКИ...")
     logger.info("╚═══════════════════════════════════════════════════════════")
     
-    logger.info("🔧 STUB: Инициализация приложения в режиме заглушки")
-    logger.info(f"📊 STUB: Режим логирования: {settings.LOG_MODE}")
-    logger.info(f"🤖 STUB: LLM провайдер: {settings.LLM_PROVIDER}")
-    logger.info(f"📱 STUB: Telegram токен настроен: {'Да' if settings.TELEGRAM_BOT_TOKEN else 'Нет'}")
-    logger.info("🗄️ STUB: База данных ОТКЛЮЧЕНА (режим заглушки)")
-    
     # Очищаем папку с логами при каждом запуске
     try:
         clear_debug_logs()
-        logger.info("🧹 STUB: Папка debug_logs очищена")
     except Exception as e:
-        logger.warning(f"⚠️ STUB: Не удалось очистить папку debug_logs: {e}. В облачной среде это нормально.")
-    
-    logger.info("✅ STUB: Приложение успешно запущено в режиме заглушки")
-    logger.info("🎯 STUB: Webhook'и будут работать без базы данных")
+        logger.warning(f"⚠️ Не удалось очистить папку debug_logs: {e}. В облачной среде это нормально.")
 
 
 @app.get("/", tags=["Root"])
@@ -65,22 +55,16 @@ async def root_post(request: Request, background_tasks: BackgroundTasks):
     Может обрабатывать как обычные запросы, так и Telegram webhook.
     Работает без базы данных.
     """
-    logger.info("🔔 STUB: Получен POST запрос на корневой путь (режим заглушки)")
-    
     try:
         # Пытаемся обработать как Telegram webhook
         update_data = await request.json()
-        logger.info(f"📦 STUB: Данные получены: {update_data}")
         
         # Проверяем, что это Telegram update
         if "message" in update_data or "callback_query" in update_data:
-            logger.info("✅ STUB: Обнаружен Telegram update")
             update = Update.parse_obj(update_data)
             background_tasks.add_task(process_telegram_update_stub, update)
-            logger.info("🚀 STUB: Задача обработки добавлена в фоновую очередь")
             return {"status": "ok"}
         else:
-            logger.info("ℹ️ STUB: Это не Telegram update, возвращаем обычный ответ")
             # Если это не Telegram update, возвращаем обычный ответ
             return {
                 "status": "OK", 
@@ -90,7 +74,7 @@ async def root_post(request: Request, background_tasks: BackgroundTasks):
                 "database": "disabled"
             }
     except Exception as e:
-        logger.error(f"❌ STUB: Ошибка обработки POST запроса: {e}")
+        logger.error(f"❌ Ошибка обработки POST запроса: {e}")
         # В случае ошибки возвращаем обычный ответ
         return {
             "status": "OK", 

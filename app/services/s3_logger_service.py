@@ -25,8 +25,6 @@ class S3LoggerService:
             )
             self.bucket_name = settings.S3_BUCKET_NAME
             
-            logger.info(f"✅ S3LoggerService инициализирован для bucket: {self.bucket_name}")
-            
         except NoCredentialsError:
             logger.error("❌ Не удалось найти учетные данные S3")
             raise
@@ -54,7 +52,6 @@ class S3LoggerService:
                 ContentType='text/markdown; charset=utf-8'
             )
             
-            logger.info(f"✅ Лог успешно загружен в S3: {file_name}")
             return True
             
         except ClientError as e:
@@ -76,7 +73,6 @@ class S3LoggerService:
         try:
             # Пытаемся получить информацию о bucket
             self.s3_client.head_bucket(Bucket=self.bucket_name)
-            logger.info(f"✅ Подключение к S3 bucket '{self.bucket_name}' успешно")
             return True
             
         except ClientError as e:

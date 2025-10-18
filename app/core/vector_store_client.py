@@ -4,7 +4,10 @@
 """
 
 import chromadb
+import logging
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 def get_chroma_client():
@@ -18,11 +21,11 @@ def get_chroma_client():
     
     if settings.CHROMA_HOST:
         # Серверный режим - подключение к Docker-контейнеру
-        print(f"🔗 Подключение к ChromaDB серверу: {settings.CHROMA_HOST}:8000")
+        logger.info(f"🔗 Подключение к ChromaDB серверу: {settings.CHROMA_HOST}:8000")
         return chromadb.HttpClient(host=settings.CHROMA_HOST, port=8000)
     else:
         # Локальный режим - файловое хранение
-        print("📁 Использование локального файлового режима ChromaDB")
+        logger.info("📁 Использование локального файлового режима ChromaDB")
         return chromadb.PersistentClient(path="./chroma_db_local")
 
 
