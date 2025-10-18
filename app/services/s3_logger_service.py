@@ -51,7 +51,7 @@ class S3LoggerService:
                 Bucket=self.bucket_name,
                 Key=file_name,
                 Body=file_content.encode('utf-8'),
-                ContentType='text/markdown'
+                ContentType='text/markdown; charset=utf-8'
             )
             
             logger.info(f"✅ Лог успешно загружен в S3: {file_name}")
