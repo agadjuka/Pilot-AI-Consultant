@@ -14,18 +14,33 @@ class TelegramService:
 
     async def send_message(self, chat_id: int, text: str) -> bool:
         """Асинхронно отправляет сообщение пользователю в Telegram."""
+        logger.info(f"📤 TELEGRAM: Отправка сообщения в чат {chat_id}")
+        logger.info(f"📝 TELEGRAM: Текст сообщения: '{text[:100]}...'")
+        
         url = f"{self.api_url}/sendMessage"
         payload = {
             "chat_id": chat_id,
             "text": text,
         }
+        
+        logger.info(f"🌐 TELEGRAM: URL запроса: {url}")
+        logger.info(f"📦 TELEGRAM: Payload: {payload}")
+        
         async with httpx.AsyncClient() as client:
             try:
+                logger.info("🚀 TELEGRAM: Выполнение HTTP запроса")
                 response = await client.post(url, json=payload)
+                logger.info(f"📊 TELEGRAM: Получен ответ: {response.status_code}")
+                
                 response.raise_for_status()
+                logger.info("✅ TELEGRAM: Сообщение отправлено успешно")
                 return True
             except httpx.HTTPStatusError as e:
-                logger.error(f"❌ Ошибка отправки сообщения в Telegram: {e.response.text}")
+                logger.error(f"❌ TELEGRAM: HTTP ошибка отправки сообщения: {e.response.status_code}")
+                logger.error(f"❌ TELEGRAM: Ответ сервера: {e.response.text}")
+                return False
+            except Exception as e:
+                logger.error(f"❌ TELEGRAM: Неожиданная ошибка отправки: {e}")
                 return False
 
     async def delete_webhook(self) -> bool:
