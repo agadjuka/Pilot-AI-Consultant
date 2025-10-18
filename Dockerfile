@@ -30,8 +30,8 @@ COPY --from=builder /app/.venv .venv
 ENV PATH="/app/.venv/bin:$PATH"
 
 # Копируем исходный код приложения
-COPY ./app ./app
+COPY app ./app
 
 # Команда для запуска приложения
 # Uvicorn будет запущен на порту 8080, что является стандартом для Cloud Run
-CMD ["sh", "-c", "echo '>>> Переменные окружения:' && printenv && echo '<<< Запуск приложения...' && uvicorn app.main:app --host 0.0.0.0 --port 8080 --log-level debug"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]
