@@ -161,6 +161,7 @@ class DBCalendarService:
             date: Дата в формате "YYYY-MM-DD"
             duration_minutes: Длительность услуги в минутах
             master_ids: Список ID мастеров для поиска
+            tracer: Объект трассировщика для детального логирования
         
         Returns:
             List[Dict[str, str]]: Список свободных интервалов в формате [{'start': '10:15', 'end': '13:45'}, ...]
@@ -171,9 +172,9 @@ class DBCalendarService:
         try:
             logger.info(f"🔍 [TRACE] Поиск слотов: {date}, {duration_minutes}мин, мастера {master_ids}")
             
-            # Добавляем событие трассировки
+            # Логируем входные параметры
             if tracer:
-                tracer.add_event("🔍 Начало поиска слотов", f"Дата: {date}, Длительность: {duration_minutes} мин, Мастера: {master_ids}")
+                tracer.add_event("НАЧАЛО ПОИСКА СЛОТОВ", f"Дата: {date}, Длительность: {duration_minutes} мин, ID Мастеров: {master_ids}")
             
             # Парсим дату
             try:
@@ -183,38 +184,52 @@ class DBCalendarService:
             
             if not master_ids:
                 logger.warning(f"⚠️ [DB CALENDAR] Передан пустой список мастеров")
+                if tracer:
+                    tracer.add_event("ПУСТОЙ СПИСОК МАСТЕРОВ", "Передан пустой список мастеров")
                 return []
             
             # Шаг 1: Найти рабочие интервалы для каждого мастера
             work_intervals = self._get_work_intervals_for_masters(target_date, master_ids)
+            
+            # Логируем найденные рабочие графики
+            if tracer:
+                tracer.add_event("РАБОЧИЕ ГРАФИКИ НАЙДЕНЫ", f"Графики: {work_intervals}")
+            
             if not work_intervals:
                 logger.info(f"📅 [DB CALENDAR] Ни один из мастеров {master_ids} не работает {target_date}")
                 if tracer:
-                    tracer.add_event("📅 Мастера не работают", f"Дата: {target_date}, Мастера: {master_ids}")
+                    tracer.add_event("МАСТЕРА НЕ РАБОТАЮТ", f"Дата: {target_date}, Мастера: {master_ids}")
                 return []
             
             # Шаг 2: Найти все записи для этих мастеров на этот день
             appointments = self._get_appointments_for_masters_on_date(target_date, master_ids)
             
+            # Логируем существующие записи
+            if tracer:
+                tracer.add_event("СУЩЕСТВУЮЩИЕ ЗАПИСИ", f"Найдено {len(appointments)} записей: {appointments}")
+            
             # Шаг 3: Вычислить общие свободные интервалы через таймлайн
-            free_intervals = self._calculate_free_intervals_timeline(target_date, work_intervals, appointments)
+            free_intervals = self._calculate_free_intervals_timeline(target_date, work_intervals, appointments, tracer)
+            
+            # Логируем найденные свободные интервалы
+            if tracer:
+                tracer.add_event("НАЙДЕННЫЕ СВОБОДНЫЕ ИНТЕРВАЛЫ", f"{free_intervals}")
             
             # Шаг 4: Отфильтровать интервалы по длительности
             filtered_intervals = self._filter_intervals_by_duration(free_intervals, duration_minutes)
             
-            logger.info(f"✅ [TRACE] Результат: {len(filtered_intervals)} слотов")
-            
-            # Добавляем событие трассировки с результатом
+            # Логируем финальный результат
             if tracer:
-                tracer.add_event("✅ Поиск завершен", f"Найдено слотов: {len(filtered_intervals)}")
-                if filtered_intervals:
-                    intervals_str = [f"{interval['start']}-{interval['end']}" for interval in filtered_intervals]
-                    tracer.add_event("🕐 Доступные слоты", f"Интервалы: {', '.join(intervals_str)}")
+                tracer.add_event("ФИНАЛЬНЫЙ РЕЗУЛЬТАТ (ПОСЛЕ ФИЛЬТРАЦИИ)", f"{filtered_intervals}")
+            
+            logger.info(f"✅ [TRACE] Результат: {len(filtered_intervals)} слотов")
             
             return filtered_intervals
             
         except Exception as e:
             logger.error(f"❌ [DB CALENDAR] Ошибка поиска свободных слотов: {str(e)}")
+            if tracer:
+                tracer.add_event("ОШИБКА ПОИСКА СЛОТОВ", f"Ошибка: {str(e)}")
             raise Exception(f"Ошибка при поиске свободных слотов: {str(e)}")
     
     def _get_work_intervals_for_masters(self, target_date: date, master_ids: List[int]) -> Dict[int, Tuple[time, time]]:
@@ -277,7 +292,7 @@ class DBCalendarService:
         logger.info(f"📅 [TRACE] Записи: {len(appointments)}шт")
         return appointments
     
-    def _calculate_free_intervals_timeline(self, target_date: date, work_intervals: Dict[int, Tuple[time, time]], appointments: List[Dict[str, Any]]) -> List[Dict[str, str]]:
+    def _calculate_free_intervals_timeline(self, target_date: date, work_intervals: Dict[int, Tuple[time, time]], appointments: List[Dict[str, Any]], tracer=None) -> List[Dict[str, str]]:
         """
         Вычисляет свободные интервалы используя алгоритм "Таймлайн занятости".
         
@@ -345,6 +360,10 @@ class DBCalendarService:
                 timeline.append((end_datetime, 1, 'appointment_end', appointment['master_id']))       # +1 освободился
             else:
                 logger.warning(f"⚠️ [DB CALENDAR] Пропускаем запись с некорректным временем: start={type(start_datetime)}, end={type(end_datetime)}")
+        
+        # Логируем сырой таймлайн до сортировки
+        if tracer:
+            tracer.add_event("СЫРОЙ ТАЙМЛАЙН (ДО СОРТИРОВКИ)", f"{timeline}")
         
         # Сортируем таймлайн по времени
         timeline.sort(key=lambda x: x[0])
