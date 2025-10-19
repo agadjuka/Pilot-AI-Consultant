@@ -28,11 +28,13 @@ class AppointmentRepository(BaseRepository):
     
     def get_future_appointments_by_user(self, user_telegram_id: int) -> List[Dict[str, Any]]:
         """Получить все предстоящие записи пользователя"""
-        now = datetime.now().isoformat()
+        now = datetime.now()
+        # Используем правильный формат для YDB Timestamp
+        now_str = now.strftime('%Y-%m-%dT%H:%M:%S.%fZ')
         query = f"""
             SELECT * FROM {self.table_name} 
             WHERE user_telegram_id = {user_telegram_id}
-            AND start_time > '{now}'
+            AND start_time > Timestamp('{now_str}')
             ORDER BY start_time
         """
         rows = execute_query(query)
@@ -41,11 +43,13 @@ class AppointmentRepository(BaseRepository):
     
     def get_next_appointment_by_user(self, user_telegram_id: int) -> Optional[Dict[str, Any]]:
         """Получить ближайшую предстоящую запись пользователя"""
-        now = datetime.now().isoformat()
+        now = datetime.now()
+        # Используем правильный формат для YDB Timestamp
+        now_str = now.strftime('%Y-%m-%dT%H:%M:%S.%fZ')
         query = f"""
             SELECT * FROM {self.table_name} 
             WHERE user_telegram_id = {user_telegram_id}
-            AND start_time > '{now}'
+            AND start_time > Timestamp('{now_str}')
             ORDER BY start_time
             LIMIT 1
         """
@@ -57,13 +61,13 @@ class AppointmentRepository(BaseRepository):
     
     def check_duplicate_appointment(self, user_telegram_id: int, master_id: int, service_id: int, start_time: datetime) -> Optional[Dict[str, Any]]:
         """Проверить наличие дублирующейся записи"""
-        start_time_str = start_time.isoformat()
+        start_time_str = start_time.strftime('%Y-%m-%dT%H:%M:%S.%fZ')
         query = f"""
             SELECT * FROM {self.table_name} 
             WHERE user_telegram_id = {user_telegram_id}
             AND master_id = {master_id}
             AND service_id = {service_id}
-            AND start_time = '{start_time_str}'
+            AND start_time = Timestamp('{start_time_str}')
         """
         rows = execute_query(query)
         
@@ -93,13 +97,13 @@ class AppointmentRepository(BaseRepository):
     
     def get_appointments_by_date_range(self, start_date: datetime, end_date: datetime) -> List[Dict[str, Any]]:
         """Получить записи в диапазоне дат"""
-        start_str = start_date.isoformat()
-        end_str = end_date.isoformat()
+        start_str = start_date.strftime('%Y-%m-%dT%H:%M:%S.%fZ')
+        end_str = end_date.strftime('%Y-%m-%dT%H:%M:%S.%fZ')
         
         query = f"""
             SELECT * FROM {self.table_name} 
-            WHERE start_time >= '{start_str}'
-            AND start_time <= '{end_str}'
+            WHERE start_time >= Timestamp('{start_str}')
+            AND start_time <= Timestamp('{end_str}')
             ORDER BY start_time
         """
         rows = execute_query(query)

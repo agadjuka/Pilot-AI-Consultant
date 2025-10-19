@@ -226,7 +226,12 @@ class AppointmentService:
                     continue
                 
                 # Форматируем дату и время
-                start_time = datetime.fromisoformat(appointment['start_time'].replace('Z', '+00:00'))
+                if isinstance(appointment['start_time'], str):
+                    start_time = datetime.fromisoformat(appointment['start_time'].replace('Z', '+00:00'))
+                else:
+                    # Если start_time уже является datetime объектом
+                    start_time = appointment['start_time']
+                
                 date_str = start_time.strftime("%d %B")
                 time_str = start_time.strftime("%H:%M")
                 
