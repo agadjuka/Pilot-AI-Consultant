@@ -510,16 +510,33 @@ class DBCalendarService:
         Returns:
             List: Список записей
         """
-        from sqlalchemy import and_
+        from app.core.database import execute_query
         
-        return (
-            self.appointment_repository.db.query(self.appointment_repository.model)
-            .filter(
-                and_(
-                    self.appointment_repository.model.master_id == master_id,
-                    self.appointment_repository.model.start_time >= day_start,
-                    self.appointment_repository.model.start_time <= day_end
-                )
-            )
-            .all()
-        )
+        # Используем прямые SQL-запросы вместо SQLAlchemy ORM для совместимости с YDB
+        start_str = day_start.isoformat()
+        end_str = day_end.isoformat()
+        
+        query = f"""
+            SELECT * FROM appointments 
+            WHERE master_id = {master_id}
+            AND start_time >= '{start_str}'
+            AND start_time <= '{end_str}'
+            ORDER BY start_time
+        """
+        
+        rows = execute_query(query)
+        
+        # Конвертируем строки в объекты для совместимости с остальным кодом
+        appointments = []
+        for row in rows:
+            appointment = type('Appointment', (), {
+                'id': row[0],
+                'user_telegram_id': row[1],
+                'master_id': row[2],
+                'service_id': row[3],
+                'start_time': row[4],
+                'end_time': row[5]
+            })()
+            appointments.append(appointment)
+        
+        return appointments

@@ -265,7 +265,6 @@ def get_master_services(master_id: int) -> List[Dict[str, Any]]:
         SELECT s.* FROM services s
         JOIN master_services ms ON s.id = ms.service_id
         WHERE ms.master_id = {master_id}
-        ORDER BY s.name
     """
     rows = execute_query(query)
     
@@ -359,7 +358,7 @@ def init_database():
         logger.info("✅ DATABASE: Подключение к YDB проверено")
         
         # Проверяем существование основных таблиц
-        tables_to_check = ['services', 'masters', 'clients', 'master_services', 'appointments', 'dialog_history']
+        tables_to_check = ['services', 'masters', 'clients', 'master_services', 'appointments', 'dialog_history', 'master_schedules']
         
         for table in tables_to_check:
             try:

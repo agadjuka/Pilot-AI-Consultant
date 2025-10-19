@@ -3,6 +3,6 @@ from .master import Master, master_services_association
 from .dialog_history import DialogHistory
 from .appointment import Appointment
 from .client import Client
-from .schedule import WorkSchedule, ScheduleException
+from .master_schedule import MasterSchedule
 from app.core.database import Base
 

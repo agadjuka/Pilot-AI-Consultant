@@ -19,7 +19,6 @@ class MasterRepository(BaseRepository):
             SELECT m.* FROM masters m
             JOIN master_services ms ON m.id = ms.master_id
             WHERE ms.service_id = {service_id}
-            ORDER BY m.name
         """
         rows = execute_query(query)
         
@@ -38,7 +37,6 @@ class MasterRepository(BaseRepository):
             SELECT s.* FROM services s
             JOIN master_services ms ON s.id = ms.service_id
             WHERE ms.master_id = {master_id}
-            ORDER BY s.name
         """
         rows = execute_query(query)
         
