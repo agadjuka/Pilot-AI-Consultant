@@ -259,6 +259,55 @@ class DialogService:
         
         return params
 
+    def _convert_parameter_types(self, parameters: Dict[str, str]) -> Dict[str, any]:
+        """
+        Преобразует типы параметров в соответствии с ожидаемыми типами инструментов.
+        
+        Args:
+            parameters: Словарь параметров со строковыми значениями
+            
+        Returns:
+            Словарь с правильно типизированными параметрами
+        """
+        converted_params = {}
+        
+        for key, value in parameters.items():
+            if key in ['appointment_id', 'id']:
+                # appointment_id должен быть integer (поддерживаем и 'id' для совместимости)
+                try:
+                    converted_params['appointment_id'] = int(value)
+                except (ValueError, TypeError):
+                    # Если не удается преобразовать, оставляем как есть для обработки ошибки
+                    converted_params['appointment_id'] = value
+            elif key in ['master_id', 'service_id', 'user_telegram_id']:
+                # ID должны быть integer
+                try:
+                    converted_params[key] = int(value)
+                except (ValueError, TypeError):
+                    converted_params[key] = value
+            elif key in ['new_time']:
+                # Время должно быть строкой, но убедимся что формат правильный
+                # Убираем лишние пробелы и кавычки
+                cleaned_time = str(value).strip().strip('"\'')
+                converted_params[key] = cleaned_time
+            elif key in ['new_date', 'date']:
+                # Дата должна быть строкой в формате YYYY-MM-DD
+                cleaned_date = str(value).strip().strip('"\'')
+                converted_params[key] = cleaned_date
+            elif key in ['service_name', 'master_name', 'client_name']:
+                # Имена должны быть строками, убираем кавычки
+                cleaned_name = str(value).strip().strip('"\'')
+                converted_params[key] = cleaned_name
+            else:
+                # Для остальных параметров просто убираем кавычки
+                if isinstance(value, str):
+                    cleaned_value = value.strip().strip('"\'')
+                    converted_params[key] = cleaned_value
+                else:
+                    converted_params[key] = value
+        
+        return converted_params
+
     def parse_tool_calls_from_response(self, response: str) -> List[Dict]:
         """
         Парсит ответ LLM и извлекает вызовы инструментов в новом строковом формате.
@@ -723,6 +772,9 @@ class DialogService:
                     tool_name = tool_call.get('tool_name')
                     parameters = tool_call.get('parameters', {})
                     
+                    # Преобразуем типы параметров для надежности
+                    parameters = self._convert_parameter_types(parameters)
+                    
                     # Добавляем user_telegram_id к параметрам для инструментов, которые его требуют
                     if tool_name in ['cancel_appointment_by_id', 'reschedule_appointment_by_id']:
                         parameters['user_telegram_id'] = user_id
@@ -853,6 +905,9 @@ class DialogService:
                 for tool_call in tool_calls:
                     tool_name = tool_call.get('tool_name')
                     parameters = tool_call.get('parameters', {})
+                    
+                    # Преобразуем типы параметров для надежности
+                    parameters = self._convert_parameter_types(parameters)
                     
                     # Добавляем user_telegram_id к параметрам для инструментов, которые его требуют
                     if tool_name in ['cancel_appointment_by_id', 'reschedule_appointment_by_id']:

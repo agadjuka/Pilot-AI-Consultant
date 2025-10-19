@@ -287,7 +287,14 @@ class AppointmentService:
             
             master_name = self._decode_string_field(master['name'])
             service_name = self._decode_string_field(service['name'])
-            start_time = datetime.fromisoformat(appointment['start_time'].replace('Z', '+00:00'))
+            
+            # Обрабатываем start_time в зависимости от его типа
+            if isinstance(appointment['start_time'], str):
+                start_time = datetime.fromisoformat(appointment['start_time'].replace('Z', '+00:00'))
+            else:
+                # Если start_time уже является datetime объектом
+                start_time = appointment['start_time']
+            
             date_str = start_time.strftime("%d %B")
             time_str = start_time.strftime("%H:%M")
             
@@ -345,7 +352,14 @@ class AppointmentService:
             
             master_name = self._decode_string_field(master['name'])
             service_name = self._decode_string_field(service['name'])
-            start_time = datetime.fromisoformat(appointment['start_time'].replace('Z', '+00:00'))
+            
+            # Обрабатываем start_time в зависимости от его типа
+            if isinstance(appointment['start_time'], str):
+                start_time = datetime.fromisoformat(appointment['start_time'].replace('Z', '+00:00'))
+            else:
+                # Если start_time уже является datetime объектом
+                start_time = appointment['start_time']
+            
             old_date_str = start_time.strftime("%d %B")
             old_time_str = start_time.strftime("%H:%M")
             
