@@ -1,5 +1,4 @@
 from typing import List, Dict
-from sqlalchemy.orm import Session
 import google.generativeai as genai
 from google.generativeai import protos
 from datetime import datetime, timedelta
@@ -35,24 +34,21 @@ class DialogService:
     # Размер окна контекста - последние N сообщений
     CONTEXT_WINDOW_SIZE = 12
     
-    def __init__(self, db_session: Session):
+    def __init__(self):
         """
         Инициализирует сервис диалога.
-        
-        Args:
-            db_session: Сессия базы данных SQLAlchemy
         """
-        self.repository = DialogHistoryRepository(db_session)
+        self.repository = DialogHistoryRepository()
         self.llm_service = get_llm_service()
         
         # Инициализируем PromptBuilderService
         self.prompt_builder = PromptBuilderService()
         
         # Инициализируем репозитории для ToolService
-        self.service_repository = ServiceRepository(db_session)
-        self.master_repository = MasterRepository(db_session)
-        self.appointment_repository = AppointmentRepository(db_session)
-        self.client_repository = ClientRepository(db_session)
+        self.service_repository = ServiceRepository()
+        self.master_repository = MasterRepository()
+        self.appointment_repository = AppointmentRepository()
+        self.client_repository = ClientRepository()
         
         # Инициализируем DB Calendar Service
         self.db_calendar_service = DBCalendarService(
@@ -488,7 +484,7 @@ class DialogService:
         try:
             # 0. Загружаем (или создаем) клиента
             client = self.client_repository.get_or_create_by_telegram_id(user_id)
-            tracer.add_event("👤 Клиент загружен", f"ID клиента: {client.id}, Имя: {client.first_name}, Телефон: {client.phone_number}")
+            tracer.add_event("👤 Клиент загружен", f"ID клиента: {client['id']}, Имя: {client['first_name']}, Телефон: {client['phone_number']}")
             
             # 1. Получаем историю диалога (окно контекста - последние N сообщений)
             history_records = self.repository.get_recent_messages(user_id, limit=self.CONTEXT_WINDOW_SIZE)
@@ -497,10 +493,10 @@ class DialogService:
             # Преобразуем историю в расширенный формат для Gemini
             dialog_history: List[Dict] = []
             for record in history_records:
-                role = "user" if record.role == "user" else "model"
+                role = "user" if record['role'] == "user" else "model"
                 dialog_history.append({
                     "role": role,
-                    "parts": [{"text": record.message_text}]
+                    "parts": [{"text": record['message_text']}]
                 })
             
             # 2. Сохраняем новое сообщение пользователя в БД
@@ -641,8 +637,8 @@ class DialogService:
                         stage_name=stage,
                         history=dialog_history,
                         user_message=text,
-                        client_name=client.first_name,
-                        client_phone_saved=bool(client.phone_number),
+                        client_name=client['first_name'],
+                        client_phone_saved=bool(client['phone_number']),
                         hidden_context=hidden_context
                     )
             
@@ -775,8 +771,8 @@ class DialogService:
                 history=dialog_history,
                 user_message=text,
                 tool_results=tool_results,
-                client_name=client.first_name,
-                client_phone_saved=bool(client.phone_number),
+                client_name=client['first_name'],
+                client_phone_saved=bool(client['phone_number']),
                 hidden_context=hidden_context
             )
             

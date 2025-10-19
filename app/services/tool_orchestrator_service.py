@@ -536,8 +536,8 @@ class ToolOrchestratorService:
                                 stage=contact_stage,
                                 dialog_history=history,
                                 dialog_context="",
-                                client_name=client.first_name,
-                                client_phone_saved=bool(client.phone_number)
+                                client_name=client['first_name'],
+                                client_phone_saved=bool(client['phone_number'])
                             )
                             # Запускаем отдельный цикл генерации с новой инструкцией
                             final_text, _ = await self.execute_tool_cycle(contact_prompt, history, user_message, user_id, tracer)

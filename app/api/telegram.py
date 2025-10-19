@@ -1,11 +1,9 @@
 from fastapi import APIRouter, Request, BackgroundTasks
-from sqlalchemy.orm import Session
 import logging
 from app.schemas.telegram import Update
 from app.services.telegram_service import telegram_service
 from app.services.dialog_service import DialogService
 from app.core.config import settings
-from app.core.database import get_session_local
 
 # Получаем логгер для этого модуля
 logger = logging.getLogger(__name__)
@@ -23,13 +21,9 @@ async def process_telegram_update(update: Update):
         user_id = update.message.from_user.id if update.message.from_user else chat_id
         text = update.message.text
         
-        # Создаем сессию базы данных для обработки сообщения
-        SessionLocal = get_session_local()
-        db: Session = SessionLocal()
-        
         try:
-            # Создаем экземпляр DialogService с сессией БД
-            dialog_service = DialogService(db)
+            # Создаем экземпляр DialogService
+            dialog_service = DialogService()
             
             # Проверяем, является ли сообщение командой /clear
             if text.strip().lower() == "/clear":
@@ -54,9 +48,6 @@ async def process_telegram_update(update: Update):
             # В случае ошибки отправляем пользователю дружелюбное сообщение
             error_message = "Извините, произошла ошибка при обработке вашего сообщения. Пожалуйста, попробуйте еще раз."
             await telegram_service.send_message(chat_id, error_message)
-        finally:
-            # Всегда закрываем сессию БД
-            db.close()
 
 
 @router.post(f"/{settings.TELEGRAM_BOT_TOKEN}", include_in_schema=False)

@@ -56,12 +56,12 @@ class ToolService:
         result_lines = []
         for service in services:
             line = (
-                f"Услуга: {service.name}, "
-                f"Цена: {service.price} руб., "
-                f"Длительность: {service.duration_minutes} мин."
+                f"Услуга: {service['name']}, "
+                f"Цена: {service['price']} руб., "
+                f"Длительность: {service['duration_minutes']} мин."
             )
-            if service.description:
-                line += f" ({service.description})"
+            if service['description']:
+                line += f" ({service['description']})"
             result_lines.append(line)
 
         return "\n".join(result_lines)
@@ -88,12 +88,12 @@ class ToolService:
             return f"Услуга с названием '{service_name}' не найдена."
 
         # Теперь ищем мастеров для этой услуги
-        masters = self.master_repository.get_masters_for_service(service.id)
+        masters = self.master_repository.get_masters_for_service(service['id'])
 
         if not masters:
-            return f"К сожалению, на данный момент нет мастеров, выполняющих услугу '{service.name}'."
+            return f"К сожалению, на данный момент нет мастеров, выполняющих услугу '{service['name']}'."
 
-        master_names = [master.name for master in masters]
+        master_names = [master['name'] for master in masters]
         return f"Эту услугу выполняют мастера: {', '.join(master_names)}."
 
     def get_available_slots(self, service_name: str, date: str) -> str:
@@ -127,11 +127,11 @@ class ToolService:
                 return f"Услуга '{service_name}' не найдена в нашем прайс-листе."
             
             # Получаем длительность услуги
-            duration_minutes = service.duration_minutes
+            duration_minutes = service['duration_minutes']
 
             # Получаем мастеров, выполняющих услугу
-            masters = self.master_repository.get_masters_for_service(service.id)
-            master_names = [m.name for m in masters] if masters else []
+            masters = self.master_repository.get_masters_for_service(service['id'])
+            master_names = [m['name'] for m in masters] if masters else []
             
             # Получаем свободные интервалы из DBCalendarService для запрошенной даты
             free_intervals = self.db_calendar_service.get_free_slots(
@@ -425,12 +425,12 @@ class ToolService:
             client = self.client_repository.get_or_create_by_telegram_id(user_telegram_id)
             
             # Если имя уже есть, не перезаписываем
-            if client.first_name:
-                logger.info(f"ℹ️ Имя клиента {user_telegram_id} уже сохранено: '{client.first_name}'")
-                return f"Имя уже сохранено: {client.first_name}"
+            if client['first_name']:
+                logger.info(f"ℹ️ Имя клиента {user_telegram_id} уже сохранено: '{client['first_name']}'")
+                return f"Имя уже сохранено: {client['first_name']}"
             
             # Обновляем имя
-            self.client_repository.update(client.id, {'first_name': name})
+            self.client_repository.update(client['id'], {'first_name': name})
             logger.info(f"✅ Имя клиента {user_telegram_id} сохранено: '{name}'")
             return f"Имя '{name}' сохранено"
             
@@ -457,12 +457,12 @@ class ToolService:
             client = self.client_repository.get_or_create_by_telegram_id(user_telegram_id)
             
             # Если телефон уже есть, не перезаписываем
-            if client.phone_number:
-                logger.info(f"ℹ️ Телефон клиента {user_telegram_id} уже сохранен: '{client.phone_number}'")
-                return f"Телефон уже сохранен: {client.phone_number}"
+            if client['phone_number']:
+                logger.info(f"ℹ️ Телефон клиента {user_telegram_id} уже сохранен: '{client['phone_number']}'")
+                return f"Телефон уже сохранен: {client['phone_number']}"
             
             # Обновляем телефон
-            self.client_repository.update(client.id, {'phone_number': normalized_phone})
+            self.client_repository.update(client['id'], {'phone_number': normalized_phone})
             logger.info(f"✅ Телефон клиента {user_telegram_id} сохранен: '{normalized_phone}'")
             return f"Телефон '{normalized_phone}' сохранен"
             
@@ -514,7 +514,7 @@ class ToolService:
         
         # Сначала пробуем точное совпадение
         for service in all_services:
-            if service.name.lower() == service_name_lower:
+            if service['name'].lower() == service_name_lower:
                 return service
         
         # Затем пробуем нечеткое совпадение
@@ -523,7 +523,7 @@ class ToolService:
         
         for service in all_services:
             # Проверяем совпадение по словам
-            service_words = service.name.lower().split()
+            service_words = service['name'].lower().split()
             search_words = service_name_lower.split()
             
             # Если хотя бы одно слово совпадает точно
@@ -533,7 +533,7 @@ class ToolService:
                         return service
             
             # Проверяем общее сходство строк
-            ratio = SequenceMatcher(None, service_name_lower, service.name.lower()).ratio()
+            ratio = SequenceMatcher(None, service_name_lower, service['name'].lower()).ratio()
             if ratio > best_ratio and ratio > 0.6:  # Порог схожести 60%
                 best_ratio = ratio
                 best_match = service
@@ -558,12 +558,12 @@ class ToolService:
         keywords = service_name_lower.split()
         
         for service in all_services:
-            service_lower = service.name.lower()
+            service_lower = service['name'].lower()
             
             # Если хотя бы одно ключевое слово есть в названии услуги
             for keyword in keywords:
                 if keyword in service_lower and len(keyword) > 2:  # Игнорируем короткие слова
-                    similar_services.append(service.name)
+                    similar_services.append(service['name'])
                     break
         
         # Убираем дубликаты и ограничиваем количество

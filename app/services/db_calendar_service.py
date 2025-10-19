@@ -76,8 +76,8 @@ class DBCalendarService:
             # Создаем запись через репозиторий
             appointment = self.appointment_repository.create(appointment_data)
             
-            logger.info(f"✅ [DB CALENDAR] Запись создана с ID: {appointment.id}")
-            return appointment.id
+            logger.info(f"✅ [DB CALENDAR] Запись создана с ID: {appointment['id']}")
+            return appointment['id']
             
         except Exception as e:
             logger.error(f"❌ [DB CALENDAR] Ошибка создания записи: {str(e)}")
@@ -185,10 +185,10 @@ class DBCalendarService:
             if master_names:
                 all_masters = self.master_repository.get_all()
                 for master_name in master_names:
-                    master = next((m for m in all_masters if master_name.lower() in m.name.lower()), None)
+                    master = next((m for m in all_masters if master_name.lower() in m['name'].lower()), None)
                     if master:
-                        master_ids.append(master.id)
-                        logger.info(f"✅ [DB CALENDAR] Найден мастер: {master_name} -> ID {master.id}")
+                        master_ids.append(master['id'])
+                        logger.info(f"✅ [DB CALENDAR] Найден мастер: {master_name} -> ID {master['id']}")
                     else:
                         logger.warning(f"⚠️ [DB CALENDAR] Мастер не найден: {master_name}")
             

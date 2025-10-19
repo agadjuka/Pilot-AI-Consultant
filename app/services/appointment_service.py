@@ -62,15 +62,15 @@ class AppointmentService:
         try:
             # Проверка наличия контактных данных клиента
             client = self.client_repository.get_or_create_by_telegram_id(user_telegram_id)
-            if not client.first_name or not client.phone_number:
-                logger.warning(f"⚠️ [CREATE APPOINTMENT] Отсутствуют контактные данные клиента: user_id={user_telegram_id}, first_name='{client.first_name}', phone='{client.phone_number}'")
+            if not client['first_name'] or not client['phone_number']:
+                logger.warning(f"⚠️ [CREATE APPOINTMENT] Отсутствуют контактные данные клиента: user_id={user_telegram_id}, first_name='{client['first_name']}', phone='{client['phone_number']}'")
                 return "Требуются данные клиента. Перейди в стадию 'contact_info_request'."
             
-            logger.info(f"✅ [CREATE APPOINTMENT] Контактные данные клиента найдены: user_id={user_telegram_id}, name='{client.first_name}', phone='{client.phone_number}'")
+            logger.info(f"✅ [CREATE APPOINTMENT] Контактные данные клиента найдены: user_id={user_telegram_id}, name='{client['first_name']}', phone='{client['phone_number']}'")
             
             # Находим услугу в БД для получения длительности с простым поиском
             all_services = self.service_repository.get_all()
-            service = next((s for s in all_services if service_name.lower() in s.name.lower()), None)
+            service = next((s for s in all_services if service_name.lower() in s['name'].lower()), None)
             
             if not service:
                 # Если не найдено, показываем похожие услуги
@@ -80,23 +80,23 @@ class AppointmentService:
                     return f"Услуга '{service_name}' не найдена в нашем прайс-листе. Возможно, вы имели в виду: {', '.join(similar_services)}?"
                 return f"Услуга '{service_name}' не найдена в нашем прайс-листе."
             
-            logger.info(f"✅ [CREATE APPOINTMENT] Услуга найдена: id={service.id}, name='{service.name}', duration={service.duration_minutes} мин, price={service.price} руб")
+            logger.info(f"✅ [CREATE APPOINTMENT] Услуга найдена: id={service['id']}, name='{service['name']}', duration={service['duration_minutes']} мин, price={service['price']} руб")
             
             # Находим мастера в БД
             all_masters = self.master_repository.get_all()
             
             # Если мастер не указан, автоматически выбираем первого доступного мастера для этой услуги
             if not master_name or master_name.strip() == "":
-                logger.info(f"🔍 [CREATE APPOINTMENT] Мастер не указан, ищем доступного мастера для услуги '{service.name}'")
-                available_masters = self.master_repository.get_masters_for_service(service.id)
+                logger.info(f"🔍 [CREATE APPOINTMENT] Мастер не указан, ищем доступного мастера для услуги '{service['name']}'")
+                available_masters = self.master_repository.get_masters_for_service(service['id'])
                 if available_masters:
                     master = available_masters[0]  # Берем первого доступного мастера
-                    logger.info(f"✅ [CREATE APPOINTMENT] Автоматически выбран мастер: id={master.id}, name='{master.name}'")
+                    logger.info(f"✅ [CREATE APPOINTMENT] Автоматически выбран мастер: id={master['id']}, name='{master['name']}'")
                 else:
-                    logger.warning(f"❌ [CREATE APPOINTMENT] Нет доступных мастеров для услуги '{service.name}'")
-                    return f"К сожалению, сейчас нет доступных мастеров для услуги '{service.name}'."
+                    logger.warning(f"❌ [CREATE APPOINTMENT] Нет доступных мастеров для услуги '{service['name']}'")
+                    return f"К сожалению, сейчас нет доступных мастеров для услуги '{service['name']}'."
             else:
-                master = next((m for m in all_masters if master_name.lower() in m.name.lower()), None)
+                master = next((m for m in all_masters if master_name.lower() in m['name'].lower()), None)
                 
                 if not master:
                     # Если не найдено, показываем похожих мастеров
@@ -106,10 +106,10 @@ class AppointmentService:
                         return f"Мастер '{master_name}' не найден. Возможно, вы имели в виду: {', '.join(similar_masters)}?"
                     return f"Мастер '{master_name}' не найден."
                 
-                logger.info(f"✅ [CREATE APPOINTMENT] Мастер найден: id={master.id}, name='{master.name}'")
+                logger.info(f"✅ [CREATE APPOINTMENT] Мастер найден: id={master['id']}, name='{master['name']}'")
             
             # Получаем длительность услуги
-            duration_minutes = service.duration_minutes
+            duration_minutes = service['duration_minutes']
             
             # Преобразуем date и time в объекты datetime
             try:
@@ -144,12 +144,12 @@ class AppointmentService:
             
             # Создаем запись через DBCalendarService
             # Формируем описание события для мастера
-            description = f"Клиент: {client.first_name or client_name} | Телефон: {client.phone_number or '-'} | Telegram ID: {user_telegram_id}"
+            description = f"Клиент: {client['first_name'] or client_name} | Телефон: {client['phone_number'] or '-'} | Telegram ID: {user_telegram_id}"
 
             try:
                 appointment_id = self.db_calendar_service.create_event(
-                    master_id=master.id,
-                    service_id=service.id,
+                    master_id=master['id'],
+                    service_id=service['id'],
                     user_telegram_id=user_telegram_id,
                     start_time=start_datetime,
                     end_time=end_datetime,
@@ -160,7 +160,7 @@ class AppointmentService:
                 logger.error(f"❌ [CREATE APPOINTMENT] Ошибка создания записи через DBCalendarService: {calendar_error}")
                 return f"Ошибка при создании записи: {str(calendar_error)}"
             
-            success_message = f"Отлично! Я записала {client.first_name or client_name} на {service_name} к мастеру {master_name} на {date} в {time}."
+            success_message = f"Отлично! Я записала {client['first_name'] or client_name} на {service_name} к мастеру {master_name} на {date} в {time}."
             logger.info(f"🎉 [CREATE APPOINTMENT] Успешно завершено: {success_message}")
             return success_message
                 
@@ -191,20 +191,29 @@ class AppointmentService:
             
             result = []
             for appointment in appointments:
+                # Получаем данные мастера и услуги
+                master = self.master_repository.get_by_id(appointment['master_id'])
+                service = self.service_repository.get_by_id(appointment['service_id'])
+                
+                if not master or not service:
+                    logger.warning(f"⚠️ [GET MY APPOINTMENTS] Не найдены данные мастера или услуги для записи {appointment['id']}")
+                    continue
+                
                 # Форматируем дату и время
-                date_str = appointment.start_time.strftime("%d %B")
-                time_str = appointment.start_time.strftime("%H:%M")
+                start_time = datetime.fromisoformat(appointment['start_time'].replace('Z', '+00:00'))
+                date_str = start_time.strftime("%d %B")
+                time_str = start_time.strftime("%H:%M")
                 
                 # Получаем информацию о мастере и услуге
-                master_name = appointment.master.name
-                service_name = appointment.service.name
+                master_name = master['name']
+                service_name = service['name']
                 
                 details = f"{date_str} в {time_str}: {service_name} к мастеру {master_name}"
                 
-                logger.info(f"📅 [GET MY APPOINTMENTS] Запись: id={appointment.id}, {details}")
+                logger.info(f"📅 [GET MY APPOINTMENTS] Запись: id={appointment['id']}, {details}")
                 
                 result.append({
-                    "id": appointment.id,
+                    "id": appointment['id'],
                     "details": details
                 })
             
