@@ -6,6 +6,8 @@ from datetime import datetime, timedelta, time, date
 from typing import List, Dict, Optional, Tuple, Any
 from zoneinfo import ZoneInfo
 import logging
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 
 from app.repositories.appointment_repository import AppointmentRepository
 from app.repositories.master_repository import MasterRepository
@@ -38,6 +40,27 @@ class DBCalendarService:
         self.appointment_repository = appointment_repository
         self.master_repository = master_repository
         self.master_schedule_repository = master_schedule_repository
+        self.executor = ThreadPoolExecutor(max_workers=10)
+    
+    async def _async_find_by_master_and_date(self, master_id: int, target_date: date) -> Optional[Dict[str, Any]]:
+        """Асинхронная обертка для find_by_master_and_date"""
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(
+            self.executor,
+            self.master_schedule_repository.find_by_master_and_date,
+            master_id,
+            target_date
+        )
+    
+    async def _async_get_appointments_by_master(self, master_id: int, target_date: date) -> List[Dict[str, Any]]:
+        """Асинхронная обертка для get_appointments_by_master"""
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(
+            self.executor,
+            self.appointment_repository.get_appointments_by_master,
+            master_id,
+            target_date
+        )
     
     def create_event(
         self,
@@ -150,7 +173,7 @@ class DBCalendarService:
             logger.error(f"❌ [DB CALENDAR] Ошибка обновления записи: {str(e)}")
             raise Exception(f"Ошибка при обновлении записи: {str(e)}")
     
-    def get_free_slots(
+    async def get_free_slots(
         self,
         date: str,
         duration_minutes: int,
@@ -193,7 +216,7 @@ class DBCalendarService:
                 return []
             
             # Шаг 1: Найти рабочие интервалы для каждого мастера
-            work_intervals = self._get_work_intervals_for_masters(target_date, master_ids)
+            work_intervals = await self._get_work_intervals_for_masters(target_date, master_ids)
             
             # Логируем найденные рабочие графики
             if tracer:
@@ -206,7 +229,7 @@ class DBCalendarService:
                 return []
             
             # Шаг 2: Найти все записи для этих мастеров на этот день
-            appointments = self._get_appointments_for_masters_on_date(target_date, master_ids)
+            appointments = await self._get_appointments_for_masters_on_date(target_date, master_ids)
             
             # Логируем существующие записи
             if tracer:
@@ -236,9 +259,10 @@ class DBCalendarService:
                 tracer.add_event("ОШИБКА ПОИСКА СЛОТОВ", f"Ошибка: {str(e)}")
             raise Exception(f"Ошибка при поиске свободных слотов: {str(e)}")
     
-    def _get_work_intervals_for_masters(self, target_date: date, master_ids: List[int]) -> Dict[int, Tuple[time, time]]:
+    async def _get_work_intervals_for_masters(self, target_date: date, master_ids: List[int]) -> Dict[int, Tuple[time, time]]:
         """
         Получает рабочие интервалы для всех мастеров на указанную дату.
+        Оптимизирован для параллельного выполнения запросов к БД.
         
         Args:
             target_date: Целевая дата
@@ -250,19 +274,47 @@ class DBCalendarService:
         work_intervals = {}
         working_masters = []
         
+        # Создаем задачи для параллельного выполнения
+        tasks = []
         for master_id in master_ids:
-            work_time = self._get_master_work_time(target_date, master_id)
-            if work_time:
-                start_time, end_time = work_time
+            tasks.append(self._async_find_by_master_and_date(master_id, target_date))
+        
+        # Выполняем все запросы параллельно
+        logger.info(f"🚀 [PARALLEL] Запускаем {len(tasks)} параллельных запросов для получения графиков мастеров")
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        # Обрабатываем результаты
+        for i, result in enumerate(results):
+            master_id = master_ids[i]
+            if isinstance(result, Exception):
+                logger.warning(f"⚠️ [PARALLEL] Ошибка получения графика мастера {master_id}: {result}")
+                continue
+                
+            if result:
+                # Парсим время из результата
+                start_time_str = result['start_time']
+                end_time_str = result['end_time']
+                
+                try:
+                    start_time = datetime.strptime(start_time_str, '%H:%M').time()
+                except ValueError:
+                    start_time = datetime.strptime(start_time_str, '%H:%M:%S').time()
+                
+                try:
+                    end_time = datetime.strptime(end_time_str, '%H:%M').time()
+                except ValueError:
+                    end_time = datetime.strptime(end_time_str, '%H:%M:%S').time()
+                
                 work_intervals[master_id] = (start_time, end_time)
                 working_masters.append(f"{master_id}({start_time}-{end_time})")
         
         logger.info(f"👥 [TRACE] Рабочие мастера: {', '.join(working_masters) if working_masters else 'нет'}")
         return work_intervals
     
-    def _get_appointments_for_masters_on_date(self, target_date: date, master_ids: List[int]) -> List[Dict[str, Any]]:
+    async def _get_appointments_for_masters_on_date(self, target_date: date, master_ids: List[int]) -> List[Dict[str, Any]]:
         """
         Получает все записи для списка мастеров на указанную дату.
+        Оптимизирован для параллельного выполнения запросов к БД.
         
         Args:
             target_date: Целевая дата
@@ -271,30 +323,31 @@ class DBCalendarService:
         Returns:
             List[Dict[str, Any]]: Список записей
         """
-        from app.core.database import execute_query
+        # Создаем задачи для параллельного выполнения
+        tasks = []
+        for master_id in master_ids:
+            tasks.append(self._async_get_appointments_by_master(master_id, target_date))
         
-        # Формируем список ID для SQL запроса
-        master_ids_str = ','.join(map(str, master_ids))
+        # Выполняем все запросы параллельно
+        logger.info(f"🚀 [PARALLEL] Запускаем {len(tasks)} параллельных запросов для получения записей мастеров")
+        results = await asyncio.gather(*tasks, return_exceptions=True)
         
-        # Получаем все записи для этих мастеров на эту дату
-        query = f"""
-            SELECT * FROM appointments 
-            WHERE master_id IN ({master_ids_str})
-            AND CAST(start_time AS Date) = CAST('{target_date}' AS Date)
-            ORDER BY start_time
-        """
+        # Объединяем результаты
+        all_appointments = []
+        for i, result in enumerate(results):
+            master_id = master_ids[i]
+            if isinstance(result, Exception):
+                logger.warning(f"⚠️ [PARALLEL] Ошибка получения записей мастера {master_id}: {result}")
+                continue
+                
+            if result:
+                all_appointments.extend(result)
         
-        rows = execute_query(query)
+        # Сортируем по времени начала
+        all_appointments.sort(key=lambda x: x['start_time'])
         
-        # Конвертируем строки в словари используя правильную конвертацию
-        appointments = []
-        for row in rows:
-            # Используем конвертацию из репозитория
-            appointment = self.appointment_repository._row_to_dict(row)
-            appointments.append(appointment)
-        
-        logger.info(f"📅 [TRACE] Записи: {len(appointments)}шт")
-        return appointments
+        logger.info(f"📅 [TRACE] Записи: {len(all_appointments)}шт")
+        return all_appointments
     
     def _calculate_free_intervals_timeline(self, target_date: date, work_intervals: Dict[int, Tuple[time, time]], appointments: List[Dict[str, Any]], tracer=None) -> List[Dict[str, str]]:
         """
@@ -586,7 +639,7 @@ class DBCalendarService:
                     logger.warning(f"⚠️ [DB CALENDAR] Мастер не найден: {master_name}")
         return master_ids
     
-    def _get_master_work_time(self, target_date: date, master_id: int) -> Optional[Tuple[time, time]]:
+    async def _get_master_work_time(self, target_date: date, master_id: int) -> Optional[Tuple[time, time]]:
         """
         Получает рабочее время мастера на заданную дату из таблицы master_schedules.
         
@@ -599,7 +652,7 @@ class DBCalendarService:
         """
         try:
             # Получаем график работы мастера на конкретную дату из БД
-            schedule = self.master_schedule_repository.find_by_master_and_date(master_id, target_date)
+            schedule = await self._async_find_by_master_and_date(master_id, target_date)
             
             if not schedule:
                 logger.info(f"🚫 [DB CALENDAR] Мастер {master_id} не работает {target_date} - график не найден")

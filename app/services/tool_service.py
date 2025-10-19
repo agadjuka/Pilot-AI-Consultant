@@ -115,7 +115,7 @@ class ToolService:
         master_names = [self._decode_string_field(master['name']) for master in masters]
         return f"Эту услугу выполняют мастера: {', '.join(master_names)}."
 
-    def get_available_slots(self, service_name: str, date: str, tracer=None) -> str:
+    async def get_available_slots(self, service_name: str, date: str, tracer=None) -> str:
         """
         Получает свободные временные интервалы для услуги на указанную дату.
         Работает как оркестратор: находит услугу -> мастеров -> свободные слоты.
@@ -167,7 +167,7 @@ class ToolService:
             
             # Шаг 3: Вызвать новый get_free_slots с master_ids
             duration_minutes = service['duration_minutes']
-            free_intervals = self.db_calendar_service.get_free_slots(
+            free_intervals = await self.db_calendar_service.get_free_slots(
                 parsed_date,
                 duration_minutes,
                 master_ids=master_ids,
@@ -192,7 +192,7 @@ class ToolService:
                 next_date_str = next_date.strftime("%Y-%m-%d")
                 
                 # Получаем свободные интервалы для следующей даты
-                next_free_intervals = self.db_calendar_service.get_free_slots(
+                next_free_intervals = await self.db_calendar_service.get_free_slots(
                     next_date_str,
                     duration_minutes,
                     master_ids=master_ids

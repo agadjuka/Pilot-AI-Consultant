@@ -707,7 +707,7 @@ class ToolOrchestratorService:
         elif function_name == "get_available_slots":
             service_name = function_args.get("service_name", "")
             date = function_args.get("date", "")
-            result = method(service_name, date, tracer)
+            result = await method(service_name, date, tracer)
             return result
         
         elif function_name == "create_appointment":
@@ -763,7 +763,7 @@ class ToolOrchestratorService:
         else:
             return f"Ошибка: неизвестная функция '{function_name}'"
     
-    def _execute_function(self, function_name: str, function_args: Dict, user_id: int = None) -> str:
+    async def _execute_function(self, function_name: str, function_args: Dict, user_id: int = None) -> str:
         """
         Динамически выполняет функцию из ToolService.
         
@@ -793,7 +793,7 @@ class ToolOrchestratorService:
         elif function_name == "get_available_slots":
             service_name = function_args.get("service_name", "")
             date = function_args.get("date", "")
-            result = method(service_name, date, tracer)
+            result = await method(service_name, date, tracer)
             return result
         
         elif function_name == "create_appointment":
