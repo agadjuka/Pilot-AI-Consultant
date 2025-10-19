@@ -20,7 +20,8 @@ COPY poetry.lock pyproject.toml ./
 # Устанавливаем зависимости проекта, исключая dev-зависимости,
 # и создаем виртуальное окружение внутри /app/.venv
 RUN poetry config virtualenvs.create false && \
-    poetry install --only=main --no-root --no-interaction --no-ansi
+    poetry install --only=main --no-root --no-interaction --no-ansi --sync && \
+    python -c "import ydb; print('YDB successfully installed')"
 
 
 # --- Этап 2: Создание финальнytого образа ---
