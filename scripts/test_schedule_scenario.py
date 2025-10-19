@@ -91,76 +91,159 @@ def create_test_appointments():
         max_id_result = execute_query(max_id_query)
         max_id = max_id_result[0][0] if max_id_result[0][0] is not None else 0
         
-        # Определяем схему занятости согласно требованиям
+        # Новая схема занятости согласно требованиям:
+        # Все мастера заняты с 10:00 до 18:00, кроме:
+        # - Мастер 7: свободен с 13:00 до 15:00 (2 часа)
+        # - Мастер 3: свободен с 16:00 до 18:00 (2 часа)
         appointments_data = []
         appointment_id = max_id + 1
         
-        # Мастера с ID 10, 9, 8, 7, 6: две записи, с 10:00 до 12:30 и с 14:00 до 16:00
-        for master_id in [10, 9, 8, 7, 6]:
-            # Первая запись: 10:00-12:30
-            appointments_data.append({
-                'id': appointment_id,
-                'user_telegram_id': FAKE_USER_TELEGRAM_ID,
-                'master_id': master_id,
-                'service_id': MANICURE_SERVICE_ID,
-                'start_time': datetime.combine(TEST_DATE, time(10, 0)),
-                'end_time': datetime.combine(TEST_DATE, time(12, 30))
-            })
-            appointment_id += 1
-            
-            # Вторая запись: 14:00-16:00
-            appointments_data.append({
-                'id': appointment_id,
-                'user_telegram_id': FAKE_USER_TELEGRAM_ID,
-                'master_id': master_id,
-                'service_id': MANICURE_SERVICE_ID,
-                'start_time': datetime.combine(TEST_DATE, time(14, 0)),
-                'end_time': datetime.combine(TEST_DATE, time(16, 0))
-            })
-            appointment_id += 1
+        # Мастер 10: занят с 10:00 до 18:00 (две записи)
+        appointments_data.append({
+            'id': appointment_id,
+            'user_telegram_id': FAKE_USER_TELEGRAM_ID,
+            'master_id': 10,
+            'service_id': MANICURE_SERVICE_ID,
+            'start_time': datetime.combine(TEST_DATE, time(10, 0)),
+            'end_time': datetime.combine(TEST_DATE, time(14, 0))
+        })
+        appointment_id += 1
         
-        # Мастер с ID 5: две записи, с 10:00 до 12:30 и с 16:00 до 17:30
-        master_5_appointments = [
-            {
-                'id': appointment_id,
-                'user_telegram_id': FAKE_USER_TELEGRAM_ID,
-                'master_id': 5,
-                'service_id': MANICURE_SERVICE_ID,
-                'start_time': datetime.combine(TEST_DATE, time(10, 0)),
-                'end_time': datetime.combine(TEST_DATE, time(12, 30))
-            },
-            {
-                'id': appointment_id + 1,
-                'user_telegram_id': FAKE_USER_TELEGRAM_ID,
-                'master_id': 5,
-                'service_id': MANICURE_SERVICE_ID,
-                'start_time': datetime.combine(TEST_DATE, time(16, 0)),
-                'end_time': datetime.combine(TEST_DATE, time(17, 30))
-            }
-        ]
-        appointments_data.extend(master_5_appointments)
-        appointment_id += 2
+        appointments_data.append({
+            'id': appointment_id,
+            'user_telegram_id': FAKE_USER_TELEGRAM_ID,
+            'master_id': 10,
+            'service_id': MANICURE_SERVICE_ID,
+            'start_time': datetime.combine(TEST_DATE, time(14, 0)),
+            'end_time': datetime.combine(TEST_DATE, time(18, 0))
+        })
+        appointment_id += 1
         
-        # Мастер с ID 3: две записи, с 12:30 до 14:00 и с 14:00 до 16:00
-        master_3_appointments = [
-            {
-                'id': appointment_id,
-                'user_telegram_id': FAKE_USER_TELEGRAM_ID,
-                'master_id': 3,
-                'service_id': MANICURE_SERVICE_ID,
-                'start_time': datetime.combine(TEST_DATE, time(12, 30)),
-                'end_time': datetime.combine(TEST_DATE, time(14, 0))
-            },
-            {
-                'id': appointment_id + 1,
-                'user_telegram_id': FAKE_USER_TELEGRAM_ID,
-                'master_id': 3,
-                'service_id': MANICURE_SERVICE_ID,
-                'start_time': datetime.combine(TEST_DATE, time(14, 0)),
-                'end_time': datetime.combine(TEST_DATE, time(16, 0))
-            }
-        ]
-        appointments_data.extend(master_3_appointments)
+        # Мастер 9: занят с 10:00 до 18:00 (две записи)
+        appointments_data.append({
+            'id': appointment_id,
+            'user_telegram_id': FAKE_USER_TELEGRAM_ID,
+            'master_id': 9,
+            'service_id': MANICURE_SERVICE_ID,
+            'start_time': datetime.combine(TEST_DATE, time(10, 0)),
+            'end_time': datetime.combine(TEST_DATE, time(14, 0))
+        })
+        appointment_id += 1
+        
+        appointments_data.append({
+            'id': appointment_id,
+            'user_telegram_id': FAKE_USER_TELEGRAM_ID,
+            'master_id': 9,
+            'service_id': MANICURE_SERVICE_ID,
+            'start_time': datetime.combine(TEST_DATE, time(14, 0)),
+            'end_time': datetime.combine(TEST_DATE, time(18, 0))
+        })
+        appointment_id += 1
+        
+        # Мастер 8: занят с 10:00 до 18:00 (две записи)
+        appointments_data.append({
+            'id': appointment_id,
+            'user_telegram_id': FAKE_USER_TELEGRAM_ID,
+            'master_id': 8,
+            'service_id': MANICURE_SERVICE_ID,
+            'start_time': datetime.combine(TEST_DATE, time(10, 0)),
+            'end_time': datetime.combine(TEST_DATE, time(14, 0))
+        })
+        appointment_id += 1
+        
+        appointments_data.append({
+            'id': appointment_id,
+            'user_telegram_id': FAKE_USER_TELEGRAM_ID,
+            'master_id': 8,
+            'service_id': MANICURE_SERVICE_ID,
+            'start_time': datetime.combine(TEST_DATE, time(14, 0)),
+            'end_time': datetime.combine(TEST_DATE, time(18, 0))
+        })
+        appointment_id += 1
+        
+        # Мастер 7: занят с 10:00 до 13:00 и с 15:00 до 18:00 (свободен 13:00-15:00)
+        appointments_data.append({
+            'id': appointment_id,
+            'user_telegram_id': FAKE_USER_TELEGRAM_ID,
+            'master_id': 7,
+            'service_id': MANICURE_SERVICE_ID,
+            'start_time': datetime.combine(TEST_DATE, time(10, 0)),
+            'end_time': datetime.combine(TEST_DATE, time(13, 0))
+        })
+        appointment_id += 1
+        
+        appointments_data.append({
+            'id': appointment_id,
+            'user_telegram_id': FAKE_USER_TELEGRAM_ID,
+            'master_id': 7,
+            'service_id': MANICURE_SERVICE_ID,
+            'start_time': datetime.combine(TEST_DATE, time(15, 0)),
+            'end_time': datetime.combine(TEST_DATE, time(18, 0))
+        })
+        appointment_id += 1
+        
+        # Мастер 6: занят с 10:00 до 18:00 (две записи)
+        appointments_data.append({
+            'id': appointment_id,
+            'user_telegram_id': FAKE_USER_TELEGRAM_ID,
+            'master_id': 6,
+            'service_id': MANICURE_SERVICE_ID,
+            'start_time': datetime.combine(TEST_DATE, time(10, 0)),
+            'end_time': datetime.combine(TEST_DATE, time(14, 0))
+        })
+        appointment_id += 1
+        
+        appointments_data.append({
+            'id': appointment_id,
+            'user_telegram_id': FAKE_USER_TELEGRAM_ID,
+            'master_id': 6,
+            'service_id': MANICURE_SERVICE_ID,
+            'start_time': datetime.combine(TEST_DATE, time(14, 0)),
+            'end_time': datetime.combine(TEST_DATE, time(18, 0))
+        })
+        appointment_id += 1
+        
+        # Мастер 5: занят с 10:00 до 18:00 (две записи)
+        appointments_data.append({
+            'id': appointment_id,
+            'user_telegram_id': FAKE_USER_TELEGRAM_ID,
+            'master_id': 5,
+            'service_id': MANICURE_SERVICE_ID,
+            'start_time': datetime.combine(TEST_DATE, time(10, 0)),
+            'end_time': datetime.combine(TEST_DATE, time(14, 0))
+        })
+        appointment_id += 1
+        
+        appointments_data.append({
+            'id': appointment_id,
+            'user_telegram_id': FAKE_USER_TELEGRAM_ID,
+            'master_id': 5,
+            'service_id': MANICURE_SERVICE_ID,
+            'start_time': datetime.combine(TEST_DATE, time(14, 0)),
+            'end_time': datetime.combine(TEST_DATE, time(18, 0))
+        })
+        appointment_id += 1
+        
+        # Мастер 3: занят с 10:00 до 16:00 (свободен 16:00-18:00)
+        appointments_data.append({
+            'id': appointment_id,
+            'user_telegram_id': FAKE_USER_TELEGRAM_ID,
+            'master_id': 3,
+            'service_id': MANICURE_SERVICE_ID,
+            'start_time': datetime.combine(TEST_DATE, time(10, 0)),
+            'end_time': datetime.combine(TEST_DATE, time(13, 0))
+        })
+        appointment_id += 1
+        
+        appointments_data.append({
+            'id': appointment_id,
+            'user_telegram_id': FAKE_USER_TELEGRAM_ID,
+            'master_id': 3,
+            'service_id': MANICURE_SERVICE_ID,
+            'start_time': datetime.combine(TEST_DATE, time(13, 0)),
+            'end_time': datetime.combine(TEST_DATE, time(16, 0))
+        })
+        appointment_id += 1
         
         # Создаем все записи
         for i, appointment in enumerate(appointments_data, 1):
@@ -240,11 +323,18 @@ def main():
         print(f"📅 Дата тестирования: {TEST_DATE}")
         print("💅 Услуга: Маникюр с покрытием гель-лак (90 минут)")
         print("\n🎯 Ожидаемый результат для маникюра на 20.10.2025:")
-        print("   Свободные слоты: 12:30-14:00, 16:00-17:30")
-        print("\n📊 Схема занятости:")
-        print("   Мастера 10,9,8,7,6: 10:00-12:30, 14:00-16:00")
-        print("   Мастер 5: 10:00-12:30, 16:00-17:30")
-        print("   Мастер 3: 12:30-14:00, 14:00-16:00")
+        print("   Свободные слоты: 13:00-15:00 (только мастер 7), 16:00-18:00 (только мастер 3)")
+        print("\n📊 Новая схема занятости:")
+        print("   Мастер 10: 10:00-14:00, 14:00-18:00 (полностью занят)")
+        print("   Мастер 9: 10:00-14:00, 14:00-18:00 (полностью занят)")
+        print("   Мастер 8: 10:00-14:00, 14:00-18:00 (полностью занят)")
+        print("   Мастер 7: 10:00-13:00, 15:00-18:00 (свободен 13:00-15:00)")
+        print("   Мастер 6: 10:00-14:00, 14:00-18:00 (полностью занят)")
+        print("   Мастер 5: 10:00-14:00, 14:00-18:00 (полностью занят)")
+        print("   Мастер 3: 10:00-13:00, 13:00-16:00 (свободен 16:00-18:00)")
+        print("\n🕐 Свободные интервалы:")
+        print("   • 13:00-15:00 - свободен только мастер 7")
+        print("   • 16:00-18:00 - свободен только мастер 3")
         print("=" * 60)
         
     except Exception as e:

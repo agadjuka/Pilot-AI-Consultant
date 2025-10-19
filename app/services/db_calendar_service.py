@@ -610,8 +610,18 @@ class DBCalendarService:
             end_time_str = schedule['end_time']
             
             # Парсим строки времени в объекты time
-            start_time = datetime.strptime(start_time_str, '%H:%M').time()
-            end_time = datetime.strptime(end_time_str, '%H:%M').time()
+            # Поддерживаем форматы HH:MM и HH:MM:SS
+            try:
+                start_time = datetime.strptime(start_time_str, '%H:%M').time()
+            except ValueError:
+                # Если не удалось распарсить в формате HH:MM, пробуем HH:MM:SS
+                start_time = datetime.strptime(start_time_str, '%H:%M:%S').time()
+            
+            try:
+                end_time = datetime.strptime(end_time_str, '%H:%M').time()
+            except ValueError:
+                # Если не удалось распарсить в формате HH:MM, пробуем HH:MM:SS
+                end_time = datetime.strptime(end_time_str, '%H:%M:%S').time()
             
             logger.info(f"⏰ [DB CALENDAR] Рабочие часы мастера {master_id} на {target_date}: {start_time} - {end_time}")
             return (start_time, end_time)
