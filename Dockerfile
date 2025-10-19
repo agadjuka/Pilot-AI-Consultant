@@ -9,6 +9,10 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y \
     build-essential \
     libpq-dev \
+    gcc \
+    g++ \
+    libffi-dev \
+    libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Устанавливаем Poetry
@@ -31,6 +35,8 @@ FROM python:3.10-slim
 # Устанавливаем системные зависимости для runtime
 RUN apt-get update && apt-get install -y \
     libpq5 \
+    libffi7 \
+    libssl3 \
     && rm -rf /var/lib/apt/lists/*
 
 # Устанавливаем рабочую директорию
