@@ -5,6 +5,12 @@ FROM python:3.10-slim as builder
 # Устанавливаем рабочую директорию
 WORKDIR /app
 
+# Устанавливаем системные зависимости для сборки пакетов
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
+
 # Устанавливаем Poetry
 RUN pip install poetry
 
@@ -14,12 +20,17 @@ COPY poetry.lock pyproject.toml ./
 # Устанавливаем зависимости проекта, исключая dev-зависимости,
 # и создаем виртуальное окружение внутри /app/.venv
 RUN poetry config virtualenvs.create false && \
-    poetry install --no-root --no-dev --no-interaction --no-ansi
+    poetry install --only=main --no-root --no-interaction --no-ansi
 
 
 # --- Этап 2: Создание финальнytого образа ---
 # Используем тот же базовый образ для уменьшения размера
 FROM python:3.10-slim
+
+# Устанавливаем системные зависимости для runtime
+RUN apt-get update && apt-get install -y \
+    libpq5 \
+    && rm -rf /var/lib/apt/lists/*
 
 # Устанавливаем рабочую директорию
 WORKDIR /app
