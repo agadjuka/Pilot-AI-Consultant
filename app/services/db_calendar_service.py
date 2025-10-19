@@ -9,7 +9,6 @@ import logging
 
 from app.repositories.appointment_repository import AppointmentRepository
 from app.repositories.master_repository import MasterRepository
-from app.repositories.schedule_repository import WorkScheduleRepository, ScheduleExceptionRepository
 
 # Получаем логгер для этого модуля
 logger = logging.getLogger(__name__)
@@ -24,9 +23,7 @@ class DBCalendarService:
     def __init__(
         self,
         appointment_repository: AppointmentRepository,
-        master_repository: MasterRepository,
-        work_schedule_repository: WorkScheduleRepository,
-        schedule_exception_repository: ScheduleExceptionRepository
+        master_repository: MasterRepository
     ):
         """
         Инициализация сервиса календаря.
@@ -34,13 +31,9 @@ class DBCalendarService:
         Args:
             appointment_repository: Репозиторий для работы с записями
             master_repository: Репозиторий для работы с мастерами
-            work_schedule_repository: Репозиторий для работы с графиками работы
-            schedule_exception_repository: Репозиторий для работы с исключениями из графика
         """
         self.appointment_repository = appointment_repository
         self.master_repository = master_repository
-        self.work_schedule_repository = work_schedule_repository
-        self.schedule_exception_repository = schedule_exception_repository
     
     def create_event(
         self,
@@ -157,7 +150,8 @@ class DBCalendarService:
         self,
         date: str,
         duration_minutes: int,
-        master_ids: List[int]
+        master_ids: List[int],
+        tracer=None
     ) -> List[Dict[str, str]]:
         """
         Получает свободные временные интервалы на указанную дату для списка мастеров.
@@ -175,7 +169,11 @@ class DBCalendarService:
             Exception: Ошибка при работе с БД или неверный формат даты
         """
         try:
-            logger.info(f"🔍 [DB CALENDAR] Поиск свободных слотов: date={date}, duration={duration_minutes} мин, master_ids={master_ids}")
+            logger.info(f"🔍 [TRACE] Поиск слотов: {date}, {duration_minutes}мин, мастера {master_ids}")
+            
+            # Добавляем событие трассировки
+            if tracer:
+                tracer.add_event("🔍 Начало поиска слотов", f"Дата: {date}, Длительность: {duration_minutes} мин, Мастера: {master_ids}")
             
             # Парсим дату
             try:
@@ -191,6 +189,8 @@ class DBCalendarService:
             work_intervals = self._get_work_intervals_for_masters(target_date, master_ids)
             if not work_intervals:
                 logger.info(f"📅 [DB CALENDAR] Ни один из мастеров {master_ids} не работает {target_date}")
+                if tracer:
+                    tracer.add_event("📅 Мастера не работают", f"Дата: {target_date}, Мастера: {master_ids}")
                 return []
             
             # Шаг 2: Найти все записи для этих мастеров на этот день
@@ -202,7 +202,15 @@ class DBCalendarService:
             # Шаг 4: Отфильтровать интервалы по длительности
             filtered_intervals = self._filter_intervals_by_duration(free_intervals, duration_minutes)
             
-            logger.info(f"✅ [DB CALENDAR] Найдено свободных интервалов: {len(filtered_intervals)}")
+            logger.info(f"✅ [TRACE] Результат: {len(filtered_intervals)} слотов")
+            
+            # Добавляем событие трассировки с результатом
+            if tracer:
+                tracer.add_event("✅ Поиск завершен", f"Найдено слотов: {len(filtered_intervals)}")
+                if filtered_intervals:
+                    intervals_str = [f"{interval['start']}-{interval['end']}" for interval in filtered_intervals]
+                    tracer.add_event("🕐 Доступные слоты", f"Интервалы: {', '.join(intervals_str)}")
+            
             return filtered_intervals
             
         except Exception as e:
@@ -221,16 +229,16 @@ class DBCalendarService:
             Dict[int, Tuple[time, time]]: Словарь {master_id: (start_time, end_time)}
         """
         work_intervals = {}
+        working_masters = []
         
         for master_id in master_ids:
             work_time = self._get_master_work_time(target_date, master_id)
             if work_time:
                 start_time, end_time = work_time
                 work_intervals[master_id] = (start_time, end_time)
-                logger.info(f"⏰ [DB CALENDAR] Мастер {master_id} работает {target_date}: {start_time} - {end_time}")
-            else:
-                logger.info(f"📅 [DB CALENDAR] Мастер {master_id} не работает {target_date}")
+                working_masters.append(f"{master_id}({start_time}-{end_time})")
         
+        logger.info(f"👥 [TRACE] Рабочие мастера: {', '.join(working_masters) if working_masters else 'нет'}")
         return work_intervals
     
     def _get_appointments_for_masters_on_date(self, target_date: date, master_ids: List[int]) -> List[Dict[str, Any]]:
@@ -266,7 +274,7 @@ class DBCalendarService:
             appointment = self.appointment_repository._row_to_dict(row)
             appointments.append(appointment)
         
-        logger.info(f"📋 [DB CALENDAR] Найдено записей для мастеров {master_ids} на {target_date}: {len(appointments)}")
+        logger.info(f"📅 [TRACE] Записи: {len(appointments)}шт")
         return appointments
     
     def _calculate_free_intervals_timeline(self, work_intervals: Dict[int, Tuple[time, time]], appointments: List[Dict[str, Any]]) -> List[Dict[str, str]]:
@@ -353,7 +361,7 @@ class DBCalendarService:
                 'end': max_end_time.strftime('%H:%M')
             })
         
-        logger.info(f"🔗 [DB CALENDAR] Найдено свободных интервалов через таймлайн: {len(free_intervals)}")
+        logger.info(f"🔗 [TRACE] Свободные интервалы: {len(free_intervals)}шт")
         return free_intervals
     
     def _filter_intervals_by_duration(self, intervals: List[Dict[str, str]], duration_minutes: int) -> List[Dict[str, str]]:
@@ -381,7 +389,7 @@ class DBCalendarService:
             if duration >= duration_minutes:
                 filtered_intervals.append(interval)
         
-        logger.info(f"⏱️ [DB CALENDAR] Отфильтровано интервалов по длительности {duration_minutes} мин: {len(filtered_intervals)}")
+        logger.info(f"⏱️ [TRACE] Фильтр {duration_minutes}мин: {len(filtered_intervals)}шт")
         return filtered_intervals
     
     def _get_master_ids_by_names(self, master_names: List[str]) -> List[int]:
@@ -409,7 +417,7 @@ class DBCalendarService:
     def _get_master_work_time(self, target_date: date, master_id: int) -> Optional[Tuple[time, time]]:
         """
         Определяет рабочее время мастера на заданную дату.
-        Использует фиксированные рабочие часы, если таблицы графиков недоступны.
+        Использует фиксированные рабочие часы: 9:00-18:00, воскресенье - выходной.
         
         Args:
             target_date: Целевая дата
@@ -418,39 +426,6 @@ class DBCalendarService:
         Returns:
             Optional[Tuple[time, time]]: Кортеж (start_time, end_time) или None если мастер не работает
         """
-        # Сначала проверяем исключения из графика (если таблица существует)
-        try:
-            exception = self.schedule_exception_repository.find_by_master_and_date(master_id, target_date)
-            
-            if exception:
-                if exception['is_day_off']:
-                    logger.info(f"🚫 [DB CALENDAR] У мастера {master_id} выходной {target_date}")
-                    return None
-                else:
-                    # Используем переопределенное время
-                    start_time = exception['start_time']
-                    end_time = exception['end_time']
-                    logger.info(f"📝 [DB CALENDAR] Мастер {master_id} имеет исключение {target_date}: {start_time} - {end_time}")
-                    return (start_time, end_time)
-        except Exception as e:
-            logger.warning(f"⚠️ [DB CALENDAR] Не удалось проверить исключения для мастера {master_id}: {str(e)}")
-        
-        # Если исключений нет, используем стандартный график (если таблица существует)
-        try:
-            day_of_week = target_date.weekday()  # 0=Понедельник, 6=Воскресенье
-            schedule = self.work_schedule_repository.find_by_master_and_day(master_id, day_of_week)
-            
-            if schedule:
-                start_time = schedule['start_time']
-                end_time = schedule['end_time']
-                logger.info(f"📋 [DB CALENDAR] Стандартный график мастера {master_id} на {target_date}: {start_time} - {end_time}")
-                return (start_time, end_time)
-        except Exception as e:
-            logger.warning(f"⚠️ [DB CALENDAR] Не удалось получить график для мастера {master_id}: {str(e)}")
-        
-        # Если таблицы графиков недоступны, используем фиксированные рабочие часы
-        logger.info(f"📅 [DB CALENDAR] Используем фиксированные рабочие часы для мастера {master_id} на {target_date}")
-        
         # Проверяем, не выходной ли это
         day_of_week = target_date.weekday()
         if day_of_week == 6:  # Воскресенье
@@ -461,6 +436,6 @@ class DBCalendarService:
         start_time = time(9, 0)
         end_time = time(18, 0)
         
-        logger.info(f"⏰ [DB CALENDAR] Фиксированные часы мастера {master_id} на {target_date}: {start_time} - {end_time}")
+        logger.info(f"⏰ [DB CALENDAR] Рабочие часы мастера {master_id} на {target_date}: {start_time} - {end_time}")
         return (start_time, end_time)
     

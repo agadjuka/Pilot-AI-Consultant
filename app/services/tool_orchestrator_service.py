@@ -639,7 +639,7 @@ class ToolOrchestratorService:
                     logger.info(f"🔧 Параметры одиночного инструмента обогащены: {parameters}")
             
             # Выполняем инструмент через ToolService
-            result = await self._execute_function_async(tool_name, parameters, user_id)
+            result = await self._execute_function_async(tool_name, parameters, user_id, tracer)
             
             logger.info(f"✅ Одиночный инструмент выполнен: {tool_name}")
             return result
@@ -677,7 +677,7 @@ class ToolOrchestratorService:
         
         return "\n".join(formatted_history)
     
-    async def _execute_function_async(self, function_name: str, function_args: Dict, user_id: int = None) -> str:
+    async def _execute_function_async(self, function_name: str, function_args: Dict, user_id: int = None, tracer=None) -> str:
         """
         Асинхронно выполняет функцию из ToolService.
         
@@ -707,7 +707,8 @@ class ToolOrchestratorService:
         elif function_name == "get_available_slots":
             service_name = function_args.get("service_name", "")
             date = function_args.get("date", "")
-            return method(service_name, date)
+            result = method(service_name, date, tracer)
+            return result
         
         elif function_name == "create_appointment":
             master_name = function_args.get("master_name", "")
@@ -792,7 +793,8 @@ class ToolOrchestratorService:
         elif function_name == "get_available_slots":
             service_name = function_args.get("service_name", "")
             date = function_args.get("date", "")
-            return method(service_name, date)
+            result = method(service_name, date, tracer)
+            return result
         
         elif function_name == "create_appointment":
             master_name = function_args.get("master_name", "")

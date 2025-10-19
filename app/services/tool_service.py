@@ -115,7 +115,7 @@ class ToolService:
         master_names = [self._decode_string_field(master['name']) for master in masters]
         return f"Эту услугу выполняют мастера: {', '.join(master_names)}."
 
-    def get_available_slots(self, service_name: str, date: str) -> str:
+    def get_available_slots(self, service_name: str, date: str, tracer=None) -> str:
         """
         Получает свободные временные интервалы для услуги на указанную дату.
         Работает как оркестратор: находит услугу -> мастеров -> свободные слоты.
@@ -145,27 +145,43 @@ class ToolService:
                     return f"Услуга '{service_name}' не найдена в нашем прайс-листе. Возможно, вы имели в виду: {', '.join(similar_services)}?"
                 return f"Услуга '{service_name}' не найдена в нашем прайс-листе."
             
+            # Логируем найденную услугу
+            decoded_service_name = self._decode_string_field(service['name'])
+            
+            # Добавляем событие трассировки
+            if tracer:
+                tracer.add_event("💅 Услуга найдена", f"Название: {decoded_service_name}, Длительность: {service['duration_minutes']} мин")
+            
             # Шаг 2: Найти всех мастеров, которые выполняют эту услугу, и получить их ID
             masters = self.master_repository.get_masters_for_service(service['id'])
             if not masters:
-                decoded_service_name = self._decode_string_field(service['name'])
                 return f"К сожалению, на данный момент нет мастеров, выполняющих услугу '{decoded_service_name}'."
             
             # Получаем список ID мастеров
             master_ids = [master['id'] for master in masters]
-            logger.info(f"🔍 [TOOL SERVICE] Найдено мастеров для услуги '{service_name}': {len(master_ids)}")
+            master_names = [self._decode_string_field(master['name']) for master in masters]
+            
+            # Добавляем событие трассировки
+            if tracer:
+                tracer.add_event("👥 Мастера найдены", f"Количество: {len(master_names)}, Имена: {', '.join(master_names)}")
             
             # Шаг 3: Вызвать новый get_free_slots с master_ids
             duration_minutes = service['duration_minutes']
             free_intervals = self.db_calendar_service.get_free_slots(
                 parsed_date,
                 duration_minutes,
-                master_ids=master_ids
+                master_ids=master_ids,
+                tracer=tracer
             )
             
             # Шаг 4: Отформатировать результат в строку для LLM
             if free_intervals:
                 interval_strings = [f"{interval['start']}-{interval['end']}" for interval in free_intervals]
+                
+                # Добавляем событие трассировки
+                if tracer:
+                    tracer.add_event("🕐 Свободные слоты найдены", f"Количество: {len(free_intervals)}, Интервалы: {', '.join(interval_strings)}")
+                
                 return ", ".join(interval_strings)
             
             # Если на запрошенную дату мест нет, ищем ближайшие доступные слоты
