@@ -56,3 +56,5 @@ jobs:
             GOOGLE_APPLICATION_CREDENTIALS=${{ secrets.GOOGLE_APPLICATION_CREDENTIALS }}
             YANDEX_FOLDER_ID=${{ secrets.YANDEX_FOLDER_ID }}
             YANDEX_API_KEY_SECRET=${{ secrets.YANDEX_API_KEY_SECRET }}
+            YDB_ENDPOINT=${{ secrets.YDB_ENDPOINT }}
+            YDB_DATABASE=${{ secrets.YDB_DATABASE }}

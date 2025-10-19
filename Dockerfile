@@ -13,7 +13,8 @@ COPY poetry.lock pyproject.toml ./
 
 # Устанавливаем зависимости проекта, исключая dev-зависимости,
 # и создаем виртуальное окружение внутри /app/.venv
-RUN poetry config virtualenvs.in-project true && poetry install --only=main --no-interaction --no-ansi --no-root
+RUN poetry config virtualenvs.create false && \
+    poetry install --no-root --no-dev --no-interaction --no-ansi
 
 
 # --- Этап 2: Создание финальнytого образа ---
@@ -23,11 +24,9 @@ FROM python:3.10-slim
 # Устанавливаем рабочую директорию
 WORKDIR /app
 
-# Копируем созданное ранее виртуальное окружение из этапа сборки
-COPY --from=builder /app/.venv .venv
-
-# Активируем виртуальное окружение для последующих команд
-ENV PATH="/app/.venv/bin:$PATH"
+# Копируем установленные зависимости из этапа сборки
+COPY --from=builder /usr/local/lib/python3.10/site-packages /usr/local/lib/python3.10/site-packages
+COPY --from=builder /usr/local/bin /usr/local/bin
 
 # Копируем исходный код приложения
 COPY app ./app
