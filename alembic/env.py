@@ -1,5 +1,6 @@
 from logging.config import fileConfig
 from dotenv import load_dotenv
+import os
 
 # Загружаем переменные окружения из .env файла
 load_dotenv()
@@ -74,7 +75,17 @@ def run_migrations_online() -> None:
     connection_string = f"ydb://{endpoint_clean}/{database}"
     
     # Получаем учетные данные из Service Account ключа
-    credentials = ydb.iam.ServiceAccountCredentials.from_file('key.json')
+    service_account_key_file = os.getenv("YC_SERVICE_ACCOUNT_KEY_FILE", "key.json")
+    
+    # Проверяем существование файла ключа
+    # Сначала проверяем относительный путь, затем в корне проекта
+    key_file_path = service_account_key_file
+    if not os.path.exists(key_file_path):
+        # Пробуем найти файл в корне проекта (на уровень выше scripts/)
+        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        key_file_path = os.path.join(project_root, service_account_key_file)
+    
+    credentials = ydb.iam.ServiceAccountCredentials.from_file(key_file_path)
     
     connectable = create_engine(
         connection_string,
@@ -91,6 +102,11 @@ def run_migrations_online() -> None:
             context.run_migrations()
 
 
+# Alembic будет вызывать эти функции только когда это необходимо
+# Не выполняем миграции при загрузке модуля
+
+# Регистрируем функции миграций для Alembic
+# Alembic автоматически вызовет нужную функцию в зависимости от режима
 if context.is_offline_mode():
     run_migrations_offline()
 else:

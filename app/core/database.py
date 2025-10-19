@@ -31,7 +31,17 @@ def get_engine():
         connection_string = f"ydb://{endpoint_clean}/{database}"
         
         # Получаем учетные данные из Service Account ключа
-        credentials = ydb.iam.ServiceAccountCredentials.from_file('key.json')
+        service_account_key_file = os.getenv("YC_SERVICE_ACCOUNT_KEY_FILE", "key.json")
+        
+        # Проверяем существование файла ключа
+        # Сначала проверяем относительный путь, затем в корне проекта
+        key_file_path = service_account_key_file
+        if not os.path.exists(key_file_path):
+            # Пробуем найти файл в корне проекта
+            project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            key_file_path = os.path.join(project_root, service_account_key_file)
+        
+        credentials = ydb.iam.ServiceAccountCredentials.from_file(key_file_path)
         
         _engine = create_engine(
             connection_string,
