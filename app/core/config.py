@@ -12,8 +12,9 @@ class Settings(BaseSettings):
         "extra": "ignore"
     }
 
-    # Database Configuration
-    DATABASE_URL: str = "postgresql://user:password@localhost/dbname"  # По умолчанию PostgreSQL
+    # YDB Configuration
+    YDB_ENDPOINT: str = "grpcs://ydb.serverless.yandexcloud.net:2135"
+    YDB_DATABASE: str = "/ru-central1/b1gxxxxxxxxxxxxxxxx/etnxxxxxxxxxxxxxxxx"
 
     # Telegram Bot
     TELEGRAM_BOT_TOKEN: Optional[str] = None

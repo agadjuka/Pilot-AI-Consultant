@@ -16,11 +16,22 @@ _SessionLocal: Optional[sessionmaker] = None
 
 
 def get_engine():
-    """Получить или создать engine"""
+    """Получить или создать engine для YDB."""
     global _engine
     if _engine is None:
         from app.core.config import settings
-        _engine = create_engine(settings.DATABASE_URL)
+        import ydb
+        
+        # Формируем строку подключения
+        connection_string = f"ydb://{settings.YDB_ENDPOINT}{settings.YDB_DATABASE}"
+        
+        # Получаем учетные данные из окружения (yc CLI)
+        credentials = ydb.iam.MetadataUrlCredentials()
+        
+        _engine = create_engine(
+            connection_string,
+            connect_args={"credentials": credentials}
+        )
     return _engine
 
 

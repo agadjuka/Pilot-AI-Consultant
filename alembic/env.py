@@ -47,9 +47,10 @@ def run_migrations_offline() -> None:
     script output.
 
     """
-    # Получаем URL из переменных окружения
+    # Получаем URL из переменных окружения для YDB
     from app.core.config import settings
-    url = settings.DATABASE_URL
+    import os
+    url = f"ydb://{os.getenv('YDB_ENDPOINT')}{os.getenv('YDB_DATABASE')}"
     
     context.configure(
         url=url,
@@ -69,12 +70,21 @@ def run_migrations_online() -> None:
     and associate a connection with the context.
 
     """
-    # Используем настройки из переменных окружения
+    # Используем настройки из переменных окружения для YDB
     from app.core.config import settings
     from sqlalchemy import create_engine
+    import ydb
+    import os
+    
+    # Формируем строку подключения для YDB
+    connection_string = f"ydb://{os.getenv('YDB_ENDPOINT')}{os.getenv('YDB_DATABASE')}"
+    
+    # Получаем учетные данные из окружения (yc CLI)
+    credentials = ydb.iam.MetadataUrlCredentials()
     
     connectable = create_engine(
-        settings.DATABASE_URL,
+        connection_string,
+        connect_args={"credentials": credentials},
         poolclass=pool.NullPool,
     )
 
