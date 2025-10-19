@@ -3,7 +3,7 @@ from sqlalchemy.orm import relationship
 from app.core.database import Base
 from .service import Service
 
-# Ассоциативная таблица для связи многие-ко-многим
+# Ассоциативная таблица для связи многие-ко-многим (адаптирована для YDB)
 master_services_association = Table(
     'master_services', Base.metadata,
     Column('master_id', Integer, ForeignKey('masters.id'), primary_key=True),

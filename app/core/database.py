@@ -21,12 +21,17 @@ def get_engine():
     if _engine is None:
         from app.core.config import settings
         import ydb
+        import os
         
         # Формируем строку подключения
-        connection_string = f"ydb://{settings.YDB_ENDPOINT}{settings.YDB_DATABASE}"
+        endpoint = settings.YDB_ENDPOINT
+        database = settings.YDB_DATABASE
+        # Убираем grpcs:// из endpoint для правильного парсинга
+        endpoint_clean = endpoint.replace('grpcs://', '').replace('grpc://', '')
+        connection_string = f"ydb://{endpoint_clean}/{database}"
         
-        # Получаем учетные данные из окружения (yc CLI)
-        credentials = ydb.iam.MetadataUrlCredentials()
+        # Получаем учетные данные из Service Account ключа
+        credentials = ydb.iam.ServiceAccountCredentials.from_file('key.json')
         
         _engine = create_engine(
             connection_string,

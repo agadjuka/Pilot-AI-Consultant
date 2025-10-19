@@ -8,8 +8,8 @@ class DialogHistory(Base):
     
     __tablename__ = "dialog_history"
 
-    # Primary key для PostgreSQL
-    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    # Primary key для YDB
+    id = Column(Integer, primary_key=True)
     user_id = Column(BigInteger, nullable=False, index=True)
     role = Column(String(10), nullable=False)  # 'user' или 'model'
     message_text = Column(Text, nullable=False)

@@ -36,26 +36,21 @@ target_metadata = Base.metadata
 
 
 def run_migrations_offline() -> None:
-    """Run migrations in 'offline' mode.
-
-    This configures the context with just a URL
-    and not an Engine, though an Engine is acceptable
-    here as well.  By skipping the Engine creation
-    we don't even need a DBAPI to be available.
-
-    Calls to context.execute() here emit the given string to the
-    script output.
-
-    """
-    # Получаем URL из переменных окружения для YDB
+    """Run migrations in 'offline' mode."""
+    # Используем те же настройки, что и основное приложение
     from app.core.config import settings
     import os
-    url = f"ydb://{os.getenv('YDB_ENDPOINT')}{os.getenv('YDB_DATABASE')}"
+    
+    # Формируем URL так же, как в основном приложении
+    endpoint = settings.YDB_ENDPOINT
+    database = settings.YDB_DATABASE
+    # Убираем grpcs:// из endpoint для правильного парсинга
+    endpoint_clean = endpoint.replace('grpcs://', '').replace('grpc://', '')
+    url = f"ydb://{endpoint_clean}/{database}"
     
     context.configure(
         url=url,
         target_metadata=target_metadata,
-        literal_binds=True,
         dialect_opts={"paramstyle": "named"},
     )
 
@@ -64,23 +59,22 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
-    """Run migrations in 'online' mode.
-
-    In this scenario we need to create an Engine
-    and associate a connection with the context.
-
-    """
-    # Используем настройки из переменных окружения для YDB
+    """Run migrations in 'online' mode."""
+    # Используем те же настройки, что и основное приложение
     from app.core.config import settings
     from sqlalchemy import create_engine
     import ydb
     import os
     
-    # Формируем строку подключения для YDB
-    connection_string = f"ydb://{os.getenv('YDB_ENDPOINT')}{os.getenv('YDB_DATABASE')}"
+    # Формируем строку подключения так же, как в основном приложении
+    endpoint = settings.YDB_ENDPOINT
+    database = settings.YDB_DATABASE
+    # Убираем grpcs:// из endpoint для правильного парсинга
+    endpoint_clean = endpoint.replace('grpcs://', '').replace('grpc://', '')
+    connection_string = f"ydb://{endpoint_clean}/{database}"
     
-    # Получаем учетные данные из окружения (yc CLI)
-    credentials = ydb.iam.MetadataUrlCredentials()
+    # Получаем учетные данные из Service Account ключа
+    credentials = ydb.iam.ServiceAccountCredentials.from_file('key.json')
     
     connectable = create_engine(
         connection_string,
