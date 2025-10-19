@@ -92,6 +92,6 @@ class MasterRepository(BaseRepository):
         """Конвертирует строку результата в словарь"""
         return {
             'id': row[0],
-            'name': row[1],
-            'specialization': row[2]
+            'name': row[1].decode('utf-8') if isinstance(row[1], bytes) else str(row[1]),
+            'specialization': row[2].decode('utf-8') if isinstance(row[2], bytes) else str(row[2])
         }

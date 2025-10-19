@@ -90,6 +90,20 @@ class DialogService:
         # Менеджер контекста для отслеживания ключевых сущностей диалога
         # Формат: {user_telegram_id: {"service_name": str, "date": str, "master_name": str, ...}}
         self.dialog_contexts = {}
+
+    def _decode_string_field(self, field_value):
+        """
+        Декодирует байтовую строку в обычную строку, если необходимо.
+        
+        Args:
+            field_value: Значение поля из базы данных
+            
+        Returns:
+            Декодированная строка или исходное значение
+        """
+        if isinstance(field_value, bytes):
+            return field_value.decode('utf-8')
+        return field_value
     
     def _get_filtered_tools(self, available_tools: List[str]):
         """
@@ -484,7 +498,9 @@ class DialogService:
         try:
             # 0. Загружаем (или создаем) клиента
             client = self.client_repository.get_or_create_by_telegram_id(user_id)
-            tracer.add_event("👤 Клиент загружен", f"ID клиента: {client['id']}, Имя: {client['first_name']}, Телефон: {client['phone_number']}")
+            decoded_first_name = self._decode_string_field(client['first_name']) if client['first_name'] else None
+            decoded_phone = self._decode_string_field(client['phone_number']) if client['phone_number'] else None
+            tracer.add_event("👤 Клиент загружен", f"ID клиента: {client['id']}, Имя: {decoded_first_name}, Телефон: {decoded_phone}")
             
             # 1. Получаем историю диалога (окно контекста - последние N сообщений)
             history_records = self.repository.get_recent_messages(user_id, limit=self.CONTEXT_WINDOW_SIZE)
@@ -494,9 +510,10 @@ class DialogService:
             dialog_history: List[Dict] = []
             for record in history_records:
                 role = "user" if record['role'] == "user" else "model"
+                decoded_message_text = self._decode_string_field(record['message_text'])
                 dialog_history.append({
                     "role": role,
-                    "parts": [{"text": record['message_text']}]
+                    "parts": [{"text": decoded_message_text}]
                 })
             
             # 2. Сохраняем новое сообщение пользователя в БД

@@ -42,6 +42,20 @@ class AppointmentService:
         self.service_repository = service_repository
         self.db_calendar_service = db_calendar_service
 
+    def _decode_string_field(self, field_value):
+        """
+        Декодирует байтовую строку в обычную строку, если необходимо.
+        
+        Args:
+            field_value: Значение поля из базы данных
+            
+        Returns:
+            Декодированная строка или исходное значение
+        """
+        if isinstance(field_value, bytes):
+            return field_value.decode('utf-8')
+        return field_value
+
     def create_appointment(self, master_name: str, service_name: str, date: str, time: str, client_name: str, user_telegram_id: int) -> str:
         """
         Создает запись в календаре для мастера и услуги.
@@ -63,10 +77,14 @@ class AppointmentService:
             # Проверка наличия контактных данных клиента
             client = self.client_repository.get_or_create_by_telegram_id(user_telegram_id)
             if not client['first_name'] or not client['phone_number']:
-                logger.warning(f"⚠️ [CREATE APPOINTMENT] Отсутствуют контактные данные клиента: user_id={user_telegram_id}, first_name='{client['first_name']}', phone='{client['phone_number']}'")
+                decoded_first_name = self._decode_string_field(client['first_name']) if client['first_name'] else None
+                decoded_phone = self._decode_string_field(client['phone_number']) if client['phone_number'] else None
+                logger.warning(f"⚠️ [CREATE APPOINTMENT] Отсутствуют контактные данные клиента: user_id={user_telegram_id}, first_name='{decoded_first_name}', phone='{decoded_phone}'")
                 return "Требуются данные клиента. Перейди в стадию 'contact_info_request'."
             
-            logger.info(f"✅ [CREATE APPOINTMENT] Контактные данные клиента найдены: user_id={user_telegram_id}, name='{client['first_name']}', phone='{client['phone_number']}'")
+            decoded_first_name = self._decode_string_field(client['first_name'])
+            decoded_phone = self._decode_string_field(client['phone_number'])
+            logger.info(f"✅ [CREATE APPOINTMENT] Контактные данные клиента найдены: user_id={user_telegram_id}, name='{decoded_first_name}', phone='{decoded_phone}'")
             
             # Находим услугу в БД для получения длительности с простым поиском
             all_services = self.service_repository.get_all()
@@ -80,21 +98,25 @@ class AppointmentService:
                     return f"Услуга '{service_name}' не найдена в нашем прайс-листе. Возможно, вы имели в виду: {', '.join(similar_services)}?"
                 return f"Услуга '{service_name}' не найдена в нашем прайс-листе."
             
-            logger.info(f"✅ [CREATE APPOINTMENT] Услуга найдена: id={service['id']}, name='{service['name']}', duration={service['duration_minutes']} мин, price={service['price']} руб")
+            decoded_service_name = self._decode_string_field(service['name'])
+            logger.info(f"✅ [CREATE APPOINTMENT] Услуга найдена: id={service['id']}, name='{decoded_service_name}', duration={service['duration_minutes']} мин, price={service['price']} руб")
             
             # Находим мастера в БД
             all_masters = self.master_repository.get_all()
             
             # Если мастер не указан, автоматически выбираем первого доступного мастера для этой услуги
             if not master_name or master_name.strip() == "":
-                logger.info(f"🔍 [CREATE APPOINTMENT] Мастер не указан, ищем доступного мастера для услуги '{service['name']}'")
+                decoded_service_name = self._decode_string_field(service['name'])
+                logger.info(f"🔍 [CREATE APPOINTMENT] Мастер не указан, ищем доступного мастера для услуги '{decoded_service_name}'")
                 available_masters = self.master_repository.get_masters_for_service(service['id'])
                 if available_masters:
                     master = available_masters[0]  # Берем первого доступного мастера
-                    logger.info(f"✅ [CREATE APPOINTMENT] Автоматически выбран мастер: id={master['id']}, name='{master['name']}'")
+                    decoded_master_name = self._decode_string_field(master['name'])
+                    logger.info(f"✅ [CREATE APPOINTMENT] Автоматически выбран мастер: id={master['id']}, name='{decoded_master_name}'")
                 else:
-                    logger.warning(f"❌ [CREATE APPOINTMENT] Нет доступных мастеров для услуги '{service['name']}'")
-                    return f"К сожалению, сейчас нет доступных мастеров для услуги '{service['name']}'."
+                    decoded_service_name = self._decode_string_field(service['name'])
+                    logger.warning(f"❌ [CREATE APPOINTMENT] Нет доступных мастеров для услуги '{decoded_service_name}'")
+                    return f"К сожалению, сейчас нет доступных мастеров для услуги '{decoded_service_name}'."
             else:
                 master = next((m for m in all_masters if master_name.lower() in m['name'].lower()), None)
                 
@@ -106,7 +128,8 @@ class AppointmentService:
                         return f"Мастер '{master_name}' не найден. Возможно, вы имели в виду: {', '.join(similar_masters)}?"
                     return f"Мастер '{master_name}' не найден."
                 
-                logger.info(f"✅ [CREATE APPOINTMENT] Мастер найден: id={master['id']}, name='{master['name']}'")
+                decoded_master_name = self._decode_string_field(master['name'])
+                logger.info(f"✅ [CREATE APPOINTMENT] Мастер найден: id={master['id']}, name='{decoded_master_name}'")
             
             # Получаем длительность услуги
             duration_minutes = service['duration_minutes']
@@ -144,7 +167,9 @@ class AppointmentService:
             
             # Создаем запись через DBCalendarService
             # Формируем описание события для мастера
-            description = f"Клиент: {client['first_name'] or client_name} | Телефон: {client['phone_number'] or '-'} | Telegram ID: {user_telegram_id}"
+            decoded_first_name = self._decode_string_field(client['first_name']) if client['first_name'] else None
+            decoded_phone = self._decode_string_field(client['phone_number']) if client['phone_number'] else None
+            description = f"Клиент: {decoded_first_name or client_name} | Телефон: {decoded_phone or '-'} | Telegram ID: {user_telegram_id}"
 
             try:
                 appointment_id = self.db_calendar_service.create_event(
@@ -160,7 +185,8 @@ class AppointmentService:
                 logger.error(f"❌ [CREATE APPOINTMENT] Ошибка создания записи через DBCalendarService: {calendar_error}")
                 return f"Ошибка при создании записи: {str(calendar_error)}"
             
-            success_message = f"Отлично! Я записала {client['first_name'] or client_name} на {service_name} к мастеру {master_name} на {date} в {time}."
+            decoded_first_name = self._decode_string_field(client['first_name']) if client['first_name'] else None
+            success_message = f"Отлично! Я записала {decoded_first_name or client_name} на {service_name} к мастеру {master_name} на {date} в {time}."
             logger.info(f"🎉 [CREATE APPOINTMENT] Успешно завершено: {success_message}")
             return success_message
                 
@@ -205,8 +231,8 @@ class AppointmentService:
                 time_str = start_time.strftime("%H:%M")
                 
                 # Получаем информацию о мастере и услуге
-                master_name = master['name']
-                service_name = service['name']
+                master_name = self._decode_string_field(master['name'])
+                service_name = self._decode_string_field(service['name'])
                 
                 details = f"{date_str} в {time_str}: {service_name} к мастеру {master_name}"
                 
@@ -240,17 +266,25 @@ class AppointmentService:
         try:
             # Проверяем права доступа
             appointment = self.appointment_repository.get_by_id(appointment_id)
-            if not appointment or appointment.user_telegram_id != user_telegram_id:
-                logger.warning(f"❌ [CANCEL APPOINTMENT] Нет прав доступа: appointment_id={appointment_id}, user_id={user_telegram_id}, appointment_user_id={appointment.user_telegram_id if appointment else 'None'}")
+            if not appointment or appointment['user_telegram_id'] != user_telegram_id:
+                logger.warning(f"❌ [CANCEL APPOINTMENT] Нет прав доступа: appointment_id={appointment_id}, user_id={user_telegram_id}, appointment_user_id={appointment['user_telegram_id'] if appointment else 'None'}")
                 return "Запись не найдена или у вас нет прав для её отмены."
             
             logger.info(f"✅ [CANCEL APPOINTMENT] Права доступа подтверждены: appointment_id={appointment_id}, user_id={user_telegram_id}")
             
             # Получаем информацию о записи
-            master_name = appointment.master.name
-            service_name = appointment.service.name
-            date_str = appointment.start_time.strftime("%d %B")
-            time_str = appointment.start_time.strftime("%H:%M")
+            master = self.master_repository.get_by_id(appointment['master_id'])
+            service = self.service_repository.get_by_id(appointment['service_id'])
+            
+            if not master or not service:
+                logger.warning(f"⚠️ [CANCEL APPOINTMENT] Не найдены данные мастера или услуги для записи {appointment_id}")
+                return "Ошибка: не найдены данные о записи."
+            
+            master_name = self._decode_string_field(master['name'])
+            service_name = self._decode_string_field(service['name'])
+            start_time = datetime.fromisoformat(appointment['start_time'].replace('Z', '+00:00'))
+            date_str = start_time.strftime("%d %B")
+            time_str = start_time.strftime("%H:%M")
             
             logger.info(f"📋 [CANCEL APPOINTMENT] Информация о записи: master='{master_name}', service='{service_name}', date='{date_str}', time='{time_str}'")
             
@@ -290,22 +324,30 @@ class AppointmentService:
         try:
             # Проверяем права доступа
             appointment = self.appointment_repository.get_by_id(appointment_id)
-            if not appointment or appointment.user_telegram_id != user_telegram_id:
-                logger.warning(f"❌ [RESCHEDULE APPOINTMENT] Нет прав доступа: appointment_id={appointment_id}, user_id={user_telegram_id}, appointment_user_id={appointment.user_telegram_id if appointment else 'None'}")
+            if not appointment or appointment['user_telegram_id'] != user_telegram_id:
+                logger.warning(f"❌ [RESCHEDULE APPOINTMENT] Нет прав доступа: appointment_id={appointment_id}, user_id={user_telegram_id}, appointment_user_id={appointment['user_telegram_id'] if appointment else 'None'}")
                 return "Запись не найдена или у вас нет прав для её переноса."
             
             logger.info(f"✅ [RESCHEDULE APPOINTMENT] Права доступа подтверждены: appointment_id={appointment_id}, user_id={user_telegram_id}")
             
             # Получаем информацию о записи
-            master_name = appointment.master.name
-            service_name = appointment.service.name
-            old_date_str = appointment.start_time.strftime("%d %B")
-            old_time_str = appointment.start_time.strftime("%H:%M")
+            master = self.master_repository.get_by_id(appointment['master_id'])
+            service = self.service_repository.get_by_id(appointment['service_id'])
+            
+            if not master or not service:
+                logger.warning(f"⚠️ [RESCHEDULE APPOINTMENT] Не найдены данные мастера или услуги для записи {appointment_id}")
+                return "Ошибка: не найдены данные о записи."
+            
+            master_name = self._decode_string_field(master['name'])
+            service_name = self._decode_string_field(service['name'])
+            start_time = datetime.fromisoformat(appointment['start_time'].replace('Z', '+00:00'))
+            old_date_str = start_time.strftime("%d %B")
+            old_time_str = start_time.strftime("%H:%M")
             
             logger.info(f"📋 [RESCHEDULE APPOINTMENT] Информация о записи: master='{master_name}', service='{service_name}', old_date='{old_date_str}', old_time='{old_time_str}'")
             
             # Получаем длительность услуги
-            duration_minutes = appointment.service.duration_minutes
+            duration_minutes = service['duration_minutes']
             logger.info(f"⏱️ [RESCHEDULE APPOINTMENT] Длительность услуги: {duration_minutes} мин")
             
             # Преобразуем новую дату и время в объекты datetime
@@ -377,7 +419,8 @@ class AppointmentService:
         
         # Сначала пробуем точное совпадение
         for service in all_services:
-            if service.name.lower() == service_name_lower:
+            decoded_service_name = self._decode_string_field(service['name'])
+            if decoded_service_name.lower() == service_name_lower:
                 return service
         
         # Затем пробуем нечеткое совпадение
@@ -385,8 +428,9 @@ class AppointmentService:
         best_ratio = 0.0
         
         for service in all_services:
+            decoded_service_name = self._decode_string_field(service['name'])
             # Проверяем совпадение по словам
-            service_words = service.name.lower().split()
+            service_words = decoded_service_name.lower().split()
             search_words = service_name_lower.split()
             
             # Если хотя бы одно слово совпадает точно
@@ -396,7 +440,7 @@ class AppointmentService:
                         return service
             
             # Проверяем общее сходство строк
-            ratio = SequenceMatcher(None, service_name_lower, service.name.lower()).ratio()
+            ratio = SequenceMatcher(None, service_name_lower, decoded_service_name.lower()).ratio()
             if ratio > best_ratio and ratio > 0.6:  # Порог схожести 60%
                 best_ratio = ratio
                 best_match = service
@@ -421,12 +465,13 @@ class AppointmentService:
         keywords = service_name_lower.split()
         
         for service in all_services:
-            service_lower = service.name.lower()
+            decoded_service_name = self._decode_string_field(service['name'])
+            service_lower = decoded_service_name.lower()
             
             # Если хотя бы одно ключевое слово есть в названии услуги
             for keyword in keywords:
                 if keyword in service_lower and len(keyword) > 2:  # Игнорируем короткие слова
-                    similar_services.append(service.name)
+                    similar_services.append(decoded_service_name)
                     break
         
         # Убираем дубликаты и ограничиваем количество
@@ -447,7 +492,8 @@ class AppointmentService:
         
         # Сначала пробуем точное совпадение
         for master in all_masters:
-            if master.name.lower() == master_name_lower:
+            decoded_master_name = self._decode_string_field(master['name'])
+            if decoded_master_name.lower() == master_name_lower:
                 return master
         
         # Затем пробуем нечеткое совпадение
@@ -455,8 +501,9 @@ class AppointmentService:
         best_ratio = 0.0
         
         for master in all_masters:
+            decoded_master_name = self._decode_string_field(master['name'])
             # Проверяем совпадение по словам
-            master_words = master.name.lower().split()
+            master_words = decoded_master_name.lower().split()
             search_words = master_name_lower.split()
             
             # Если хотя бы одно слово совпадает точно
@@ -466,7 +513,7 @@ class AppointmentService:
                         return master
             
             # Проверяем общее сходство строк
-            ratio = SequenceMatcher(None, master_name_lower, master.name.lower()).ratio()
+            ratio = SequenceMatcher(None, master_name_lower, decoded_master_name.lower()).ratio()
             if ratio > best_ratio and ratio > 0.6:  # Порог схожести 60%
                 best_ratio = ratio
                 best_match = master
@@ -491,12 +538,13 @@ class AppointmentService:
         keywords = master_name_lower.split()
         
         for master in all_masters:
-            master_lower = master.name.lower()
+            decoded_master_name = self._decode_string_field(master['name'])
+            master_lower = decoded_master_name.lower()
             
             # Если хотя бы одно ключевое слово есть в имени мастера
             for keyword in keywords:
                 if keyword in master_lower and len(keyword) > 2:  # Игнорируем короткие слова
-                    similar_masters.append(master.name)
+                    similar_masters.append(decoded_master_name)
                     break
         
         # Убираем дубликаты и ограничиваем количество

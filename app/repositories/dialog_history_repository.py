@@ -111,10 +111,11 @@ class DialogHistoryRepository(BaseRepository):
 
     def _row_to_dict(self, row: tuple) -> Dict[str, Any]:
         """Конвертирует строку результата в словарь"""
+        # Реальный порядок полей в YDB: [id, message_text, role, timestamp, user_id]
         return {
             'id': row[0],
-            'user_id': row[1],
-            'role': row[2],
-            'message_text': row[3],
-            'timestamp': row[4]
+            'user_id': row[4],
+            'role': row[2].decode('utf-8') if isinstance(row[2], bytes) else str(row[2]),
+            'message_text': row[1].decode('utf-8') if isinstance(row[1], bytes) else str(row[1]),
+            'timestamp': row[3]
         }

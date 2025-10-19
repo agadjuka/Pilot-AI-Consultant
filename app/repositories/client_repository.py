@@ -74,9 +74,10 @@ class ClientRepository(BaseRepository):
     
     def _row_to_dict(self, row: tuple) -> Dict[str, Any]:
         """Конвертирует строку результата в словарь"""
+        # Реальный порядок полей в YDB: [first_name, id, phone_number, telegram_id]
         return {
-            'id': row[0],
-            'telegram_id': row[1],
-            'first_name': row[2],
-            'phone_number': row[3]
+            'id': row[1],
+            'telegram_id': row[3],
+            'first_name': row[0].decode('utf-8') if isinstance(row[0], bytes) else str(row[0]),
+            'phone_number': row[2].decode('utf-8') if isinstance(row[2], bytes) else str(row[2])
         }

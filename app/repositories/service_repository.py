@@ -48,10 +48,11 @@ class ServiceRepository(BaseRepository):
     
     def _row_to_dict(self, row: tuple) -> Dict[str, Any]:
         """Конвертирует строку результата в словарь"""
+        # Реальный порядок полей в YDB: [description, duration_minutes, id, name, price]
         return {
-            'id': row[0],
-            'name': row[1],
-            'description': row[2],
-            'price': row[3],
-            'duration_minutes': row[4]
+            'id': row[2],
+            'name': row[3].decode('utf-8') if isinstance(row[3], bytes) else str(row[3]),
+            'description': row[0].decode('utf-8') if isinstance(row[0], bytes) else str(row[0]),
+            'price': row[4],
+            'duration_minutes': row[1]
         }

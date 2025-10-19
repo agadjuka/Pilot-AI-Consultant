@@ -16,6 +16,20 @@ class PromptBuilderService:
     Реализует финальную трехэтапную архитектуру обработки диалогов.
     """
     
+    def _decode_string_field(self, field_value):
+        """
+        Декодирует байтовую строку в обычную строку, если необходимо.
+        
+        Args:
+            field_value: Значение поля из базы данных
+            
+        Returns:
+            Декодированная строка или исходное значение
+        """
+        if isinstance(field_value, bytes):
+            return field_value.decode('utf-8')
+        return field_value
+
     def __init__(self):
         """
         Инициализирует сервис построения промптов.
@@ -155,7 +169,7 @@ class PromptBuilderService:
         formatted_history = []
         for msg in history:
             role_tag = "<|user|>" if msg["role"] == "user" else "<|assistant|>"
-            content = msg["parts"][0]["text"]
+            content = self._decode_string_field(msg["parts"][0]["text"])
             formatted_history.append(f"{role_tag}\n{content}")
         
         return "\n".join(formatted_history)

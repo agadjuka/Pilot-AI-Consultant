@@ -101,6 +101,20 @@ class LLMService:
         )
         return credentials
 
+    def _decode_string_field(self, field_value):
+        """
+        Декодирует байтовую строку в обычную строку, если необходимо.
+        
+        Args:
+            field_value: Значение поля из базы данных
+            
+        Returns:
+            Декодированная строка или исходное значение
+        """
+        if isinstance(field_value, bytes):
+            return field_value.decode('utf-8')
+        return field_value
+
     def create_chat(self, history: List[Dict], tools=None):
         """
         Создает чат с историей для последующего использования.
@@ -463,11 +477,11 @@ class LLMService:
                 if "parts" in message:
                     for part in message["parts"]:
                         if isinstance(part, dict) and "text" in part:
-                            text_content += part["text"]
+                            text_content += self._decode_string_field(part["text"])
                         elif hasattr(part, 'text'):
-                            text_content += part.text
+                            text_content += self._decode_string_field(part.text)
                 else:
-                    text_content = message.get("text", "")
+                    text_content = self._decode_string_field(message.get("text", ""))
                 
                 role = "assistant" if message.get("role") == "model" else "user"
                 enhanced_history.append({

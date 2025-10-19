@@ -41,6 +41,20 @@ class ToolService:
         self.db_calendar_service = db_calendar_service
         self.client_repository = client_repository
 
+    def _decode_string_field(self, field_value):
+        """
+        Декодирует байтовую строку в обычную строку, если необходимо.
+        
+        Args:
+            field_value: Значение поля из базы данных
+            
+        Returns:
+            Декодированная строка или исходное значение
+        """
+        if isinstance(field_value, bytes):
+            return field_value.decode('utf-8')
+        return field_value
+
     def get_all_services(self) -> str:
         """
         Получает список всех услуг из базы данных.
@@ -55,13 +69,17 @@ class ToolService:
 
         result_lines = []
         for service in services:
+            # Декодируем строковые поля из базы данных
+            service_name = self._decode_string_field(service['name'])
+            service_description = self._decode_string_field(service['description']) if service['description'] else None
+            
             line = (
-                f"Услуга: {service['name']}, "
+                f"Услуга: {service_name}, "
                 f"Цена: {service['price']} руб., "
                 f"Длительность: {service['duration_minutes']} мин."
             )
-            if service['description']:
-                line += f" ({service['description']})"
+            if service_description:
+                line += f" ({service_description})"
             result_lines.append(line)
 
         return "\n".join(result_lines)
@@ -91,9 +109,10 @@ class ToolService:
         masters = self.master_repository.get_masters_for_service(service['id'])
 
         if not masters:
-            return f"К сожалению, на данный момент нет мастеров, выполняющих услугу '{service['name']}'."
+            decoded_service_name = self._decode_string_field(service['name'])
+            return f"К сожалению, на данный момент нет мастеров, выполняющих услугу '{decoded_service_name}'."
 
-        master_names = [master['name'] for master in masters]
+        master_names = [self._decode_string_field(master['name']) for master in masters]
         return f"Эту услугу выполняют мастера: {', '.join(master_names)}."
 
     def get_available_slots(self, service_name: str, date: str) -> str:
@@ -131,7 +150,7 @@ class ToolService:
 
             # Получаем мастеров, выполняющих услугу
             masters = self.master_repository.get_masters_for_service(service['id'])
-            master_names = [m['name'] for m in masters] if masters else []
+            master_names = [self._decode_string_field(m['name']) for m in masters] if masters else []
             
             # Получаем свободные интервалы из DBCalendarService для запрошенной даты
             free_intervals = self.db_calendar_service.get_free_slots(
@@ -426,8 +445,9 @@ class ToolService:
             
             # Если имя уже есть, не перезаписываем
             if client['first_name']:
-                logger.info(f"ℹ️ Имя клиента {user_telegram_id} уже сохранено: '{client['first_name']}'")
-                return f"Имя уже сохранено: {client['first_name']}"
+                decoded_first_name = self._decode_string_field(client['first_name'])
+                logger.info(f"ℹ️ Имя клиента {user_telegram_id} уже сохранено: '{decoded_first_name}'")
+                return f"Имя уже сохранено: {decoded_first_name}"
             
             # Обновляем имя
             self.client_repository.update(client['id'], {'first_name': name})
@@ -458,8 +478,9 @@ class ToolService:
             
             # Если телефон уже есть, не перезаписываем
             if client['phone_number']:
-                logger.info(f"ℹ️ Телефон клиента {user_telegram_id} уже сохранен: '{client['phone_number']}'")
-                return f"Телефон уже сохранен: {client['phone_number']}"
+                decoded_phone = self._decode_string_field(client['phone_number'])
+                logger.info(f"ℹ️ Телефон клиента {user_telegram_id} уже сохранен: '{decoded_phone}'")
+                return f"Телефон уже сохранен: {decoded_phone}"
             
             # Обновляем телефон
             self.client_repository.update(client['id'], {'phone_number': normalized_phone})
@@ -514,7 +535,8 @@ class ToolService:
         
         # Сначала пробуем точное совпадение
         for service in all_services:
-            if service['name'].lower() == service_name_lower:
+            decoded_service_name = self._decode_string_field(service['name'])
+            if decoded_service_name.lower() == service_name_lower:
                 return service
         
         # Затем пробуем нечеткое совпадение
@@ -522,8 +544,9 @@ class ToolService:
         best_ratio = 0.0
         
         for service in all_services:
+            decoded_service_name = self._decode_string_field(service['name'])
             # Проверяем совпадение по словам
-            service_words = service['name'].lower().split()
+            service_words = decoded_service_name.lower().split()
             search_words = service_name_lower.split()
             
             # Если хотя бы одно слово совпадает точно
@@ -533,7 +556,7 @@ class ToolService:
                         return service
             
             # Проверяем общее сходство строк
-            ratio = SequenceMatcher(None, service_name_lower, service['name'].lower()).ratio()
+            ratio = SequenceMatcher(None, service_name_lower, decoded_service_name.lower()).ratio()
             if ratio > best_ratio and ratio > 0.6:  # Порог схожести 60%
                 best_ratio = ratio
                 best_match = service
@@ -558,12 +581,13 @@ class ToolService:
         keywords = service_name_lower.split()
         
         for service in all_services:
-            service_lower = service['name'].lower()
+            decoded_service_name = self._decode_string_field(service['name'])
+            service_lower = decoded_service_name.lower()
             
             # Если хотя бы одно ключевое слово есть в названии услуги
             for keyword in keywords:
                 if keyword in service_lower and len(keyword) > 2:  # Игнорируем короткие слова
-                    similar_services.append(service['name'])
+                    similar_services.append(decoded_service_name)
                     break
         
         # Убираем дубликаты и ограничиваем количество
