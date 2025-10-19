@@ -118,13 +118,13 @@ class ToolService:
     def get_available_slots(self, service_name: str, date: str) -> str:
         """
         Получает свободные временные интервалы для услуги на указанную дату.
+        Работает как оркестратор: находит услугу -> мастеров -> свободные слоты.
         Если на запрошенную дату мест нет, ищет ближайшие доступные слоты в течение 7 дней.
-        Возвращает сырые данные для анализа LLM.
-
+        
         Args:
             service_name: Название услуги
             date: Дата в любом поддерживаемом формате (например, "2025-10-15", "15.10.2025")
-
+        
         Returns:
             Компактная строка с интервалами свободного времени или сообщение об ошибке
         """
@@ -134,7 +134,7 @@ class ToolService:
             if parsed_date is None:
                 return f"Неверный формат даты: {date}. Ожидается формат YYYY-MM-DD."
             
-            # Находим услугу по имени с нечетким поиском
+            # Шаг 1: Найти услугу по имени с нечетким поиском
             all_services = self.service_repository.get_all()
             service = self._find_service_by_fuzzy_match(service_name, all_services)
             
@@ -145,21 +145,25 @@ class ToolService:
                     return f"Услуга '{service_name}' не найдена в нашем прайс-листе. Возможно, вы имели в виду: {', '.join(similar_services)}?"
                 return f"Услуга '{service_name}' не найдена в нашем прайс-листе."
             
-            # Получаем длительность услуги
-            duration_minutes = service['duration_minutes']
-
-            # Получаем мастеров, выполняющих услугу
+            # Шаг 2: Найти всех мастеров, которые выполняют эту услугу, и получить их ID
             masters = self.master_repository.get_masters_for_service(service['id'])
-            master_names = [self._decode_string_field(m['name']) for m in masters] if masters else []
+            if not masters:
+                decoded_service_name = self._decode_string_field(service['name'])
+                return f"К сожалению, на данный момент нет мастеров, выполняющих услугу '{decoded_service_name}'."
             
-            # Получаем свободные интервалы из DBCalendarService для запрошенной даты
+            # Получаем список ID мастеров
+            master_ids = [master['id'] for master in masters]
+            logger.info(f"🔍 [TOOL SERVICE] Найдено мастеров для услуги '{service_name}': {len(master_ids)}")
+            
+            # Шаг 3: Вызвать новый get_free_slots с master_ids
+            duration_minutes = service['duration_minutes']
             free_intervals = self.db_calendar_service.get_free_slots(
                 parsed_date,
                 duration_minutes,
-                master_names=master_names
+                master_ids=master_ids
             )
             
-            # Если на запрошенную дату есть свободные слоты, возвращаем их
+            # Шаг 4: Отформатировать результат в строку для LLM
             if free_intervals:
                 interval_strings = [f"{interval['start']}-{interval['end']}" for interval in free_intervals]
                 return ", ".join(interval_strings)
@@ -175,7 +179,7 @@ class ToolService:
                 next_free_intervals = self.db_calendar_service.get_free_slots(
                     next_date_str,
                     duration_minutes,
-                    master_names=master_names
+                    master_ids=master_ids
                 )
                 
                 # Если нашли свободные слоты, возвращаем информацию о ближайшем окне

@@ -78,7 +78,7 @@ class AppointmentRepository(BaseRepository):
             query = f"""
                 SELECT * FROM {self.table_name} 
                 WHERE master_id = {master_id}
-                AND DATE(start_time) = '{date_str}'
+                AND CAST(start_time AS Date) = CAST('{date_str}' AS Date)
                 ORDER BY start_time
             """
         else:
@@ -126,11 +126,46 @@ class AppointmentRepository(BaseRepository):
     
     def _row_to_dict(self, row: tuple) -> Dict[str, Any]:
         """Конвертирует строку результата в словарь"""
+        from datetime import datetime
+        
+        # YDB возвращает поля в алфавитном порядке: end_time, id, master_id, service_id, start_time, user_telegram_id
+        # Конвертируем время из микросекунд в datetime
+        start_time = row[4]  # start_time
+        end_time = row[0]    # end_time
+        
+        # Если это числа (микросекунды), конвертируем в datetime
+        if isinstance(start_time, (int, float)):
+            try:
+                start_time = datetime.fromtimestamp(start_time / 1000000)
+            except (ValueError, OSError):
+                # Если не удается конвертировать, оставляем как есть
+                pass
+        
+        if isinstance(end_time, (int, float)):
+            try:
+                end_time = datetime.fromtimestamp(end_time / 1000000)
+            except (ValueError, OSError):
+                # Если не удается конвертировать, оставляем как есть
+                pass
+        
+        # Если это строки, пытаемся парсить
+        if isinstance(start_time, str):
+            try:
+                start_time = datetime.fromisoformat(start_time.replace('Z', '+00:00'))
+            except ValueError:
+                pass
+                
+        if isinstance(end_time, str):
+            try:
+                end_time = datetime.fromisoformat(end_time.replace('Z', '+00:00'))
+            except ValueError:
+                pass
+        
         return {
-            'id': row[0],
-            'user_telegram_id': row[1],
-            'master_id': row[2],
-            'service_id': row[3],
-            'start_time': row[4],
-            'end_time': row[5]
+            'id': int(row[1]) if isinstance(row[1], str) else row[1],  # id
+            'user_telegram_id': int(row[5]) if isinstance(row[5], str) else row[5],  # user_telegram_id
+            'master_id': int(row[2]) if isinstance(row[2], str) else row[2],  # master_id
+            'service_id': int(row[3]) if isinstance(row[3], str) else row[3],  # service_id
+            'start_time': start_time,
+            'end_time': end_time
         }
