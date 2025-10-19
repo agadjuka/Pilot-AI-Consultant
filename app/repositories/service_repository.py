@@ -3,8 +3,12 @@
 """
 
 from typing import List, Optional, Dict, Any
+from cachetools import TTLCache
 from .base import BaseRepository
 from app.core.database import execute_query
+
+# Кэш для списка услуг, живет 10 минут (600 секунд)
+services_cache = TTLCache(maxsize=1, ttl=600)
 
 
 class ServiceRepository(BaseRepository):
@@ -12,6 +16,29 @@ class ServiceRepository(BaseRepository):
     
     def __init__(self):
         super().__init__("services")
+    
+    def get_all(self, skip: int = 0, limit: int = 100) -> List[Dict[str, Any]]:
+        """Получает все услуги с кэшированием"""
+        # Проверяем кэш только для полного списка (skip=0, limit=100)
+        if skip == 0 and limit == 100:
+            if 'all_services' in services_cache:
+                # logger.info("Возвращаю список услуг из кэша!")  # Можешь добавить лог для отладки
+                return services_cache['all_services']
+        
+        # Если данных нет в кэше или запрашивается не полный список, идем в БД
+        query = f"SELECT * FROM {self.table_name} ORDER BY id LIMIT {limit} OFFSET {skip}"
+        rows = execute_query(query)
+        services = [self._row_to_dict(row) for row in rows]
+        
+        # Сохраняем в кэш только полный список
+        if skip == 0 and limit == 100:
+            services_cache['all_services'] = services
+        
+        return services
+    
+    def clear_cache(self) -> None:
+        """Очищает кэш услуг"""
+        services_cache.clear()
     
     def get_by_name(self, name: str) -> Optional[Dict[str, Any]]:
         """Получает услугу по названию"""
@@ -45,6 +72,22 @@ class ServiceRepository(BaseRepository):
         rows = execute_query(query)
         
         return [self._row_to_dict(row) for row in rows]
+    
+    def create(self, data: Dict[str, Any]) -> int:
+        """Создает новую услугу и очищает кэш"""
+        result = super().create(data)
+        self.clear_cache()
+        return result
+    
+    def update(self, id: Any, data: Dict[str, Any]) -> None:
+        """Обновляет услугу и очищает кэш"""
+        super().update(id, data)
+        self.clear_cache()
+    
+    def delete(self, id: Any) -> None:
+        """Удаляет услугу и очищает кэш"""
+        super().delete(id)
+        self.clear_cache()
     
     def _row_to_dict(self, row: tuple) -> Dict[str, Any]:
         """Конвертирует строку результата в словарь"""
