@@ -197,7 +197,7 @@ class DBCalendarService:
             appointments = self._get_appointments_for_masters_on_date(target_date, master_ids)
             
             # Шаг 3: Вычислить общие свободные интервалы через таймлайн
-            free_intervals = self._calculate_free_intervals_timeline(work_intervals, appointments)
+            free_intervals = self._calculate_free_intervals_timeline(target_date, work_intervals, appointments)
             
             # Шаг 4: Отфильтровать интервалы по длительности
             filtered_intervals = self._filter_intervals_by_duration(free_intervals, duration_minutes)
@@ -277,11 +277,12 @@ class DBCalendarService:
         logger.info(f"📅 [TRACE] Записи: {len(appointments)}шт")
         return appointments
     
-    def _calculate_free_intervals_timeline(self, work_intervals: Dict[int, Tuple[time, time]], appointments: List[Dict[str, Any]]) -> List[Dict[str, str]]:
+    def _calculate_free_intervals_timeline(self, target_date: date, work_intervals: Dict[int, Tuple[time, time]], appointments: List[Dict[str, Any]]) -> List[Dict[str, str]]:
         """
         Вычисляет свободные интервалы используя алгоритм "Таймлайн занятости".
         
         Args:
+            target_date: Целевая дата для поиска слотов
             work_intervals: Словарь рабочих интервалов мастеров
             appointments: Список записей
         
@@ -292,59 +293,87 @@ class DBCalendarService:
         
         # Добавляем события начала и окончания работы мастеров
         for master_id, (start_time, end_time) in work_intervals.items():
-            timeline.append((start_time, 1, 'work_start', master_id))  # +1 свободен
-            timeline.append((end_time, -1, 'work_end', master_id))     # -1 ушел с работы
+            # Преобразуем time в datetime, объединяя с целевой датой
+            start_datetime = datetime.combine(target_date, start_time)
+            end_datetime = datetime.combine(target_date, end_time)
+            
+            timeline.append((start_datetime, 1, 'work_start', master_id))  # +1 свободен
+            timeline.append((end_datetime, -1, 'work_end', master_id))     # -1 ушел с работы
         
         # Добавляем события записей
         for appointment in appointments:
             start_time = appointment['start_time']
             end_time = appointment['end_time']
             
-            # Конвертируем datetime в time если необходимо
-            if hasattr(start_time, 'time'):
-                start_time = start_time.time()
+            # Обрабатываем время начала записи
+            if isinstance(start_time, datetime):
+                start_datetime = start_time
+            elif hasattr(start_time, 'time'):
+                start_datetime = datetime.combine(target_date, start_time.time())
             elif isinstance(start_time, str):
                 # Если это строка, парсим её
                 try:
-                    from datetime import datetime
-                    start_time = datetime.fromisoformat(start_time.replace('Z', '+00:00')).time()
+                    start_datetime = datetime.fromisoformat(start_time.replace('Z', '+00:00'))
                 except:
                     # Если не удается парсить, пропускаем эту запись
+                    logger.warning(f"⚠️ [DB CALENDAR] Не удается парсить время начала записи: {start_time}")
                     continue
-                    
-            if hasattr(end_time, 'time'):
-                end_time = end_time.time()
+            else:
+                logger.warning(f"⚠️ [DB CALENDAR] Неизвестный тип времени начала: {type(start_time)}")
+                continue
+                
+            # Обрабатываем время окончания записи
+            if isinstance(end_time, datetime):
+                end_datetime = end_time
+            elif hasattr(end_time, 'time'):
+                end_datetime = datetime.combine(target_date, end_time.time())
             elif isinstance(end_time, str):
                 # Если это строка, парсим её
                 try:
-                    from datetime import datetime
-                    end_time = datetime.fromisoformat(end_time.replace('Z', '+00:00')).time()
+                    end_datetime = datetime.fromisoformat(end_time.replace('Z', '+00:00'))
                 except:
                     # Если не удается парсить, пропускаем эту запись
+                    logger.warning(f"⚠️ [DB CALENDAR] Не удается парсить время окончания записи: {end_time}")
                     continue
-            
-            # Проверяем, что время корректно сконвертировано
-            if isinstance(start_time, time) and isinstance(end_time, time):
-                timeline.append((start_time, -1, 'appointment_start', appointment['master_id']))  # -1 занят
-                timeline.append((end_time, 1, 'appointment_end', appointment['master_id']))       # +1 освободился
             else:
-                logger.warning(f"⚠️ [DB CALENDAR] Пропускаем запись с некорректным временем: start={type(start_time)}, end={type(end_time)}")
+                logger.warning(f"⚠️ [DB CALENDAR] Неизвестный тип времени окончания: {type(end_time)}")
+                continue
+            
+            # Проверяем, что время корректно обработано
+            if isinstance(start_datetime, datetime) and isinstance(end_datetime, datetime):
+                timeline.append((start_datetime, -1, 'appointment_start', appointment['master_id']))  # -1 занят
+                timeline.append((end_datetime, 1, 'appointment_end', appointment['master_id']))       # +1 освободился
+            else:
+                logger.warning(f"⚠️ [DB CALENDAR] Пропускаем запись с некорректным временем: start={type(start_datetime)}, end={type(end_datetime)}")
         
         # Сортируем таймлайн по времени
         timeline.sort(key=lambda x: x[0])
         
+        # Отладочная информация
+        logger.info(f"🔍 [DEBUG] Таймлайн событий:")
+        for timestamp, delta, event_type, master_id in timeline:
+            logger.info(f"  {timestamp.strftime('%H:%M')} | {event_type} | Мастер {master_id} | Delta: {delta}")
+        
         # Проходим по таймлайну и находим свободные интервалы
         free_intervals = []
-        available_masters_count = 0
+        available_masters = set()  # Множество доступных мастеров
         current_start = None
         
         for timestamp, delta, event_type, master_id in timeline:
-            available_masters_count += delta
+            if event_type in ['work_start', 'appointment_end']:
+                # Мастер становится доступным
+                available_masters.add(master_id)
+            elif event_type in ['work_end', 'appointment_start']:
+                # Мастер становится недоступным
+                available_masters.discard(master_id)
             
-            if available_masters_count > 0 and current_start is None:
+            # Проверяем, есть ли доступные мастера
+            has_available_masters = len(available_masters) > 0
+            
+            if has_available_masters and current_start is None:
                 # Начинается свободный интервал
                 current_start = timestamp
-            elif available_masters_count == 0 and current_start is not None:
+            elif not has_available_masters and current_start is not None:
                 # Заканчивается свободный интервал
                 free_intervals.append({
                     'start': current_start.strftime('%H:%M'),
@@ -356,9 +385,10 @@ class DBCalendarService:
         if current_start is not None:
             # Находим максимальное время окончания работы среди всех мастеров
             max_end_time = max(end_time for _, end_time in work_intervals.values())
+            max_end_datetime = datetime.combine(target_date, max_end_time)
             free_intervals.append({
                 'start': current_start.strftime('%H:%M'),
-                'end': max_end_time.strftime('%H:%M')
+                'end': max_end_datetime.strftime('%H:%M')
             })
         
         logger.info(f"🔗 [TRACE] Свободные интервалы: {len(free_intervals)}шт")
