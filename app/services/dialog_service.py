@@ -10,6 +10,7 @@ from app.repositories.service_repository import ServiceRepository
 from app.repositories.master_repository import MasterRepository
 from app.repositories.appointment_repository import AppointmentRepository
 from app.repositories.client_repository import ClientRepository
+from app.repositories.schedule_repository import WorkScheduleRepository, ScheduleExceptionRepository
 from app.services.llm_service import get_llm_service
 from app.services.appointment_service import AppointmentService
 from app.services.tool_service import ToolService
@@ -50,10 +51,16 @@ class DialogService:
         self.appointment_repository = AppointmentRepository()
         self.client_repository = ClientRepository()
         
+        # Инициализируем репозитории для графиков работы
+        self.work_schedule_repository = WorkScheduleRepository()
+        self.schedule_exception_repository = ScheduleExceptionRepository()
+        
         # Инициализируем DB Calendar Service
         self.db_calendar_service = DBCalendarService(
             appointment_repository=self.appointment_repository,
-            master_repository=self.master_repository
+            master_repository=self.master_repository,
+            work_schedule_repository=self.work_schedule_repository,
+            schedule_exception_repository=self.schedule_exception_repository
         )
         
         # Создаем экземпляр AppointmentService
