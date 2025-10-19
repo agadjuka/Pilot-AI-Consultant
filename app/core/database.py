@@ -28,22 +28,15 @@ def get_driver() -> ydb.Driver:
         
         endpoint = settings.YDB_ENDPOINT
         database = settings.YDB_DATABASE
-        service_account_key_file = os.getenv("YC_SERVICE_ACCOUNT_KEY_FILE", "key.json")
         
-        # Проверяем существование файла ключа
-        key_file_path = service_account_key_file
-        if not os.path.exists(key_file_path):
-            project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            key_file_path = os.path.join(project_root, service_account_key_file)
-        
-        if not os.path.exists(key_file_path):
-            raise FileNotFoundError(f"Файл ключа {service_account_key_file} не найден")
+        # Получаем credentials для YDB
+        credentials = _load_yc_credentials()
         
         # Создаем драйвер YDB
         driver_config = ydb.DriverConfig(
             endpoint=endpoint,
             database=database,
-            credentials=ydb.iam.ServiceAccountCredentials.from_file(key_file_path),
+            credentials=credentials,
         )
         
         _driver = ydb.Driver(driver_config)
@@ -51,6 +44,39 @@ def get_driver() -> ydb.Driver:
         logger.info("✅ DATABASE: Подключение к YDB установлено")
     
     return _driver
+
+
+def _load_yc_credentials():
+    """
+    Загружает credentials для Yandex Cloud.
+    Поддерживает 2 варианта загрузки (аналогично LLM сервису):
+    1. YC_SA_JSON_CREDENTIALS - JSON напрямую в переменной (для Cloud Run)
+    2. YC_SERVICE_ACCOUNT_KEY_FILE - путь к файлу (для локальной разработки)
+    
+    Returns:
+        Объект ServiceAccountCredentials для аутентификации
+    """
+    from app.core.config import settings
+    
+    # Вариант 1: JSON напрямую в переменной окружения (для Cloud Run)
+    if settings.YC_SA_JSON_CREDENTIALS:
+        import json
+        credentials_info = json.loads(settings.YC_SA_JSON_CREDENTIALS)
+        return ydb.iam.ServiceAccountCredentials.from_service_account_info(credentials_info)
+    
+    # Вариант 2: Путь к файлу credentials (для локальной разработки)
+    service_account_key_file = os.getenv("YC_SERVICE_ACCOUNT_KEY_FILE", "key.json")
+    
+    # Проверяем существование файла ключа
+    key_file_path = service_account_key_file
+    if not os.path.exists(key_file_path):
+        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        key_file_path = os.path.join(project_root, service_account_key_file)
+    
+    if not os.path.exists(key_file_path):
+        raise FileNotFoundError(f"Файл ключа {service_account_key_file} не найден")
+    
+    return ydb.iam.ServiceAccountCredentials.from_file(key_file_path)
 
 
 def get_session_pool() -> ydb.SessionPool:

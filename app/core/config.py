@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     # YDB Configuration
     YDB_ENDPOINT: str = "grpcs://ydb.serverless.yandexcloud.net:2135"
     YDB_DATABASE: str = "/ru-central1/b1gxxxxxxxxxxxxxxxx/etnxxxxxxxxxxxxxxxx"
+    YC_SA_JSON_CREDENTIALS: Optional[str] = None
 
     # Telegram Bot
     TELEGRAM_BOT_TOKEN: Optional[str] = None

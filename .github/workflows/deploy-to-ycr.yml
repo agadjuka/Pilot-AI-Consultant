@@ -58,3 +58,4 @@ jobs:
             YANDEX_API_KEY_SECRET=${{ secrets.YANDEX_API_KEY_SECRET }}
             YDB_ENDPOINT=${{ secrets.YDB_ENDPOINT }}
             YDB_DATABASE=${{ secrets.YDB_DATABASE }}
+            YC_SA_JSON_CREDENTIALS=${{ secrets.YC_SA_JSON_CREDENTIALS }}
