@@ -99,9 +99,22 @@ def execute_query(query: str, params: Optional[Dict[str, Any]] = None) -> List[A
     pool = get_session_pool()
     
     def execute(session):
-        prepared = session.prepare(query)
-        result = session.transaction().execute(prepared)
-        return result[0].rows
+        # Создаем новую транзакцию для каждой операции
+        tx = session.transaction()
+        try:
+            prepared = session.prepare(query)
+            result = tx.execute(prepared)
+            tx.commit()
+            logger.info(f"✅ DATABASE: SELECT выполнен успешно")
+            return result[0].rows
+        except Exception as e:
+            # При ошибке откатываем транзакцию
+            try:
+                tx.rollback()
+            except Exception as rollback_error:
+                logger.warning(f"⚠️ DATABASE: Ошибка при откате транзакции: {rollback_error}")
+            logger.error(f"❌ DATABASE: Ошибка выполнения запроса: {e}")
+            raise e
     
     try:
         return pool.retry_operation_sync(execute)
@@ -120,6 +133,7 @@ def execute_transaction(operations: List[callable]):
     pool = get_session_pool()
     
     def execute_all(session):
+        # Создаем новую транзакцию для каждой операции
         tx = session.transaction()
         try:
             results = []
@@ -127,9 +141,15 @@ def execute_transaction(operations: List[callable]):
                 result = operation(session, tx)
                 results.append(result)
             tx.commit()
+            logger.info(f"✅ DATABASE: Транзакция с {len(operations)} операциями выполнена успешно")
             return results
         except Exception as e:
-            tx.rollback()
+            # При ошибке откатываем транзакцию
+            try:
+                tx.rollback()
+            except Exception as rollback_error:
+                logger.warning(f"⚠️ DATABASE: Ошибка при откате транзакции: {rollback_error}")
+            logger.error(f"❌ DATABASE: Ошибка выполнения транзакции: {e}")
             raise e
     
     try:
@@ -151,6 +171,7 @@ def upsert_record(table: str, data: Dict[str, Any]) -> None:
     pool = get_session_pool()
     
     def upsert(session):
+        # Создаем новую транзакцию для каждой операции
         tx = session.transaction()
         try:
             # Формируем запрос UPSERT
@@ -186,8 +207,14 @@ def upsert_record(table: str, data: Dict[str, Any]) -> None:
             prepared = session.prepare(query)
             tx.execute(prepared)
             tx.commit()
+            logger.info(f"✅ DATABASE: UPSERT выполнен успешно в таблицу {table}")
         except Exception as e:
-            tx.rollback()
+            # При ошибке откатываем транзакцию
+            try:
+                tx.rollback()
+            except Exception as rollback_error:
+                logger.warning(f"⚠️ DATABASE: Ошибка при откате транзакции: {rollback_error}")
+            logger.error(f"❌ DATABASE: Ошибка upsert в таблицу {table}: {e}")
             raise e
     
     try:
@@ -208,14 +235,21 @@ def delete_record(table: str, where_clause: str) -> None:
     pool = get_session_pool()
     
     def delete(session):
+        # Создаем новую транзакцию для каждой операции
         tx = session.transaction()
         try:
             query = f"DELETE FROM {table} WHERE {where_clause}"
             prepared = session.prepare(query)
             tx.execute(prepared)
             tx.commit()
+            logger.info(f"✅ DATABASE: DELETE выполнен успешно из таблицы {table}")
         except Exception as e:
-            tx.rollback()
+            # При ошибке откатываем транзакцию
+            try:
+                tx.rollback()
+            except Exception as rollback_error:
+                logger.warning(f"⚠️ DATABASE: Ошибка при откате транзакции: {rollback_error}")
+            logger.error(f"❌ DATABASE: Ошибка удаления из таблицы {table}: {e}")
             raise e
     
     try:
