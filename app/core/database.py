@@ -168,6 +168,12 @@ def upsert_record(table: str, data: Dict[str, Any]) -> None:
                     # YDB принимает ISO формат без микросекунд
                     iso_format = value.strftime('%Y-%m-%dT%H:%M:%SZ')
                     values.append(f"Timestamp('{iso_format}')")
+                elif isinstance(value, type(datetime.now().date())):
+                    # Для date объектов используем правильный формат для YDB
+                    date_format = value.strftime('%Y-%m-%d')
+                    values.append(f"Date('{date_format}')")
+                elif value is None:
+                    values.append('NULL')
                 else:
                     escaped_value = str(value).replace("'", "''")
                     values.append(f"'{escaped_value}'")
