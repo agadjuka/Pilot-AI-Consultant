@@ -165,7 +165,7 @@ def upsert_record(table: str, data: Dict[str, Any]) -> None:
                     values.append(str(value))
                 elif isinstance(value, datetime):
                     # Для datetime объектов используем правильный формат для YDB
-                    # YDB принимает ISO формат без микросекунд
+                    # YDB требует формат с часовым поясом
                     iso_format = value.strftime('%Y-%m-%dT%H:%M:%SZ')
                     values.append(f"Timestamp('{iso_format}')")
                 elif isinstance(value, type(datetime.now().date())):

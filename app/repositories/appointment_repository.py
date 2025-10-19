@@ -136,14 +136,18 @@ class AppointmentRepository(BaseRepository):
         # Если это числа (микросекунды), конвертируем в datetime
         if isinstance(start_time, (int, float)):
             try:
-                start_time = datetime.fromtimestamp(start_time / 1000000)
+                # YDB возвращает время в UTC, конвертируем в локальное время
+                from datetime import timezone
+                start_time = datetime.fromtimestamp(start_time / 1000000, tz=timezone.utc).replace(tzinfo=None)
             except (ValueError, OSError):
                 # Если не удается конвертировать, оставляем как есть
                 pass
         
         if isinstance(end_time, (int, float)):
             try:
-                end_time = datetime.fromtimestamp(end_time / 1000000)
+                # YDB возвращает время в UTC, конвертируем в локальное время
+                from datetime import timezone
+                end_time = datetime.fromtimestamp(end_time / 1000000, tz=timezone.utc).replace(tzinfo=None)
             except (ValueError, OSError):
                 # Если не удается конвертировать, оставляем как есть
                 pass

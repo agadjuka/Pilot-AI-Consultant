@@ -18,7 +18,7 @@ class MasterScheduleRepository(BaseRepository):
         """Находит график работы мастера на конкретную дату"""
         query = f"""
             SELECT * FROM {self.table_name} 
-            WHERE master_id = {master_id} AND date = '{schedule_date}'
+            WHERE master_id = {master_id} AND date = Date('{schedule_date}')
         """
         rows = execute_query(query)
         
@@ -31,8 +31,8 @@ class MasterScheduleRepository(BaseRepository):
         query = f"""
             SELECT * FROM {self.table_name} 
             WHERE master_id = {master_id} 
-            AND date >= '{start_date}' 
-            AND date <= '{end_date}'
+            AND date >= Date('{start_date}') 
+            AND date <= Date('{end_date}')
             ORDER BY date
         """
         rows = execute_query(query)
@@ -44,7 +44,7 @@ class MasterScheduleRepository(BaseRepository):
         query = f"""
             SELECT DISTINCT m.* FROM masters m
             JOIN {self.table_name} ms ON m.id = ms.master_id
-            WHERE ms.date = '{schedule_date}'
+            WHERE ms.date = Date('{schedule_date}')
         """
         rows = execute_query(query)
         
@@ -70,10 +70,21 @@ class MasterScheduleRepository(BaseRepository):
     
     def _row_to_dict(self, row: tuple) -> Dict[str, Any]:
         """Конвертирует строку результата в словарь"""
-        return {
-            'id': row[0],
-            'master_id': row[1],
-            'date': row[2],
-            'start_time': row[3],
-            'end_time': row[4]
-        }
+        # Проверяем, что это словарь (результат execute_query)
+        if isinstance(row, dict):
+            return {
+                'id': row['id'],
+                'master_id': row['master_id'],
+                'date': row['date'],
+                'start_time': row['start_time'].decode('utf-8') if isinstance(row['start_time'], bytes) else str(row['start_time']),
+                'end_time': row['end_time'].decode('utf-8') if isinstance(row['end_time'], bytes) else str(row['end_time'])
+            }
+        else:
+            # Если это tuple, маппим по позициям
+            return {
+                'id': row[0],
+                'master_id': row[1],
+                'date': row[2],
+                'start_time': row[3].decode('utf-8') if isinstance(row[3], bytes) else str(row[3]),
+                'end_time': row[4].decode('utf-8') if isinstance(row[4], bytes) else str(row[4])
+            }

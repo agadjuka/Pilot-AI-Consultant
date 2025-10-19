@@ -9,6 +9,7 @@ import logging
 
 from app.repositories.appointment_repository import AppointmentRepository
 from app.repositories.master_repository import MasterRepository
+from app.repositories.master_schedule_repository import MasterScheduleRepository
 
 # Получаем логгер для этого модуля
 logger = logging.getLogger(__name__)
@@ -23,7 +24,8 @@ class DBCalendarService:
     def __init__(
         self,
         appointment_repository: AppointmentRepository,
-        master_repository: MasterRepository
+        master_repository: MasterRepository,
+        master_schedule_repository: MasterScheduleRepository
     ):
         """
         Инициализация сервиса календаря.
@@ -31,9 +33,11 @@ class DBCalendarService:
         Args:
             appointment_repository: Репозиторий для работы с записями
             master_repository: Репозиторий для работы с мастерами
+            master_schedule_repository: Репозиторий для работы с графиками мастеров
         """
         self.appointment_repository = appointment_repository
         self.master_repository = master_repository
+        self.master_schedule_repository = master_schedule_repository
     
     def create_event(
         self,
@@ -294,7 +298,12 @@ class DBCalendarService:
     
     def _calculate_free_intervals_timeline(self, target_date: date, work_intervals: Dict[int, Tuple[time, time]], appointments: List[Dict[str, Any]], tracer=None) -> List[Dict[str, str]]:
         """
-        Вычисляет свободные интервалы используя алгоритм "Таймлайн занятости".
+        Вычисляет свободные интервалы используя исправленный алгоритм "Сетка доступности".
+        
+        Алгоритм:
+        1. Создает индивидуальные "сетки занятости" для каждого мастера
+        2. Вычисляет "чистые" свободные интервалы для каждого мастера
+        3. Находит интервалы, где свободен ХОТЯ БЫ ОДИН мастер
         
         Args:
             target_date: Целевая дата для поиска слотов
@@ -304,114 +313,228 @@ class DBCalendarService:
         Returns:
             List[Dict[str, str]]: Список свободных интервалов
         """
-        timeline = []
+        logger.info(f"🔍 [GRID] Начинаем исправленный алгоритм 'Сетка доступности' для {len(work_intervals)} мастеров")
         
-        # Добавляем события начала и окончания работы мастеров
-        for master_id, (start_time, end_time) in work_intervals.items():
-            # Преобразуем time в datetime, объединяя с целевой датой
-            start_datetime = datetime.combine(target_date, start_time)
-            end_datetime = datetime.combine(target_date, end_time)
-            
-            timeline.append((start_datetime, 1, 'work_start', master_id))  # +1 свободен
-            timeline.append((end_datetime, -1, 'work_end', master_id))     # -1 ушел с работы
+        # Шаг 1: Создаем индивидуальные "сетки занятости" для каждого мастера
+        master_free_intervals = {}
         
-        # Добавляем события записей
-        for appointment in appointments:
-            start_time = appointment['start_time']
-            end_time = appointment['end_time']
+        for master_id, (work_start, work_end) in work_intervals.items():
+            logger.info(f"👤 [GRID] Обрабатываем мастера {master_id}: рабочий интервал {work_start}-{work_end}")
             
-            # Обрабатываем время начала записи
-            if isinstance(start_time, datetime):
-                start_datetime = start_time
-            elif hasattr(start_time, 'time'):
-                start_datetime = datetime.combine(target_date, start_time.time())
-            elif isinstance(start_time, str):
-                # Если это строка, парсим её
-                try:
-                    start_datetime = datetime.fromisoformat(start_time.replace('Z', '+00:00'))
-                except:
-                    # Если не удается парсить, пропускаем эту запись
-                    logger.warning(f"⚠️ [DB CALENDAR] Не удается парсить время начала записи: {start_time}")
-                    continue
-            else:
-                logger.warning(f"⚠️ [DB CALENDAR] Неизвестный тип времени начала: {type(start_time)}")
-                continue
+            # Получаем записи этого мастера
+            master_appointments = [apt for apt in appointments if apt['master_id'] == master_id]
+            
+            # Создаем список занятых интервалов мастера
+            busy_intervals = []
+            for appointment in master_appointments:
+                start_time = self._parse_appointment_time(appointment['start_time'], target_date)
+                end_time = self._parse_appointment_time(appointment['end_time'], target_date)
                 
-            # Обрабатываем время окончания записи
-            if isinstance(end_time, datetime):
-                end_datetime = end_time
-            elif hasattr(end_time, 'time'):
-                end_datetime = datetime.combine(target_date, end_time.time())
-            elif isinstance(end_time, str):
-                # Если это строка, парсим её
-                try:
-                    end_datetime = datetime.fromisoformat(end_time.replace('Z', '+00:00'))
-                except:
-                    # Если не удается парсить, пропускаем эту запись
-                    logger.warning(f"⚠️ [DB CALENDAR] Не удается парсить время окончания записи: {end_time}")
-                    continue
-            else:
-                logger.warning(f"⚠️ [DB CALENDAR] Неизвестный тип времени окончания: {type(end_time)}")
-                continue
+                if start_time and end_time:
+                    busy_intervals.append((start_time, end_time))
+                    logger.info(f"  📅 [GRID] Занятость мастера {master_id}: {start_time.strftime('%H:%M')}-{end_time.strftime('%H:%M')}")
             
-            # Проверяем, что время корректно обработано
-            if isinstance(start_datetime, datetime) and isinstance(end_datetime, datetime):
-                timeline.append((start_datetime, -1, 'appointment_start', appointment['master_id']))  # -1 занят
-                timeline.append((end_datetime, 1, 'appointment_end', appointment['master_id']))       # +1 освободился
-            else:
-                logger.warning(f"⚠️ [DB CALENDAR] Пропускаем запись с некорректным временем: start={type(start_datetime)}, end={type(end_datetime)}")
+            # Вычисляем свободные интервалы для этого мастера
+            master_free = self._calculate_master_free_intervals(
+                target_date, work_start, work_end, busy_intervals
+            )
+            
+            master_free_intervals[master_id] = master_free
+            logger.info(f"  ✅ [GRID] Мастер {master_id} свободен: {len(master_free)} интервалов")
         
-        # Логируем сырой таймлайн до сортировки
+        # Логируем индивидуальные свободные интервалы
         if tracer:
-            tracer.add_event("СЫРОЙ ТАЙМЛАЙН (ДО СОРТИРОВКИ)", f"{timeline}")
+            tracer.add_event("ИНДИВИДУАЛЬНЫЕ СВОБОДНЫЕ ИНТЕРВАЛЫ", f"{master_free_intervals}")
         
-        # Сортируем таймлайн по времени
-        timeline.sort(key=lambda x: x[0])
+        # Шаг 2: Находим общие свободные интервалы (где свободен хотя бы один мастер)
+        common_free_intervals = self._find_common_free_intervals(master_free_intervals)
         
-        # Отладочная информация
-        logger.info(f"🔍 [DEBUG] Таймлайн событий:")
-        for timestamp, delta, event_type, master_id in timeline:
-            logger.info(f"  {timestamp.strftime('%H:%M')} | {event_type} | Мастер {master_id} | Delta: {delta}")
+        logger.info(f"🔗 [GRID] Найдено {len(common_free_intervals)} общих свободных интервалов")
         
-        # Проходим по таймлайну и находим свободные интервалы
+        # Логируем финальный результат
+        if tracer:
+            tracer.add_event("ОБЩИЕ СВОБОДНЫЕ ИНТЕРВАЛЫ", f"{common_free_intervals}")
+        
+        return common_free_intervals
+    
+    def _find_common_free_intervals(self, master_free_intervals: Dict[int, List[Dict[str, str]]]) -> List[Dict[str, str]]:
+        """
+        Находит интервалы, где свободен хотя бы один мастер.
+        
+        Args:
+            master_free_intervals: Словарь свободных интервалов для каждого мастера
+        
+        Returns:
+            List[Dict[str, str]]: Список общих свободных интервалов
+        """
+        if not master_free_intervals:
+            return []
+        
+        # Собираем все свободные интервалы всех мастеров
+        all_intervals = []
+        for master_id, intervals in master_free_intervals.items():
+            for interval in intervals:
+                all_intervals.append({
+                    'start': interval['start'],
+                    'end': interval['end'],
+                    'master_id': master_id
+                })
+        
+        if not all_intervals:
+            return []
+        
+        # Сортируем по времени начала
+        all_intervals.sort(key=lambda x: x['start'])
+        
+        logger.info(f"🔍 [GRID] Всего интервалов для объединения: {len(all_intervals)}")
+        for interval in all_intervals:
+            logger.info(f"  - {interval['start']}-{interval['end']} (мастер {interval['master_id']})")
+        
+        # Объединяем пересекающиеся интервалы
+        merged_intervals = []
+        current_start = all_intervals[0]['start']
+        current_end = all_intervals[0]['end']
+        
+        for interval in all_intervals[1:]:
+            # Если интервалы пересекаются или идут вплотную
+            if interval['start'] <= current_end:
+                # Расширяем текущий интервал
+                current_end = max(current_end, interval['end'])
+                logger.info(f"🔗 [GRID] Объединяем: {current_start}-{current_end}")
+            else:
+                # Добавляем завершенный интервал и начинаем новый
+                merged_intervals.append({
+                    'start': current_start,
+                    'end': current_end
+                })
+                logger.info(f"✅ [GRID] Добавляем интервал: {current_start}-{current_end}")
+                current_start = interval['start']
+                current_end = interval['end']
+        
+        # Добавляем последний интервал
+        merged_intervals.append({
+            'start': current_start,
+            'end': current_end
+        })
+        logger.info(f"✅ [GRID] Добавляем последний интервал: {current_start}-{current_end}")
+        
+        return merged_intervals
+    
+    def _parse_appointment_time(self, time_value: Any, target_date: date) -> Optional[datetime]:
+        """
+        Парсит время записи в datetime объект.
+        
+        Args:
+            time_value: Время записи (datetime, time, str)
+            target_date: Целевая дата
+        
+        Returns:
+            Optional[datetime]: Распарсенное время или None при ошибке
+        """
+        try:
+            if isinstance(time_value, datetime):
+                return time_value
+            elif hasattr(time_value, 'time'):
+                return datetime.combine(target_date, time_value.time())
+            elif isinstance(time_value, str):
+                return datetime.fromisoformat(time_value.replace('Z', '+00:00'))
+            else:
+                logger.warning(f"⚠️ [GRID] Неизвестный тип времени: {type(time_value)}")
+                return None
+        except Exception as e:
+            logger.warning(f"⚠️ [GRID] Ошибка парсинга времени {time_value}: {str(e)}")
+            return None
+    
+    def _calculate_master_free_intervals(
+        self, 
+        target_date: date, 
+        work_start: time, 
+        work_end: time, 
+        busy_intervals: List[Tuple[datetime, datetime]]
+    ) -> List[Dict[str, str]]:
+        """
+        Вычисляет свободные интервалы для одного мастера.
+        
+        Args:
+            target_date: Целевая дата
+            work_start: Время начала работы
+            work_end: Время окончания работы
+            busy_intervals: Список занятых интервалов
+        
+        Returns:
+            List[Dict[str, str]]: Список свободных интервалов мастера
+        """
+        # Сортируем занятые интервалы по времени начала
+        busy_intervals.sort(key=lambda x: x[0])
+        
+        # Создаем рабочий интервал
+        work_start_datetime = datetime.combine(target_date, work_start)
+        work_end_datetime = datetime.combine(target_date, work_end)
+        
         free_intervals = []
-        available_masters = set()  # Множество доступных мастеров
-        current_start = None
+        current_start = work_start_datetime
         
-        for timestamp, delta, event_type, master_id in timeline:
-            if event_type in ['work_start', 'appointment_end']:
-                # Мастер становится доступным
-                available_masters.add(master_id)
-            elif event_type in ['work_end', 'appointment_start']:
-                # Мастер становится недоступным
-                available_masters.discard(master_id)
-            
-            # Проверяем, есть ли доступные мастера
-            has_available_masters = len(available_masters) > 0
-            
-            if has_available_masters and current_start is None:
-                # Начинается свободный интервал
-                current_start = timestamp
-            elif not has_available_masters and current_start is not None:
-                # Заканчивается свободный интервал
+        for busy_start, busy_end in busy_intervals:
+            # Если есть свободное время до начала занятости
+            if current_start < busy_start:
                 free_intervals.append({
                     'start': current_start.strftime('%H:%M'),
-                    'end': timestamp.strftime('%H:%M')
+                    'end': busy_start.strftime('%H:%M')
                 })
-                current_start = None
+            
+            # Обновляем текущее время на конец занятости
+            current_start = max(current_start, busy_end)
         
-        # Если интервал не закрылся до конца дня
-        if current_start is not None:
-            # Находим максимальное время окончания работы среди всех мастеров
-            max_end_time = max(end_time for _, end_time in work_intervals.values())
-            max_end_datetime = datetime.combine(target_date, max_end_time)
+        # Если есть свободное время после последней занятости
+        if current_start < work_end_datetime:
             free_intervals.append({
                 'start': current_start.strftime('%H:%M'),
-                'end': max_end_datetime.strftime('%H:%M')
+                'end': work_end_datetime.strftime('%H:%M')
             })
         
-        logger.info(f"🔗 [TRACE] Свободные интервалы: {len(free_intervals)}шт")
         return free_intervals
+    
+    def _merge_overlapping_intervals(self, intervals: List[Dict[str, str]]) -> List[Dict[str, str]]:
+        """
+        Объединяет пересекающиеся или идущие вплотную интервалы.
+        
+        Args:
+            intervals: Список интервалов для объединения
+        
+        Returns:
+            List[Dict[str, str]]: Объединенные интервалы
+        """
+        if not intervals:
+            return []
+        
+        # Сортируем по времени начала
+        intervals.sort(key=lambda x: x['start'])
+        
+        merged = []
+        current_start = intervals[0]['start']
+        current_end = intervals[0]['end']
+        
+        for interval in intervals[1:]:
+            # Если интервалы пересекаются или идут вплотную
+            if interval['start'] <= current_end:
+                # Расширяем текущий интервал
+                current_end = max(current_end, interval['end'])
+            else:
+                # Добавляем завершенный интервал и начинаем новый
+                merged.append({
+                    'start': current_start,
+                    'end': current_end
+                })
+                current_start = interval['start']
+                current_end = interval['end']
+        
+        # Добавляем последний интервал
+        merged.append({
+            'start': current_start,
+            'end': current_end
+        })
+        
+        return merged
     
     def _filter_intervals_by_duration(self, intervals: List[Dict[str, str]], duration_minutes: int) -> List[Dict[str, str]]:
         """
@@ -465,8 +588,7 @@ class DBCalendarService:
     
     def _get_master_work_time(self, target_date: date, master_id: int) -> Optional[Tuple[time, time]]:
         """
-        Определяет рабочее время мастера на заданную дату.
-        Использует фиксированные рабочие часы: 9:00-18:00, воскресенье - выходной.
+        Получает рабочее время мастера на заданную дату из таблицы master_schedules.
         
         Args:
             target_date: Целевая дата
@@ -475,16 +597,26 @@ class DBCalendarService:
         Returns:
             Optional[Tuple[time, time]]: Кортеж (start_time, end_time) или None если мастер не работает
         """
-        # Проверяем, не выходной ли это
-        day_of_week = target_date.weekday()
-        if day_of_week == 6:  # Воскресенье
-            logger.info(f"🚫 [DB CALENDAR] Воскресенье - выходной для мастера {master_id}")
+        try:
+            # Получаем график работы мастера на конкретную дату из БД
+            schedule = self.master_schedule_repository.find_by_master_and_date(master_id, target_date)
+            
+            if not schedule:
+                logger.info(f"🚫 [DB CALENDAR] Мастер {master_id} не работает {target_date} - график не найден")
+                return None
+            
+            # Извлекаем время начала и окончания работы
+            start_time_str = schedule['start_time']
+            end_time_str = schedule['end_time']
+            
+            # Парсим строки времени в объекты time
+            start_time = datetime.strptime(start_time_str, '%H:%M').time()
+            end_time = datetime.strptime(end_time_str, '%H:%M').time()
+            
+            logger.info(f"⏰ [DB CALENDAR] Рабочие часы мастера {master_id} на {target_date}: {start_time} - {end_time}")
+            return (start_time, end_time)
+            
+        except Exception as e:
+            logger.error(f"❌ [DB CALENDAR] Ошибка получения графика мастера {master_id} на {target_date}: {str(e)}")
             return None
-        
-        # Фиксированные рабочие часы: 9:00 - 18:00
-        start_time = time(9, 0)
-        end_time = time(18, 0)
-        
-        logger.info(f"⏰ [DB CALENDAR] Рабочие часы мастера {master_id} на {target_date}: {start_time} - {end_time}")
-        return (start_time, end_time)
     
