@@ -13,7 +13,7 @@ from app.core.database import init_database
 # Загружаем переменные окружения и настраиваем логирование сразу при импорте модуля,
 # чтобы одинаково работало локально и в облаке (Serverless/Container)
 load_dotenv(os.getenv("ENV_FILE", ".env"))
-setup_logging()
+setup_logging(level=os.getenv("LOG_LEVEL", "INFO"))
 
 # Получаем логгер для этого модуля
 logger = logging.getLogger(__name__)
