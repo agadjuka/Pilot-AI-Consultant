@@ -550,13 +550,17 @@ class DialogService:
         
         try:
             # 0. Загружаем (или создаем) клиента
+            logger.debug("--- [ASYNC DB] Вызов get_or_create_by_telegram_id...")
             client = await asyncio.to_thread(self.client_repository.get_or_create_by_telegram_id, user_id)
+            logger.debug("--- [ASYNC DB] ...get_or_create_by_telegram_id ЗАВЕРШЕН.")
             decoded_first_name = self._decode_string_field(client['first_name']) if client['first_name'] else None
             decoded_phone = self._decode_string_field(client['phone_number']) if client['phone_number'] else None
             tracer.add_event("👤 Клиент загружен", f"ID клиента: {client['id']}, Имя: {decoded_first_name}, Телефон: {decoded_phone}")
             
             # 1. Получаем историю диалога (окно контекста - последние N сообщений)
+            logger.debug(f"--- [ASYNC DB] Вызов get_recent_messages для user_id={user_id}...")
             history_records = await asyncio.to_thread(self.repository.get_recent_messages, user_id, limit=self.CONTEXT_WINDOW_SIZE)
+            logger.debug(f"--- [ASYNC DB] ...get_recent_messages ЗАВЕРШЕН. Найдено {len(history_records)} сообщений.")
             tracer.add_event("📚 История диалога загружена", f"Количество сообщений: {len(history_records)} (окно контекста: {self.CONTEXT_WINDOW_SIZE})")
             
             # Преобразуем историю в расширенный формат для Gemini
@@ -570,7 +574,9 @@ class DialogService:
                 })
             
             # 2. Сохраняем новое сообщение пользователя в БД
+            logger.debug(f"--- [ASYNC DB] Вызов add_message (роль: user) для user_id={user_id}...")
             await asyncio.to_thread(self.repository.add_message, user_id=user_id, role="user", message_text=text)
+            logger.debug(f"--- [ASYNC DB] ...add_message (роль: user) ЗАВЕРШЕН.")
             tracer.add_event("💾 Сообщение сохранено в БД", f"Роль: user, Текст: {text}")
             
             # === ЭТАП 1: КЛАССИФИКАЦИЯ ===
@@ -652,7 +658,9 @@ class DialogService:
                 logger.info(f"👨‍💼 Действие: эскалация на менеджера")
                 
                 # Сохраняем ответ бота в БД
+                logger.debug(f"--- [ASYNC DB] Вызов add_message (роль: model) для user_id={user_id} (manager response)...")
                 await asyncio.to_thread(self.repository.add_message, user_id=user_id, role="model", message_text=manager_response['response_to_user'])
+                logger.debug(f"--- [ASYNC DB] ...add_message (роль: model, manager) ЗАВЕРШЕН.")
                 
                 tracer.add_event("💾 Ответ менеджера сохранен", f"Текст: {manager_response['response_to_user']}")
                 
@@ -808,7 +816,9 @@ class DialogService:
                 logger.info("✅ Финальный ответ получен на этапе мышления")
                 
                 # Сохраняем финальный ответ бота в БД
+                logger.debug(f"--- [ASYNC DB] Вызов add_message (роль: model) для user_id={user_id} (thinking stage)...")
                 await asyncio.to_thread(self.repository.add_message, user_id=user_id, role="model", message_text=bot_response_text)
+                logger.debug(f"--- [ASYNC DB] ...add_message (роль: model, thinking) ЗАВЕРШЕН.")
                 
                 tracer.add_event("💾 Финальный ответ сохранен", {
                     "text": bot_response_text,
@@ -983,7 +993,9 @@ class DialogService:
                 logger.info("✅ Fallback ответ сгенерирован")
             
             # Сохраняем финальный ответ бота в БД
+            logger.debug(f"--- [ASYNC DB] Вызов add_message (роль: model) для user_id={user_id} (final stage)...")
             await asyncio.to_thread(self.repository.add_message, user_id=user_id, role="model", message_text=bot_response_text)
+            logger.debug(f"--- [ASYNC DB] ...add_message (роль: model, final) ЗАВЕРШЕН.")
             
             tracer.add_event("💾 Финальный ответ сохранен", {
                 "text": bot_response_text,

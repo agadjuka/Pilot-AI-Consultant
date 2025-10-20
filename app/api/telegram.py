@@ -29,7 +29,9 @@ async def process_telegram_update(update: Update):
             # Проверяем, является ли сообщение командой /clear
             if text.strip().lower() == "/clear":
                 # Очищаем историю диалога пользователя
+                logger.debug(f"--- [ASYNC DB] Вызов clear_history для user_id={user_id}...")
                 deleted_count = await asyncio.to_thread(dialog_service.clear_history, user_id)
+                logger.debug(f"--- [ASYNC DB] ...clear_history ЗАВЕРШЕН. Удалено {deleted_count} записей.")
                 
                 # Отправляем подтверждение
                 confirmation_message = (
