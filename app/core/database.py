@@ -34,6 +34,8 @@ def get_driver() -> ydb.Driver:
             endpoint=endpoint,
             database=database,
             # Не передаем credentials - SDK сам получит IAM токен через metadata API
+            # В Serverless Container используется автоматическая аутентификация
+            credentials=ydb.iam.MetadataUrlCredentials(),  # Явно указываем использование metadata API
         )
         
         _driver = ydb.Driver(driver_config)

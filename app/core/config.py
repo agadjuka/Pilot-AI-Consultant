@@ -14,7 +14,7 @@ class Settings(BaseSettings):
 
     # YDB Configuration
     YDB_ENDPOINT: str = "grpcs://ydb.serverless.yandexcloud.net:2135"
-    YDB_DATABASE: str = "/ru-central1/b1gxxxxxxxxxxxxxxxx/etnxxxxxxxxxxxxxxxx"
+    YDB_DATABASE: str = "/ru-central1/b1gogvdsgf3hje2flr3i/etnci59p991a6s9vd1g4"
     # В Serverless Container используется автоматическая аутентификация через IAM токен
 
     # Telegram Bot
