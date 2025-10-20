@@ -1,11 +1,19 @@
 from fastapi import FastAPI, Request, BackgroundTasks
 import logging
+import os
+from dotenv import load_dotenv
+from app.core.logging_config import setup_logging
 from app.core.config import settings
 from app.api import telegram
 from app.services.dialogue_tracer_service import clear_debug_logs
 from app.schemas.telegram import Update
 from app.api.telegram import process_telegram_update
 from app.core.database import init_database
+
+# Загружаем переменные окружения и настраиваем логирование сразу при импорте модуля,
+# чтобы одинаково работало локально и в облаке (Serverless/Container)
+load_dotenv(os.getenv("ENV_FILE", ".env"))
+setup_logging()
 
 # Получаем логгер для этого модуля
 logger = logging.getLogger(__name__)

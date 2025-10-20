@@ -1,4 +1,5 @@
 from typing import List, Dict
+import asyncio
 import google.generativeai as genai
 from google.generativeai import protos
 from datetime import datetime, timedelta
@@ -549,13 +550,13 @@ class DialogService:
         
         try:
             # 0. Загружаем (или создаем) клиента
-            client = self.client_repository.get_or_create_by_telegram_id(user_id)
+            client = await asyncio.to_thread(self.client_repository.get_or_create_by_telegram_id, user_id)
             decoded_first_name = self._decode_string_field(client['first_name']) if client['first_name'] else None
             decoded_phone = self._decode_string_field(client['phone_number']) if client['phone_number'] else None
             tracer.add_event("👤 Клиент загружен", f"ID клиента: {client['id']}, Имя: {decoded_first_name}, Телефон: {decoded_phone}")
             
             # 1. Получаем историю диалога (окно контекста - последние N сообщений)
-            history_records = self.repository.get_recent_messages(user_id, limit=self.CONTEXT_WINDOW_SIZE)
+            history_records = await asyncio.to_thread(self.repository.get_recent_messages, user_id, limit=self.CONTEXT_WINDOW_SIZE)
             tracer.add_event("📚 История диалога загружена", f"Количество сообщений: {len(history_records)} (окно контекста: {self.CONTEXT_WINDOW_SIZE})")
             
             # Преобразуем историю в расширенный формат для Gemini
@@ -569,11 +570,7 @@ class DialogService:
                 })
             
             # 2. Сохраняем новое сообщение пользователя в БД
-            self.repository.add_message(
-                user_id=user_id,
-                role="user",
-                message_text=text
-            )
+            await asyncio.to_thread(self.repository.add_message, user_id=user_id, role="user", message_text=text)
             tracer.add_event("💾 Сообщение сохранено в БД", f"Роль: user, Текст: {text}")
             
             # === ЭТАП 1: КЛАССИФИКАЦИЯ ===
@@ -655,11 +652,7 @@ class DialogService:
                 logger.info(f"👨‍💼 Действие: эскалация на менеджера")
                 
                 # Сохраняем ответ бота в БД
-                self.repository.add_message(
-                    user_id=user_id,
-                    role="model",
-                    message_text=manager_response['response_to_user']
-                )
+                await asyncio.to_thread(self.repository.add_message, user_id=user_id, role="model", message_text=manager_response['response_to_user'])
                 
                 tracer.add_event("💾 Ответ менеджера сохранен", f"Текст: {manager_response['response_to_user']}")
                 
@@ -815,11 +808,7 @@ class DialogService:
                 logger.info("✅ Финальный ответ получен на этапе мышления")
                 
                 # Сохраняем финальный ответ бота в БД
-                self.repository.add_message(
-                    user_id=user_id,
-                    role="model",
-                    message_text=bot_response_text
-                )
+                await asyncio.to_thread(self.repository.add_message, user_id=user_id, role="model", message_text=bot_response_text)
                 
                 tracer.add_event("💾 Финальный ответ сохранен", {
                     "text": bot_response_text,
@@ -994,11 +983,7 @@ class DialogService:
                 logger.info("✅ Fallback ответ сгенерирован")
             
             # Сохраняем финальный ответ бота в БД
-            self.repository.add_message(
-                user_id=user_id,
-                role="model",
-                message_text=bot_response_text
-            )
+            await asyncio.to_thread(self.repository.add_message, user_id=user_id, role="model", message_text=bot_response_text)
             
             tracer.add_event("💾 Финальный ответ сохранен", {
                 "text": bot_response_text,

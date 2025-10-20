@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Request, BackgroundTasks
+import asyncio
 import logging
 from app.schemas.telegram import Update
 from app.services.telegram_service import telegram_service
@@ -28,7 +29,7 @@ async def process_telegram_update(update: Update):
             # Проверяем, является ли сообщение командой /clear
             if text.strip().lower() == "/clear":
                 # Очищаем историю диалога пользователя
-                deleted_count = dialog_service.clear_history(user_id)
+                deleted_count = await asyncio.to_thread(dialog_service.clear_history, user_id)
                 
                 # Отправляем подтверждение
                 confirmation_message = (
