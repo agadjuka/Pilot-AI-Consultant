@@ -24,12 +24,12 @@ class Settings(BaseSettings):
             env_file_encoding='utf-8',
             extra='ignore'
         )
-
-    # Fallback-конфигурация для pydantic v1
-    class Config:  # type: ignore
-        env_file = env_file_path
-        env_file_encoding = 'utf-8'
-        extra = 'ignore'
+    else:
+        # Fallback-конфигурация для pydantic v1
+        class Config:  # type: ignore
+            env_file = env_file_path
+            env_file_encoding = 'utf-8'
+            extra = 'ignore'
 
     # YDB Configuration
     YDB_ENDPOINT: str = "grpcs://ydb.serverless.yandexcloud.net:2135"
