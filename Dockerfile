@@ -35,7 +35,7 @@ FROM python:3.10-slim
 # Устанавливаем системные зависимости для runtime
 RUN apt-get update && apt-get install -y \
     libpq5 \
-    libffi7 \
+    libffi8 \
     libssl3 \
     && rm -rf /var/lib/apt/lists/*
 
