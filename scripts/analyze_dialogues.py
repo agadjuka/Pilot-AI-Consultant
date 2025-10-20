@@ -18,7 +18,7 @@ from google.oauth2 import service_account
 from dotenv import load_dotenv
 
 # Загружаем переменные окружения из .env файла
-load_dotenv()
+load_dotenv(os.getenv("ENV_FILE", ".env"))
 
 
 class DialogueAnalyzer:

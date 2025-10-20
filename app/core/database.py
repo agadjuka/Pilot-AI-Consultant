@@ -17,7 +17,7 @@ _driver: Optional[ydb.Driver] = None
 _session_pool: Optional[ydb.SessionPool] = None
 
 # Загружаем переменные окружения
-load_dotenv()
+load_dotenv(os.getenv("ENV_FILE", ".env"))
 
 
 def get_driver() -> ydb.Driver:

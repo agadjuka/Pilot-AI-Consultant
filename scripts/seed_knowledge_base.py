@@ -9,7 +9,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 # Загружаем переменные окружения
-load_dotenv()
+load_dotenv(os.getenv("ENV_FILE", ".env"))
 
 # Импортируем централизованный клиент
 from app.core.vector_store_client import chroma_client

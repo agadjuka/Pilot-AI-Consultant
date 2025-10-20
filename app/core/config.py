@@ -1,16 +1,35 @@
+import os
 try:
-    from pydantic_settings import BaseSettings
+    from pydantic_settings import BaseSettings, SettingsConfigDict
 except ImportError:
     from pydantic import BaseSettings
+    try:
+        # pydantic v2 без pydantic-settings
+        from pydantic import ConfigDict as SettingsConfigDict  # type: ignore
+    except Exception:  # pydantic v1 совместимость
+        SettingsConfigDict = None  # type: ignore
 from typing import Optional
+from dotenv import load_dotenv
+
+# Определяем, какой .env файл загружать
+env_file_path = os.getenv("ENV_FILE", ".env")
+# Явно загружаем переменные окружения, чтобы поддержать pydantic v1/v2
+load_dotenv(env_file_path)
 
 class Settings(BaseSettings):
-    # Модель загружает переменные из .env файла
-    model_config = {
-        "env_file": ".env",
-        "env_file_encoding": "utf-8",
-        "extra": "ignore"
-    }
+    # Конфигурация для pydantic-settings / pydantic v2 (если доступна)
+    if SettingsConfigDict is not None:
+        model_config = SettingsConfigDict(
+            env_file=env_file_path,
+            env_file_encoding='utf-8',
+            extra='ignore'
+        )
+
+    # Fallback-конфигурация для pydantic v1
+    class Config:  # type: ignore
+        env_file = env_file_path
+        env_file_encoding = 'utf-8'
+        extra = 'ignore'
 
     # YDB Configuration
     YDB_ENDPOINT: str = "grpcs://ydb.serverless.yandexcloud.net:2135"
@@ -24,7 +43,7 @@ class Settings(BaseSettings):
     CHROMA_HOST: Optional[str] = None
 
     # LLM Provider Configuration
-    LLM_PROVIDER: str = "google"  # "google" или "yandex"
+    LLM_PROVIDER: str = "yandex"  # "google" или "yandex"
 
     # YandexGPT Configuration
     YANDEX_FOLDER_ID: Optional[str] = None

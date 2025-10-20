@@ -1,7 +1,7 @@
 from dotenv import load_dotenv
 
 # Загружаем переменные окружения из .env файла
-load_dotenv()
+load_dotenv(os.getenv("ENV_FILE", ".env"))
 
 # Настраиваем логирование сразу после загрузки переменных окружения
 from app.core.logging_config import setup_logging

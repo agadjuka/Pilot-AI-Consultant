@@ -20,7 +20,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Загружаем переменные окружения
-load_dotenv()
+load_dotenv(os.getenv("ENV_FILE", ".env"))
 
 
 def cleanup_old_data():

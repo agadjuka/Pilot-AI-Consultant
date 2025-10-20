@@ -12,7 +12,7 @@ from zoneinfo import ZoneInfo
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from dotenv import load_dotenv
-load_dotenv()
+load_dotenv(os.getenv("ENV_FILE", ".env"))
 
 from app.core.logging_config import setup_logging
 setup_logging()

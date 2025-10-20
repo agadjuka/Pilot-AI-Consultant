@@ -12,7 +12,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Загружаем переменные окружения
-load_dotenv()
+load_dotenv(os.getenv("ENV_FILE", ".env"))
 
 
 def update_schedule_tables():
