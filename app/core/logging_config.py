@@ -79,13 +79,14 @@ class DialogFormatter(logging.Formatter):
         return super().format(record)
 
 
-def setup_logging(level: str = "INFO", enable_colors: bool = True) -> None:
+def setup_logging(level: str = "INFO", enable_colors: bool = True, suppress_ydb_tokens: bool = True) -> None:
     """
     Настраивает централизованное логирование для всего приложения.
     
     Args:
         level: Уровень логирования (DEBUG, INFO, WARNING, ERROR, CRITICAL)
         enable_colors: Включить цветовое выделение в консоли
+        suppress_ydb_tokens: Подавлять сообщения YDB о токенах (по умолчанию True)
     """
     # Получаем корневой логгер
     root_logger = logging.getLogger()
@@ -121,7 +122,7 @@ def setup_logging(level: str = "INFO", enable_colors: bool = True) -> None:
     root_logger.addHandler(console_handler)
     
     # Настраиваем уровни для конкретных модулей
-    _configure_module_levels()
+    _configure_module_levels(suppress_ydb_tokens)
     
     # Логируем успешную настройку
     logger = logging.getLogger(__name__)
@@ -129,18 +130,29 @@ def setup_logging(level: str = "INFO", enable_colors: bool = True) -> None:
     logger.info("║ 🎨 Система логирования инициализирована")
     logger.info(f"║ 📊 Уровень логирования: {level}")
     logger.info(f"║ 🌈 Цветовое выделение: {'включено' if enable_colors else 'отключено'}")
+    logger.info(f"║ 🔇 Подавление YDB токенов: {'включено' if suppress_ydb_tokens else 'отключено'}")
     logger.info("╚═══════════════════════════════════════════════════════════")
 
 
-def _configure_module_levels():
+def _configure_module_levels(suppress_ydb_tokens: bool = True):
     """
     Настраивает уровни логирования для конкретных модулей.
+    
+    Args:
+        suppress_ydb_tokens: Подавлять сообщения YDB о токенах
     """
     # Уменьшаем уровень логирования для внешних библиотек
     logging.getLogger('httpx').setLevel(logging.WARNING)
     logging.getLogger('httpcore').setLevel(logging.WARNING)
     logging.getLogger('urllib3').setLevel(logging.WARNING)
     logging.getLogger('google').setLevel(logging.WARNING)
+    
+    # Подавляем сообщения YDB SDK о токенах (если включено)
+    if suppress_ydb_tokens:
+        logging.getLogger('ydb.credentials.MetadataUrlCredentials').setLevel(logging.ERROR)
+        logging.getLogger('ydb.credentials.ServiceAccountCredentials').setLevel(logging.ERROR)
+        logging.getLogger('ydb.credentials').setLevel(logging.ERROR)
+        logging.getLogger('ydb').setLevel(logging.WARNING)
     
     # Настраиваем уровень для наших модулей
     logging.getLogger('app.services.dialog_service').setLevel(logging.DEBUG)

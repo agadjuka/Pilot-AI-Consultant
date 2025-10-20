@@ -48,7 +48,7 @@ def get_driver() -> ydb.Driver:
             logger.warning(f"⚠️ DATABASE: Автоматическая аутентификация не удалась: {e1}")
             
             try:
-                # Fallback: пробуем с явными метаданными
+                # Fallback 1: пробуем с явными метаданными
                 logger.info("🔗 DATABASE: Пробуем аутентификацию через метаданные...")
                 driver_config = ydb.DriverConfig(
                     endpoint=endpoint,
@@ -61,9 +61,42 @@ def get_driver() -> ydb.Driver:
                 logger.info("✅ DATABASE: Подключение к YDB установлено (через метаданные)")
                 
             except Exception as e2:
-                logger.error(f"❌ DATABASE: Ошибка подключения к YDB: {e2}")
-                logger.error(f"❌ DATABASE: Тип ошибки: {type(e2).__name__}")
-                raise
+                logger.warning(f"⚠️ DATABASE: Аутентификация через метаданные не удалась: {e2}")
+                
+                try:
+                    # Fallback 2: пробуем с локальным файлом ключа
+                    logger.info("🔗 DATABASE: Пробуем аутентификацию через локальный ключ...")
+                    
+                    # Получаем путь к файлу ключа из переменных окружения или используем по умолчанию
+                    service_account_key_file = os.getenv("YC_SERVICE_ACCOUNT_KEY_FILE", "key.json")
+                    
+                    # Проверяем существование файла ключа
+                    key_file_path = service_account_key_file
+                    if not os.path.exists(key_file_path):
+                        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                        key_file_path = os.path.join(project_root, service_account_key_file)
+                    
+                    if not os.path.exists(key_file_path):
+                        raise FileNotFoundError(f"Файл ключа {service_account_key_file} не найден")
+                    
+                    logger.info(f"🔗 DATABASE: Используем файл ключа: {key_file_path}")
+                    
+                    driver_config = ydb.DriverConfig(
+                        endpoint=endpoint,
+                        database=database,
+                        credentials=ydb.iam.ServiceAccountCredentials.from_file(key_file_path),
+                    )
+                    
+                    _driver = ydb.Driver(driver_config)
+                    _driver.wait(timeout=10, fail_fast=True)
+                    logger.info("✅ DATABASE: Подключение к YDB установлено (через локальный ключ)")
+                    
+                except Exception as e3:
+                    logger.error(f"❌ DATABASE: Все способы аутентификации не удались:")
+                    logger.error(f"❌ DATABASE: 1. Автоматическая: {e1}")
+                    logger.error(f"❌ DATABASE: 2. Метаданные: {e2}")
+                    logger.error(f"❌ DATABASE: 3. Локальный ключ: {e3}")
+                    raise Exception("Не удалось подключиться к YDB ни одним из способов аутентификации")
     
     return _driver
 
