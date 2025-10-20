@@ -33,7 +33,7 @@ class ColoredFormatter(logging.Formatter):
     }
     
     def format(self, record):
-        # Получаем цвет для уровня
+        # Получаем цвет для уровняя
         color = self.COLORS.get(record.levelname, self.COLORS['RESET'])
         reset = self.COLORS['RESET']
         symbol = self.LEVEL_SYMBOLS.get(record.levelname, '📝')
