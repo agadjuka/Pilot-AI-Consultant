@@ -171,6 +171,7 @@ logs/
 
 # Environment file variants (keep .env.example tracked)
 .env.local
+.env.local_cloud
 .env.development
 .env.production
 .env.test

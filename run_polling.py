@@ -1,4 +1,5 @@
 from dotenv import load_dotenv
+import os
 
 # Загружаем переменные окружения из .env файла
 load_dotenv(os.getenv("ENV_FILE", ".env"))

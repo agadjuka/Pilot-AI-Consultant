@@ -1,4 +1,5 @@
 import asyncio
+import time
 import os
 import json
 import re
@@ -154,22 +155,30 @@ class LLMService:
             return await self._send_gemini_message(chat, message, user_id)
 
     async def _send_gemini_message(self, chat, message, user_id: int = None):
-        """Отправляет сообщение в Gemini чат."""
-        # Логируем только ошибки
-        
-        # Используем asyncio для выполнения синхронного вызова
+        """Отправляет сообщение в Gemini чат с измерением времени."""
         loop = asyncio.get_event_loop()
+        start_time = time.perf_counter()
         try:
             response = await loop.run_in_executor(
                 None,
                 lambda: chat.send_message(message)
             )
         except Exception as e:
-            logger.error(f"❌ [Gemini] Ошибка: {str(e)}")
+            duration_ms = int((time.perf_counter() - start_time) * 1000)
+            logger.error(f"❌ [LLM Timing] provider=gemini user_id={user_id} duration_ms={duration_ms} ошибка={str(e)}")
             raise
-        
-        # Логируем только ошибки
-        
+        finally:
+            pass
+
+        duration_ms = int((time.perf_counter() - start_time) * 1000)
+        # Короткая метка о времени ответа в терминал (INFO)
+        try:
+            prompt_len = len(message) if isinstance(message, str) else None
+        except Exception:
+            prompt_len = None
+        logger.info(
+            f"⏱️ [LLM Timing] provider=gemini user_id={user_id} duration_ms={duration_ms} prompt_len={prompt_len}"
+        )
         return response.candidates[0].content
 
     async def _send_yandex_message(self, history: List[Dict], message, user_id: int = None):
@@ -224,6 +233,7 @@ class LLMService:
             "Content-Type": "application/json"
         }
         
+        start_time = time.perf_counter()
         try:
             # Используем asyncio для выполнения HTTP запроса
             loop = asyncio.get_event_loop()
@@ -231,21 +241,25 @@ class LLMService:
                 None,
                 lambda: requests.post(self._yandex_base_url, json=payload, headers=headers)
             )
-            
-            # Логируем только ошибки
+            duration_ms = int((time.perf_counter() - start_time) * 1000)
+
             if response.status_code != 200:
                 logger.error(f"❌ [Yandex] Ошибка HTTP {response.status_code}: {response.text[:120]}")
-            
+
             response.raise_for_status()
-            
+
             result = response.json()
-            # Логируем только ошибки
-            
+
+            logger.info(
+                f"⏱️ [LLM Timing] provider=yandex user_id={user_id} duration_ms={duration_ms} prompt_len={len(payload.get('messages', []))}"
+            )
+
             # Возвращаем ответ в формате, совместимом с Gemini
             return self._format_yandex_response(result)
-            
+
         except Exception as e:
-            logger.error(f"❌ [Yandex] Ошибка: {str(e)}")
+            duration_ms = int((time.perf_counter() - start_time) * 1000)
+            logger.error(f"❌ [LLM Timing] provider=yandex user_id={user_id} duration_ms={duration_ms} ошибка={str(e)}")
             raise
 
     def _format_yandex_response(self, yandex_result: Dict) -> Any:
