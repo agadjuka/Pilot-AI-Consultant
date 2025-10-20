@@ -1,5 +1,4 @@
-from fastapi import APIRouter, Request, BackgroundTasks
-import asyncio
+from fastapi import APIRouter, Request
 import logging
 from app.schemas.telegram import Update
 from app.services.telegram_service import telegram_service
@@ -29,9 +28,9 @@ async def process_telegram_update(update: Update):
             # Проверяем, является ли сообщение командой /clear
             if text.strip().lower() == "/clear":
                 # Очищаем историю диалога пользователя
-                logger.debug(f"--- [ASYNC DB] Вызов clear_history для user_id={user_id}...")
-                deleted_count = await asyncio.to_thread(dialog_service.clear_history, user_id)
-                logger.debug(f"--- [ASYNC DB] ...clear_history ЗАВЕРШЕН. Удалено {deleted_count} записей.")
+                logger.debug(f"--- Вызов clear_history для user_id={user_id}...")
+                deleted_count = dialog_service.clear_history(user_id)
+                logger.debug(f"--- clear_history завершен. Удалено {deleted_count} записей.")
                 
                 # Отправляем подтверждение
                 confirmation_message = (
@@ -54,16 +53,20 @@ async def process_telegram_update(update: Update):
 
 
 @router.post(f"/{settings.TELEGRAM_BOT_TOKEN}", include_in_schema=False)
-async def telegram_webhook(request: Request, background_tasks: BackgroundTasks):
+async def telegram_webhook(request: Request):
     """
     Основной эндпоинт для приема вебхуков от Telegram.
-    Мы используем BackgroundTasks, чтобы немедленно вернуть Telegram статус 200 OK,
-    а обработку сообщения выполнить в фоновом режиме.
+    Вся обработка выполняется синхронно в рамках запроса.
     """
     try:
+        logger.info("--- [WEBHOOK START] Получен новый запрос от Telegram.")
         update_data = await request.json()
-        update = Update.parse_obj(update_data)
-        background_tasks.add_task(process_telegram_update, update)
+        update = Update.model_validate(update_data)
+        # Прямой вызов и ожидание завершения всей обработки
+        logger.info("--- [WEBHOOK] Начинаю полную обработку сообщения (await)...")
+        await process_telegram_update(update)
+        logger.info("--- [WEBHOOK] Полная обработка сообщения ЗАВЕРШЕНА.")
+        logger.info("--- [WEBHOOK END] Отправляю 200 OK в Telegram.")
         return {"status": "ok"}
     except Exception as e:
         logger.error(f"❌ Ошибка в webhook: {e}")
@@ -71,15 +74,20 @@ async def telegram_webhook(request: Request, background_tasks: BackgroundTasks):
 
 
 @router.post("/webhook", include_in_schema=False)
-async def telegram_webhook_generic(request: Request, background_tasks: BackgroundTasks):
+async def telegram_webhook_generic(request: Request):
     """
     Универсальный эндпоинт для приема вебхуков от Telegram.
-    Используется когда Telegram настроен на отправку на /telegram/webhook
+    Вся обработка выполняется синхронно в рамках запроса.
     """
     try:
+        logger.info("--- [WEBHOOK START] Получен новый запрос от Telegram.")
         update_data = await request.json()
-        update = Update.parse_obj(update_data)
-        background_tasks.add_task(process_telegram_update, update)
+        update = Update.model_validate(update_data)
+        # Прямой вызов и ожидание завершения всей обработки
+        logger.info("--- [WEBHOOK] Начинаю полную обработку сообщения (await)...")
+        await process_telegram_update(update)
+        logger.info("--- [WEBHOOK] Полная обработка сообщения ЗАВЕРШЕНА.")
+        logger.info("--- [WEBHOOK END] Отправляю 200 OK в Telegram.")
         return {"status": "ok"}
     except Exception as e:
         logger.error(f"❌ Ошибка обработки webhook: {e}")
