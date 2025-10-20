@@ -29,16 +29,41 @@ def get_driver() -> ydb.Driver:
         endpoint = settings.YDB_ENDPOINT
         database = settings.YDB_DATABASE
         
-        # Создаем драйвер YDB без credentials - SDK автоматически получит IAM токен
-        driver_config = ydb.DriverConfig(
-            endpoint=endpoint,
-            database=database,
-            # НЕ указываем credentials — SDK сам получит IAM-токен через метаданные
-        )
+        logger.info(f"🔗 DATABASE: Подключение к YDB endpoint={endpoint}, database={database}")
         
-        _driver = ydb.Driver(driver_config)
-        _driver.wait(timeout=5, fail_fast=True)
-        logger.info("✅ DATABASE: Подключение к YDB установлено")
+        try:
+            # Пробуем сначала без credentials (автоматическая аутентификация)
+            logger.info("🔗 DATABASE: Пробуем автоматическую аутентификацию...")
+            driver_config = ydb.DriverConfig(
+                endpoint=endpoint,
+                database=database,
+                # Не указываем credentials - SDK сам получит IAM токен
+            )
+            
+            _driver = ydb.Driver(driver_config)
+            _driver.wait(timeout=10, fail_fast=True)
+            logger.info("✅ DATABASE: Подключение к YDB установлено (автоматическая аутентификация)")
+            
+        except Exception as e1:
+            logger.warning(f"⚠️ DATABASE: Автоматическая аутентификация не удалась: {e1}")
+            
+            try:
+                # Fallback: пробуем с явными метаданными
+                logger.info("🔗 DATABASE: Пробуем аутентификацию через метаданные...")
+                driver_config = ydb.DriverConfig(
+                    endpoint=endpoint,
+                    database=database,
+                    credentials=ydb.iam.MetadataUrlCredentials(),
+                )
+                
+                _driver = ydb.Driver(driver_config)
+                _driver.wait(timeout=10, fail_fast=True)
+                logger.info("✅ DATABASE: Подключение к YDB установлено (через метаданные)")
+                
+            except Exception as e2:
+                logger.error(f"❌ DATABASE: Ошибка подключения к YDB: {e2}")
+                logger.error(f"❌ DATABASE: Тип ошибки: {type(e2).__name__}")
+                raise
     
     return _driver
 
